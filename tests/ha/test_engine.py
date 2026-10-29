@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import Counter
 from datetime import date, datetime, time, timedelta
@@ -152,9 +153,13 @@ async def test_warning_fired_5_min_before(hass, freezer, services) -> None:
     event = kid_events()[0]
     assert event.data["closes_at"] == at(TUESDAY, 16, 0).isoformat()
     assert event.data["message"] == "Gabin : fin des écrans dans 5 min"
+    # Ressources aussi averties (événement), mais seuls les enfants notifient les parents.
+    assert {e.data["target"] for e in events} == {
+        "kid:gabin", "resource:tv", "resource:iphone_gabin"
+    }
     notes = [c.data for c in services.of("notify", NOTIFY)]
-    assert {"title": "Contrôle parental",
-            "message": "Gabin : fin des écrans dans 5 min"} in notes
+    assert notes == [{"title": "Contrôle parental",
+                      "message": "Gabin : fin des écrans dans 5 min"}]
     await tick(hass, freezer)  # 15:56
     assert len(kid_events()) == 1
 
@@ -196,9 +201,40 @@ async def test_tv_turned_back_on_is_turned_off_again(hass, freezer, services) ->
     hass.states.async_set(TV, "on")
     await setup(hass, freezer, at(TUESDAY, 16, 30))
     assert len(services.of("media_player", "turn_off")) == 1
+    freezer.tick(timedelta(seconds=31))  # après le délai anti-rafale, avant le tick
     hass.states.async_set(TV, "on")
     await hass.async_block_till_done()
     assert len(services.of("media_player", "turn_off")) == 2
+
+
+async def test_drift_cooldown_when_device_state_lags(hass, freezer, services) -> None:
+    calls = []
+
+    @callback
+    def lagging_off(call: ServiceCall) -> None:
+        calls.append(call)  # l'état de la TV ne change pas tout de suite
+
+    hass.services.async_register("media_player", "turn_off", lagging_off)
+    hass.states.async_set(TV, "on")
+    await setup(hass, freezer, at(TUESDAY, 16, 30))
+    assert len(calls) == 1
+    for i in range(5):
+        freezer.tick(timedelta(seconds=5))
+        hass.states.async_set(TV, "on", {"volume": i})
+        await hass.async_block_till_done()
+    assert len(calls) == 1
+    freezer.tick(timedelta(seconds=10))  # 35 s après la commande
+    hass.states.async_set(TV, "on", {"volume": 99})
+    await hass.async_block_till_done()
+    assert len(calls) == 2
+
+
+async def test_desired_change_applies_despite_drift_cooldown(hass, freezer, services) -> None:
+    set_switches(hass, "off")
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    services.calls.clear()
+    await engine.start_timer("gabin", 30)  # changement voulu immédiat : ouverture
+    assert services.entities("switch", "turn_off") == sorted(svc(s) for s in LEISURE)
 
 
 async def test_no_duplicate_commands(hass, freezer, services) -> None:
@@ -295,6 +331,31 @@ async def test_invalid_stored_config_leaves_engine_idle(
     assert "configuration" in caplog.text.lower()
 
 
+async def test_decisions_kept_after_invalid_stored_config(
+    hass, freezer, services, hass_storage
+) -> None:
+    hass_storage["parental_control.config"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.config",
+        "data": {"version": 1, "kids": "pas une liste"},
+    }
+    hass_storage["parental_control.state"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.state",
+        "data": {"homework_done": {"gabin": TUESDAY.isoformat()}},
+    }
+    freezer.move_to(at(TUESDAY, 16, 30))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    engine = entry.runtime_data
+    assert engine.config is None
+    assert engine.decisions.homework_done_on("gabin", TUESDAY)
+
+    await engine.set_config(parse_config(EX))
+    assert engine.decisions.homework_done_on("gabin", TUESDAY)
+    assert engine.snapshot.resources["tv"].open
+
+
 # --- calendrier ----------------------------------------------------------------
 
 
@@ -303,6 +364,50 @@ async def test_calendar_failure_falls_back_to_weekday(hass, freezer, services, c
     _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
     assert engine.snapshot.kids["gabin"].day_type is DayType.ECOLE
     assert "calendrier en panne" in caplog.text
+
+
+async def test_no_evaluation_before_first_calendar_refresh(hass, freezer, services) -> None:
+    release = asyncio.Event()
+    started = asyncio.Event()
+
+    async def slow_get_events(call: ServiceCall):
+        started.set()
+        await release.wait()
+        return {call.data["entity_id"]: {"events": []}}
+
+    hass.services.async_register(
+        "calendar", "get_events", slow_get_events, supports_response=SupportsResponse.ONLY
+    )
+    hass.states.async_set(TV, "on")
+    freezer.move_to(at(TUESDAY, 16, 30))
+    await ParentalStore(hass).save_config(parse_config(EX))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    setup_task = hass.async_create_task(hass.config_entries.async_setup(entry.entry_id))
+    await started.wait()
+    hass.states.async_set(TV, "playing")  # changement d'état pendant la lecture
+    for _ in range(5):
+        await asyncio.sleep(0)
+    assert services.calls == []
+    assert entry.runtime_data.snapshot is None
+
+    release.set()
+    assert await setup_task
+    await hass.async_block_till_done()
+    assert services.entities("media_player", "turn_off") == [TV]
+
+
+async def test_calendar_failure_keeps_todays_events(hass, freezer, services, caplog) -> None:
+    services.calendar_events = [
+        {"start": "2026-10-27", "end": "2026-10-28", "summary": "Congé pédagogique"},
+    ]
+    _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
+    assert engine.snapshot.kids["gabin"].day_type is DayType.CONGE_PEDA
+    services.calendar_error = HomeAssistantError("panne passagère")
+    await tick(hass, freezer, 15)  # rafraîchissement des 15 min
+    assert len(services.calendar_calls) == 2
+    assert "panne passagère" in caplog.text
+    assert engine.snapshot.kids["gabin"].day_type is DayType.CONGE_PEDA
 
 
 async def test_calendar_conge_peda_switches_profile(hass, freezer, services) -> None:

@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import logging
+
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, STORE_VERSION
-from .core.config_io import dump_config, parse_config
+from .core.config_io import ConfigError, dump_config, parse_config
 from .core.decisions import Decisions
 from .core.model import Config
+
+_LOGGER = logging.getLogger(__name__)
 
 _SAVE_DELAY = 1
 
@@ -21,11 +25,17 @@ class ParentalStore:
         self._state_store: Store[dict] = Store(hass, STORE_VERSION, f"{DOMAIN}.state")
 
     async def load(self) -> tuple[Config | None, Decisions]:
-        """Config (None si jamais enregistrée) et décisions (vides par défaut)."""
+        """Config (None si jamais enregistrée ou invalide) et décisions (vides par défaut)."""
         raw_cfg = await self._config_store.async_load()
         raw_state = await self._state_store.async_load()
-        cfg = parse_config(raw_cfg) if raw_cfg is not None else None
         dec = Decisions.from_dict(raw_state) if raw_state is not None else Decisions()
+        cfg = None
+        if raw_cfg is not None:
+            try:
+                cfg = parse_config(raw_cfg)
+            except ConfigError as err:
+                # Les décisions restent valables : une config corrigée les retrouvera.
+                _LOGGER.error("Configuration enregistrée invalide, moteur inactif : %s", err)
         return cfg, dec
 
     async def save_config(self, cfg: Config) -> None:
