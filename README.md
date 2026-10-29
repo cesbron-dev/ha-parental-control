@@ -20,7 +20,8 @@ En attendant l'éditeur, la configuration se charge sous forme de JSON (voir plu
 1. HACS, menu en haut à droite, **Dépôts personnalisés**.
 2. Dépôt `https://github.com/cesbron-dev/ha-parental-control`, catégorie **Intégration**.
 3. Installer « Parental Control », puis redémarrer Home Assistant.
-4. **Paramètres, Appareils et services, Ajouter une intégration, Parental Control**.
+4. **Paramètres, Appareils et services, Ajouter une intégration, Contrôle parental**
+   (l'intégration est listée sous ce nom dans Home Assistant, « Parental Control » dans HACS).
 5. Choisir le **code parent** : 4 à 8 chiffres. Il est stocké haché (PBKDF2), jamais en clair.
    Une seule instance de l'intégration est possible. Le code se change plus tard dans les
    options de l'intégration.
@@ -114,7 +115,7 @@ accepte pas).
 | `version` | `1` (défaut). |
 | `default_leisure` | Services AdGuard considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Défaut : `youtube`, `roblox`, `tiktok`, `netflix`, `disneyplus`, `twitch`. |
 | `calendar_map` | Associe un mot cherché dans le titre des événements « journée entière » du calendrier de l'enfant à un type de journée. Comparaison sans accent ni casse, par inclusion. |
-| `notify` | Services `notify.*` qui reçoivent les avertissements de fin de plage d'un enfant. |
+| `notify` | Services `notify.*` des parents : avertissements de fin de plage d'un enfant et de re-blocage d'un service AdGuard ouvert par exception. |
 | `kids` | Liste des enfants. |
 | `resources` | Liste des appareils contrôlés. |
 
@@ -144,8 +145,8 @@ accepte pas).
 | `bloque` | Tout est bloqué. |
 | `libre` | Tout est autorisé. |
 | `apres_devoirs` | Autorisé seulement après `devoirs_termines` du jour ; sinon statut « en attente des devoirs ». |
-| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil. Pour une ressource mesurable (TV, Switch), le budget est le `quota_minutes` de la ressource, décompté par l'usage réel. Sans quota défini : illimité. |
-| `sur_demande` | Bloqué jusqu'à ce qu'un parent ouvre (service `exception` avec `open: true`) ; statut « sur demande ». |
+| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seule une ressource `media_player` (TV) a son propre budget : le `quota_minutes` de la ressource, décompté par l'usage réel. Sans quota défini : illimité. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
+| `sur_demande` | Bloqué jusqu'à ce qu'un parent ouvre (service `exception` avec `open: true`) ; statut « sur demande ». Pour la Switch, pas d'exception : `ajouter_bonus` avec `resource_id: switch`. |
 
 **Type de journée.** Le calendrier de l'enfant fixe le type via `calendar_map`. Priorité en
 cas de recoupement : `vacances`, puis `conge_peda`, puis `ecole` / `fin_de_semaine`. Sans
@@ -162,7 +163,7 @@ et `quota_minutes` (objet optionnel `{ "<type de journée>": minutes }`).
 |---|---|---|
 | `media_player` | `entity_id` (obligatoire), `notify_service` (optionnel) | Éteinte quand la règle est fermée. Temps d'usage compté, `quota_minutes` applicable. |
 | `adguard_services` | `client` (obligatoire) | Pilote `switch.adguard_<client>_svc_<service>` (ON = bloqué), créés par adguard-mqtt-bridge. Seuls les services de loisirs sont gérés. |
-| `nintendo` | `device_id`, `limit_entity`, `remaining_entity`, `used_entity` | `device_id` est obligatoire ; les trois entités sont celles de l'intégration Nintendo (limite en `number`, temps restant et utilisé en `sensor`). |
+| `nintendo` | `device_id`, `limit_entity`, `remaining_entity`, `used_entity` | Les quatre sont obligatoires ; les trois entités sont celles de l'intégration Nintendo (limite du jour en `number`, temps restant et utilisé en `sensor`). La limite du jour doit rester à 0 : le temps s'accorde par bonus. |
 
 ### Charger la configuration
 
@@ -179,12 +180,19 @@ et `quota_minutes` (objet optionnel `{ "<type de journée>": minutes }`).
   ```
 
 - Ou la commande WebSocket **`parental_control/config/set`** (`{"type": "parental_control/config/set", "config": {...}}`,
-  administrateur seulement). `parental_control/config/get` renvoie la configuration courante,
-  `parental_control/state` l'état courant et `parental_control/state/subscribe` s'abonne aux
-  changements (pour les cartes).
+  administrateur seulement). `parental_control/config/get` renvoie la configuration courante
+  (administrateur seulement aussi : elle contient les identifiants d'appareils et les cibles de
+  notification), `parental_control/state` l'état courant et `parental_control/state/subscribe`
+  s'abonne aux changements (pour les cartes).
 
 Une configuration invalide est refusée en citant le chemin fautif (par exemple
-`kids[0].profiles.ecole.segments[2].start : heure invalide`).
+`kids[0].profiles.ecole.segments[2].start : heure invalide`). Si la configuration
+enregistrée est invalide au démarrage, le moteur reste inactif : l'erreur est journalisée et
+une notification persistante « Contrôle parental : configuration invalide, moteur inactif »
+s'affiche (elle disparaît au chargement d'une configuration valide).
+
+Quand une configuration retire un enfant ou une ressource, les décisions qui les visaient
+(exceptions, minuteurs, bonus, devoirs) sont supprimées.
 
 ## Services
 
@@ -210,7 +218,8 @@ Précisions :
   `nintendo`, accorde du temps de jeu à la console. Pas de bonus pour AdGuard.
 - `exception` sans `service` exige un `resource_id` (cible précise). Avec `service`, la cible
   est un service AdGuard, pour une ressource, pour toutes les ressources d'un enfant ou pour
-  toutes. Sans `minutes`, l'exception dure jusqu'au prochain changement de règle ; avec
+  toutes. Une exception sur la Switch est refusée (« Pour la Switch, utilisez
+  ajouter_bonus »). Sans `minutes`, l'exception dure jusqu'au prochain changement de règle ; avec
   `minutes`, pour cette durée. Le service retourne `{"id": "..."}` quand on demande la
   réponse (`response_variable`) : c'est l'`exception_id` à passer à `annuler_exception`.
 - Les exceptions en cours sont listées dans les attributs du capteur de statut.
@@ -222,10 +231,10 @@ Chaque enfant, chaque ressource et la pause générale sont des appareils (type 
 | Entité | Détail |
 |---|---|
 | `sensor` Statut, par enfant | États : `autorise`, `bloque`, `attente_devoirs`, `attente_minuteur`, `quota_epuise`, `sur_demande`, `pause`. Les détails de l'instantané (type de journée, segment, fin de plage, temps restant, exceptions) sont en attributs. |
-| `button` Devoirs terminés, par enfant | Équivaut au service `devoirs_termines`. |
+| `button` Devoirs terminés, par enfant | Équivaut au service `devoirs_termines`, pour un administrateur seulement : un bouton ne transmet pas de code, il est donc refusé à un non-administrateur (utiliser le service avec `code`). |
 | `binary_sensor` Autorisée, par ressource | Ouverte selon la règle. Pour AdGuard, les services bloqués sont en attribut. |
 | `sensor` Temps utilisé / Temps restant, par ressource | Minutes, seulement pour les ressources `media_player` et `nintendo`. |
-| `switch` Pause générale | Bloque tout. La lever demande le code pour un non-administrateur. |
+| `switch` Pause générale | Ferme toutes les ressources (sur AdGuard, les services de loisirs) et remet la limite du jour Nintendo à 0. N'importe qui peut la poser ; l'éteindre est refusé à un non-administrateur (pas de code possible sur un interrupteur : utiliser le service `pause` avec `code`). |
 
 Les identifiants d'entités sont ceux que Home Assistant génère à partir des noms (par
 exemple `sensor.gabin_statut` si l'appareil s'appelle « Gabin »).
@@ -238,21 +247,33 @@ le plus petit des propriétaires pour une ressource) :
 ```yaml
 event_type: parental_control_warning
 data:
-  target: "kid:gabin"        # ou "resource:tv"
+  target: "kid:gabin"        # ou "resource:tv", ou "service:iphone_gabin:youtube"
   closes_at: "2026-10-29T19:00:00-04:00"
   message: "Gabin : fin des écrans dans 5 min"
 ```
 
-Pour un enfant, le message est aussi envoyé aux services de `notify`. Pour une ressource,
-il est envoyé par son `notify_service` s'il est défini.
+Une cible `service:<ressource>:<service>` signale un service AdGuard débloqué (par exemple
+ouvert par exception) qui va être rebloqué alors que la ressource reste fermée ; message :
+« youtube sur iPhone Gabin : coupure dans 5 min ».
+
+Pour un enfant ou un service, le message est aussi envoyé aux services de `notify` ; les
+messages d'un même instant de fermeture sont regroupés en une seule notification. Pour une
+ressource, il est envoyé par son `notify_service` s'il est défini.
 
 ## Tablette murale
 
 1. Créer un **utilisateur Home Assistant dédié, non administrateur**, pour la tablette.
-2. Y afficher le tableau de bord (les cartes arriveront plus tard ; en attendant, boutons et
-   appels de service).
-3. Les actions qui débloquent demandent le **code parent** dans le champ `code`.
-4. **Verrouillage** : après 5 codes faux consécutifs, les essais sont refusés 60 s ; chaque
+2. Y afficher le tableau de bord. Les cartes arriveront plus tard ; **en attendant, les
+   parents débloquent depuis leur téléphone (utilisateur administrateur)**. Sur la tablette,
+   le bouton « Devoirs terminés » et l'arrêt de la pause sont refusés.
+3. Les actions qui débloquent demandent le **code parent** dans le champ `code` d'un appel
+   de service. **N'écrivez jamais le code** dans une action `perform-action` d'un tableau de
+   bord ni dans une automatisation ou un script qu'un non-administrateur peut déclencher.
+4. **Masquez à l'utilisateur de la tablette les entités brutes** AdGuard
+   (`switch.adguard_*`), Nintendo et télé : il pourrait les manipuler directement. Le moteur
+   corrige une dérive (switch AdGuard débloqué pendant une fermeture, télé rallumée, limite
+   Nintendo relevée), mais pas avant qu'elle ait eu lieu.
+5. **Verrouillage** : après 5 codes faux consécutifs, les essais sont refusés 60 s ; chaque
    échec suivant double la durée, jusqu'à 15 minutes. Un bon code remet le compteur à zéro.
    Le compteur est par utilisateur et **en mémoire** : un redémarrage de Home Assistant le
    remet à zéro.
@@ -265,10 +286,24 @@ il est envoyé par son `notify_service` s'il est défini.
   (`automation.trigger`, `script.turn_on`, etc.), ce serait un contournement du code.
 - **AdGuard.** Les identifiants de client viennent de la configuration (`client`). Les
   interrupteurs attendus sont `switch.adguard_<client>_svc_<service>` (ON = bloqué), fournis par
-  adguard-mqtt-bridge. Un interrupteur absent est signalé dans les journaux et ignoré.
+  adguard-mqtt-bridge. Un interrupteur absent est signalé dans les journaux et ignoré : **ce
+  service n'est alors pas bloqué sur cet appareil**. Un interrupteur qui apparaît plus tard est
+  pris en compte dès son apparition.
+- **Retrait d'un loisir.** Retirer un service de `default_leisure` (ou via `leisure_remove`)
+  pendant qu'il est bloqué le laisse bloqué : le moteur ne le gère plus.
 - **Nintendo.** Le moteur ne coupe jamais une partie en cours : il n'accorde que du temps
-  bonus (tranches de 30 minutes par appel, espacées de 5 s). La pause générale remet la limite
-  à 0 ; on **n'a pas vérifié sur la vraie console** si cela coupe un bonus déjà accordé.
+  bonus (tranches de 30 minutes par appel, espacées de 5 s) et garde la limite du jour à 0.
+  Une limite relevée (par exemple depuis la tablette) est remise à 0. La pause générale remet
+  aussi la limite à 0 ; on **n'a pas vérifié sur la vraie console** si cela coupe un bonus
+  déjà accordé. L'action `nintendo_parental_controls.add_bonus_time` appelée directement ne
+  peut pas être contrôlée par le moteur (il ne retire pas un bonus) : masquez-la et ne
+  laissez pas l'utilisateur de la tablette l'appeler.
+- **Statut de l'enfant.** Le capteur de statut suit la frise : il ne reflète pas les
+  exceptions manuelles (une ressource ouverte par exception n'y change rien).
+- **Minuteur après minuit.** Un minuteur qui franchit minuit est décompté entièrement sur le
+  jour où il a démarré.
+- **Pause et exceptions.** Pendant la pause, les exceptions « jusqu'au prochain changement de
+  règle » n'échoient pas.
 - **Redémarrage et exceptions.** Un service hors loisirs bloqué par une exception reste
   bloqué après un redémarrage de Home Assistant (échec du côté fermé), jusqu'à ce qu'un parent
   le débloque.
