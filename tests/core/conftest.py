@@ -73,3 +73,17 @@ def make_cfg() -> Callable[..., Config]:
 @pytest.fixture
 def cfg(make_cfg) -> Config:
     return make_cfg()
+
+
+def weekend_quota(d: dict) -> None:
+    """Fin de semaine : les trois enfants suivent le profil quota de Gabin (120 min,
+    `00:00 bloque → 08:00 quota → 20:00 bloque`), pour que la TV partagée ne soit
+    ouverte que par son propre quota."""
+    gabin_weekend = d["kids"][0]["profiles"]["fin_de_semaine"]
+    for kid in d["kids"]:
+        kid["profiles"]["fin_de_semaine"] = copy.deepcopy(gabin_weekend)
+
+
+@pytest.fixture
+def weekend_cfg(make_cfg) -> Config:
+    return make_cfg(weekend_quota)

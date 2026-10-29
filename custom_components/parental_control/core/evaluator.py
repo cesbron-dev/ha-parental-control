@@ -4,18 +4,26 @@ Déroulé de `evaluate` :
 1. état de chaque enfant d'après sa frise (`_kid_state`) ;
 2. accès de chaque couple (enfant, ressource) (`_access`), puis état « règle seule »
    de chaque ressource (`_rule_resource_state`) ;
-3. application des exceptions manuelles (`_apply_exceptions`) ;
+3. exceptions « jusqu'à la prochaine décision » échues : leur signature ne correspond
+   plus à l'état de la règle (`rule_signature`) ;
+4. application des exceptions manuelles restantes (`_apply_exceptions`) ;
 la pause l'emporte sur tout (`_paused_resource_state`).
+
+Segment QUOTA (`_quota_access`) : une ressource mesurable (TV) puise dans son propre
+budget ; les autres (AdGuard, Nintendo) ne s'ouvrent que pendant un minuteur de l'enfant,
+qui puise dans le budget de l'enfant.
+
+`upcoming_closures` réévalue aux instants candidats en projetant l'usage en cours.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
 
-from .decisions import Decisions, ManualException
+from .decisions import Decisions, ManualException, Target
 from .model import (
     Config,
     DayType,
@@ -64,6 +72,10 @@ class Snapshot:
     kids: dict[str, KidState]
     resources: dict[str, ResourceState]
     expired_exception_ids: frozenset[str]
+
+
+# Tolérance (minutes) : un reste inférieur est considéré comme épuisé.
+_EPS = 1e-6
 
 
 # --------------------------------------------------------------------------- frise
@@ -136,12 +148,64 @@ def _effective_type(seg_type: SegmentType, mode: ResourceMode) -> SegmentType:
     return SegmentType(mode.value)
 
 
-def _quota_status(kid: Kid, dec: Decisions, today: date) -> KidStatus:
-    """Segment QUOTA : fermé dans cette tâche, les quotas arrivent avec la tâche 5."""
-    return KidStatus.BLOQUE
+@dataclass(frozen=True)
+class _Meter:
+    """Comment se décompte un segment QUOTA pour une règle.
+
+    - `resource_id` renseigné : ressource mesurable (TV), budget de la ressource ;
+    - `resource_id=None` : minuteur de l'enfant, budget de l'enfant.
+    `budget` = quota + bonus du jour ; None = pas de quota (illimité).
+    """
+
+    resource_id: str | None = None
+    budget: float | None = None
+
+
+def _kid_budget(kid: Kid, day_type: DayType, dec: Decisions, today: date) -> float | None:
+    quota = kid.profile_for(day_type).quota_minutes
+    if quota is None:
+        return None
+    return quota + dec.bonus_minutes(today, kid_id=kid.id)
+
+
+def _kid_remaining(kid: Kid, budget: float | None, dec: Decisions, moment: datetime,
+                   today: date) -> float | None:
+    if budget is None:
+        return None
+    return budget - dec.kid_timer_minutes(kid.id, today, moment)
+
+
+def _resource_budget(resource: Resource, day_type: DayType, dec: Decisions,
+                     today: date) -> float | None:
+    quota = resource.quota_minutes.get(day_type)
+    if quota is None:
+        return None
+    return quota + dec.bonus_minutes(today, resource_id=resource.id)
+
+
+def _quota_access(moment: datetime, kid: Kid, dec: Decisions, meter: _Meter,
+                  today: date) -> tuple[KidStatus, datetime | None]:
+    """Statut dans un segment QUOTA, et borne d'ouverture propre au quota (None = aucune)."""
+    if meter.resource_id is not None:
+        if meter.budget is None:
+            return KidStatus.AUTORISE, None
+        remaining = meter.budget - dec.usage(meter.resource_id, today)
+        return (KidStatus.AUTORISE if remaining > _EPS else KidStatus.QUOTA_EPUISE), None
+
+    remaining = _kid_remaining(kid, meter.budget, dec, moment, today)
+    if remaining is not None and remaining <= _EPS:
+        return KidStatus.QUOTA_EPUISE, None
+    timer = dec.active_timer(kid.id, moment)
+    if timer is None:
+        return KidStatus.ATTENTE_MINUTEUR, None
+    cap = timer.end
+    if remaining is not None:
+        cap = min(cap, moment + timedelta(minutes=remaining))
+    return KidStatus.AUTORISE, cap
 
 
 def _segment_status(seg_type: SegmentType, kid: Kid, dec: Decisions, today: date) -> KidStatus:
+    """Statut d'un segment autre que QUOTA (traité par `_quota_access`)."""
     if seg_type is SegmentType.LIBRE:
         return KidStatus.AUTORISE
     if seg_type is SegmentType.APRES_DEVOIRS:
@@ -149,8 +213,6 @@ def _segment_status(seg_type: SegmentType, kid: Kid, dec: Decisions, today: date
                 else KidStatus.ATTENTE_DEVOIRS)
     if seg_type is SegmentType.SUR_DEMANDE:
         return KidStatus.SUR_DEMANDE
-    if seg_type is SegmentType.QUOTA:
-        return _quota_status(kid, dec, today)
     return KidStatus.BLOQUE
 
 
@@ -160,10 +222,13 @@ def _access(
     kid: Kid,
     slots: Sequence[_Slot],
     mode: ResourceMode = ResourceMode.SUIT_FRISE,
+    meter: _Meter = _Meter(),
 ) -> _Access:
     """Règle d'accès d'un couple (enfant, ressource), sans les exceptions.
 
     Avec `mode=SUIT_FRISE` (défaut), c'est le statut de l'enfant lui-même.
+    `until` = fin de la période d'ouverture continue (bornée à minuit) ; chaque segment
+    suivant est évalué à son propre début (minuteur et quota compris).
     """
     if dec.paused:
         return _Access(KidStatus.PAUSE, "Écrans en pause", None)
@@ -171,18 +236,32 @@ def _access(
     today = now.date()
     index = _current_index(slots, now)
 
-    def status_at(i: int) -> KidStatus:
-        return _segment_status(_effective_type(slots[i].type, mode), kid, dec, today)
+    def access_at(moment: datetime, i: int) -> tuple[KidStatus, datetime]:
+        seg_type = _effective_type(slots[i].type, mode)
+        cap = None
+        if seg_type is SegmentType.QUOTA:
+            status, cap = _quota_access(moment, kid, dec, meter, today)
+        else:
+            status = _segment_status(seg_type, kid, dec, today)
+        end = slots[i].end if cap is None else min(cap, slots[i].end)
+        return status, end
 
-    status = status_at(index)
+    status, until = access_at(now, index)
     if status is KidStatus.AUTORISE:
-        last = index
-        while last + 1 < len(slots) and status_at(last + 1) is KidStatus.AUTORISE:
-            last += 1
-        until = slots[last].end
+        i = index
+        while until == slots[i].end and i + 1 < len(slots):
+            nxt_status, nxt_until = access_at(slots[i + 1].start, i + 1)
+            if nxt_status is not KidStatus.AUTORISE:
+                break
+            i += 1
+            until = nxt_until
         return _Access(status, f"Écrans autorisés jusqu'à {_hhmm(until, today)}", until)
     if status is KidStatus.ATTENTE_DEVOIRS:
         return _Access(status, "Devoirs à terminer", slots[index].end)
+    if status is KidStatus.QUOTA_EPUISE:
+        return _Access(status, "Quota épuisé", None)
+    if status is KidStatus.ATTENTE_MINUTEUR:
+        return _Access(status, "En attente du minuteur", None)
     if status is KidStatus.SUR_DEMANDE:
         return _Access(status, "Sur demande", None)
     return _Access(status, "Bloqué", None)
@@ -190,8 +269,16 @@ def _access(
 
 def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
                slots: Sequence[_Slot]) -> KidState:
+    today = now.date()
     current = slots[_current_index(slots, now)]
-    access = _access(now, dec, kid, slots)
+    budget = _kid_budget(kid, day_type, dec, today)
+    access = _access(now, dec, kid, slots, meter=_Meter(budget=budget))
+    remaining = None
+    if current.type is SegmentType.QUOTA:
+        remaining = _kid_remaining(kid, budget, dec, now, today)
+        if remaining is not None:
+            remaining = max(remaining, 0.0)
+    timer = dec.active_timer(kid.id, now)
     return KidState(
         status=access.status,
         reason=access.reason,
@@ -199,8 +286,8 @@ def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
         segment=current.type,
         segment_end=current.end,
         until=access.until,
-        remaining_minutes=None,
-        timer_end=None,
+        remaining_minutes=remaining,
+        timer_end=timer.end if timer is not None else None,
     )
 
 
@@ -260,6 +347,10 @@ def _rule_resource_state(cfg: Config, resource: Resource, now: datetime,
     statuses = {accesses[k].status for k in resource.owners}
     if KidStatus.ATTENTE_DEVOIRS in statuses:
         reason = "Devoirs à terminer"
+    elif KidStatus.QUOTA_EPUISE in statuses:
+        reason = "Quota épuisé"
+    elif KidStatus.ATTENTE_MINUTEUR in statuses:
+        reason = "En attente du minuteur"
     elif statuses == {KidStatus.SUR_DEMANDE}:
         reason = "Sur demande"
     else:
@@ -270,9 +361,11 @@ def _rule_resource_state(cfg: Config, resource: Resource, now: datetime,
 # --------------------------------------------------------------------------- exceptions
 
 
-def _active_exceptions(now: datetime, dec: Decisions) -> list[ManualException]:
+def _active_exceptions(now: datetime, dec: Decisions,
+                       ignored: frozenset[str] = frozenset()) -> list[ManualException]:
     """Exceptions non échues, de la plus ancienne à la plus récente (la dernière gagne)."""
-    active = [e for e in dec.exceptions if e.until is None or e.until > now]
+    active = [e for e in dec.exceptions
+              if (e.until is None or e.until > now) and e.id not in ignored]
     return sorted(active, key=lambda e: e.created)
 
 
@@ -302,17 +395,20 @@ def _service_overrides(exceptions: Sequence[ManualException],
 
 
 def _apply_exceptions(
-    now: datetime, cfg: Config, dec: Decisions, states: Mapping[str, ResourceState]
+    now: datetime, cfg: Config, dec: Decisions, states: Mapping[str, ResourceState],
+    ignored: frozenset[str] = frozenset(),
 ) -> dict[str, ResourceState]:
     """Exceptions de ressource d'abord, puis exceptions de service (AdGuard)."""
-    exceptions = _active_exceptions(now, dec)
+    exceptions = _active_exceptions(now, dec, ignored)
     result = dict(states)
     for e in exceptions:
         if _is_resource_exception(e) and e.target.resource_id in result:
             resource = cfg.resource(e.target.resource_id)  # type: ignore[arg-type]
             reason = "Ouverte manuellement" if e.open else "Fermée manuellement"
-            result[resource.id] = _resource_state(cfg, resource, open_=e.open,
-                                                  reason=reason, until=e.until)
+            state = _resource_state(cfg, resource, open_=e.open, reason=reason, until=e.until)
+            result[resource.id] = replace(state,
+                                          used_minutes=result[resource.id].used_minutes,
+                                          remaining_minutes=result[resource.id].remaining_minutes)
     for resource in cfg.resources:
         overrides = _service_overrides(exceptions, resource)
         if not overrides:
@@ -333,6 +429,41 @@ def _apply_exceptions(
             blocked_services=frozenset(blocked),
         )
     return result
+
+
+def _signature_resources(target: Target, cfg: Config) -> list[Resource]:
+    if target.resource_id is not None:
+        return [cfg.resource(target.resource_id)]
+    if target.kid_id is not None:
+        return [r for r in cfg.resources if target.kid_id in r.owners]
+    return list(cfg.resources)
+
+
+def rule_signature(target: Target, snap: Snapshot, cfg: Config) -> tuple:
+    """État de la règle pour chaque couple (ressource, service) couvert par la cible.
+
+    `snap` doit être évalué sans exceptions. Ordre stable : celui de la config.
+    Éléments : `(resource_id, service, ouvert)` ; `service=None` pour la ressource entière.
+    """
+    items = []
+    for resource in _signature_resources(target, cfg):
+        state = snap.resources[resource.id]
+        if target.service is None:
+            items.append((resource.id, None, state.open))
+        elif resource.kind is ResourceKind.ADGUARD:
+            items.append((resource.id, target.service,
+                          target.service not in state.blocked_services))
+    return tuple(items)
+
+
+def _expired_exceptions(now: datetime, cfg: Config, dec: Decisions,
+                        rule: Snapshot) -> frozenset[str]:
+    """Exceptions « jusqu'à la prochaine décision » dont la règle a changé depuis."""
+    return frozenset(
+        e.id for e in _active_exceptions(now, dec)
+        if e.until is None and e.signature is not None
+        and e.signature != rule_signature(e.target, rule, cfg)
+    )
 
 
 def _paused_resource_state(now: datetime, cfg: Config, dec: Decisions, resource: Resource,
@@ -383,16 +514,101 @@ def evaluate(
     midnight = datetime.combine(today + timedelta(days=1), time(0), tzinfo=now.tzinfo)
     resources: dict[str, ResourceState] = {}
     for resource in cfg.resources:
-        def access_at(moment: datetime, resource: Resource = resource) -> dict[str, _Access]:
+        # Type de jour d'une ressource (pour son quota) : celui de son premier propriétaire.
+        budget = _resource_budget(
+            resource, _day_type_for(resource.owners[0], today, day_types), dec, today)
+        meters = {
+            kid_id: (_Meter(resource.id, budget)
+                     if resource.kind is ResourceKind.MEDIA_PLAYER
+                     else _Meter(budget=_kid_budget(cfg.kid(kid_id), kids[kid_id].day_type,
+                                                    dec, today)))
+            for kid_id in resource.owners
+        }
+
+        def access_at(moment: datetime, resource: Resource = resource,
+                      meters: Mapping[str, _Meter] = meters) -> dict[str, _Access]:
             result = {}
             for kid_id in resource.owners:
                 kid = cfg.kid(kid_id)
                 mode = kid.resource_modes.get(resource.id, ResourceMode.SUIT_FRISE)
-                result[kid_id] = _access(moment, dec, kid, timelines[kid_id], mode)
+                result[kid_id] = _access(moment, dec, kid, timelines[kid_id], mode,
+                                         meters[kid_id])
             return result
 
-        resources[resource.id] = _rule_resource_state(cfg, resource, now, access_at, midnight)
+        state = _rule_resource_state(cfg, resource, now, access_at, midnight)
+        if resource.kind is ResourceKind.MEDIA_PLAYER:
+            used = dec.usage(resource.id, today)
+            state = replace(state, used_minutes=used,
+                            remaining_minutes=None if budget is None
+                            else max(budget - used, 0.0))
+        resources[resource.id] = state
 
-    if apply_exceptions:
-        resources = _apply_exceptions(now, cfg, dec, resources)
-    return Snapshot(kids, resources, frozenset())
+    if not apply_exceptions:
+        return Snapshot(kids, resources, frozenset())
+    expired = _expired_exceptions(now, cfg, dec, Snapshot(kids, resources, frozenset()))
+    resources = _apply_exceptions(now, cfg, dec, resources, expired)
+    return Snapshot(kids, resources, expired)
+
+
+# --------------------------------------------------------------------------- fermetures à venir
+
+
+def _projected(dec: Decisions, now: datetime, moment: datetime,
+               in_use: Mapping[str, bool]) -> Decisions:
+    """Copie des décisions avec l'usage projeté à `moment` pour les ressources en usage."""
+    projected = replace(dec, resource_usage=dict(dec.resource_usage))
+    elapsed = (moment - now).total_seconds() / 60
+    for resource_id, using in in_use.items():
+        if using:
+            projected.add_usage(resource_id, now.date(), elapsed)
+    return projected
+
+
+def _closure_candidates(now: datetime, cfg: Config, dec: Decisions,
+                        day_types: Mapping[str, DayType], snap: Snapshot,
+                        in_use: Mapping[str, bool], midnight: datetime) -> list[datetime]:
+    today = now.date()
+    candidates = {midnight}
+    for kid in cfg.kids:
+        for slot in _timeline(kid, _day_type_for(kid.id, today, day_types), today, now.tzinfo):
+            candidates.add(slot.start)
+    candidates.update(t.end for t in dec.timers)
+    candidates.update(e.until for e in dec.exceptions if e.until is not None)
+    candidates.update(k.until for k in snap.kids.values() if k.until is not None)
+    candidates.update(r.until for r in snap.resources.values() if r.until is not None)
+    for resource_id, state in snap.resources.items():
+        if in_use.get(resource_id) and state.remaining_minutes is not None:
+            candidates.add(now + timedelta(minutes=state.remaining_minutes))
+    return sorted(c for c in candidates if now < c <= midnight)
+
+
+def upcoming_closures(
+    now: datetime,
+    cfg: Config,
+    dec: Decisions,
+    day_types: Mapping[str, DayType],
+    in_use: Mapping[str, bool],
+) -> dict[str, datetime]:
+    """Prochaine fermeture de chaque cible ouverte (`"kid:<id>"`, `"resource:<id>"`).
+
+    Réévalue à chaque instant candidat (bornés à minuit) en projetant l'usage des
+    ressources en usage ; une cible encore ouverte à minuit n'a pas de clé.
+    """
+    snap = evaluate(now, cfg, dec, day_types)
+    pending = {f"kid:{k}" for k, s in snap.kids.items() if s.status is KidStatus.AUTORISE}
+    pending |= {f"resource:{r}" for r, s in snap.resources.items() if s.open}
+    midnight = datetime.combine(now.date() + timedelta(days=1), time(0), tzinfo=now.tzinfo)
+
+    closures: dict[str, datetime] = {}
+    for moment in _closure_candidates(now, cfg, dec, day_types, snap, in_use, midnight):
+        if not pending:
+            break
+        later = evaluate(moment, cfg, _projected(dec, now, moment, in_use), day_types)
+        for key in list(pending):
+            kind, ident = key.split(":", 1)
+            is_open = (later.kids[ident].status is KidStatus.AUTORISE if kind == "kid"
+                       else later.resources[ident].open)
+            if not is_open:
+                closures[key] = moment
+                pending.discard(key)
+    return closures
