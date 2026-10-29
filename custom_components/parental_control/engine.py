@@ -351,21 +351,28 @@ class ParentalEngine:
         self._warned = {w for w in self._warned if w[1] > now}
         for key, closes_at in self._closures.items():
             kind, ident = key.split(":", 1)
+            service = None
+            if kind == "service":
+                ident, service = ident.split(":", 1)
             delta = closes_at - now
-            threshold = self._threshold(kind, ident, cfg, snap, now)
+            threshold = self._threshold("kid" if kind == "kid" else "resource", ident, cfg,
+                                        snap, now)
             if delta > timedelta(minutes=threshold) or self._already_warned(key, closes_at):
                 continue
             self._warned.add((key, closes_at))
             minutes = max(1, math.ceil(delta.total_seconds() / 60))
             if kind == "kid":
                 message = f"{cfg.kid(ident).name} : fin des écrans dans {minutes} min"
+            elif kind == "service":
+                message = (f"{service} sur {cfg.resource(ident).name} : "
+                           f"coupure dans {minutes} min")
             else:
                 message = f"{cfg.resource(ident).name} : coupure dans {minutes} min"
             self._hass.bus.async_fire(
                 EVENT_WARNING,
                 {"target": key, "closes_at": closes_at.isoformat(), "message": message},
             )
-            if kind == "kid":
+            if kind in ("kid", "service"):
                 self._notify(cfg, message)
             elif (adapter := self._adapters.get(ident)) is not None:
                 # Tâche à part : un appareil lent ne retarde pas l'évaluation.

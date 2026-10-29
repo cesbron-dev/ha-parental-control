@@ -612,6 +612,21 @@ def _closure_candidates(now: datetime, cfg: Config, dec: Decisions,
     return sorted(c for c in candidates if now < c <= midnight)
 
 
+def _service_keys(cfg: Config, dec: Decisions, snap: Snapshot) -> set[str]:
+    """`service:<ressource>:<service>` des services AdGuard débloqués maintenant
+    (loisirs et services visés par une exception)."""
+    keys = set()
+    for resource in cfg.resources:
+        if resource.kind is not ResourceKind.ADGUARD:
+            continue
+        services = set(cfg.leisure_for_resource(resource.id))
+        services |= {e.target.service for e in dec.exceptions  # type: ignore[misc]
+                     if _service_exception_applies(e, resource)}
+        blocked = snap.resources[resource.id].blocked_services
+        keys |= {f"service:{resource.id}:{s}" for s in services if s not in blocked}
+    return keys
+
+
 def upcoming_closures(
     now: datetime,
     cfg: Config,
@@ -619,14 +634,18 @@ def upcoming_closures(
     day_types: Mapping[str, DayType],
     in_use: Mapping[str, bool],
 ) -> dict[str, datetime]:
-    """Prochaine fermeture de chaque cible ouverte (`"kid:<id>"`, `"resource:<id>"`).
+    """Prochaine fermeture de chaque cible ouverte (`"kid:<id>"`, `"resource:<id>"`,
+    `"service:<ressource>:<service>"`).
 
     Réévalue à chaque instant candidat (bornés à minuit) en projetant l'usage des
     ressources en usage ; une cible encore ouverte à minuit n'a pas de clé.
+    Un service AdGuard débloqué qui se bloque a sa propre clé, sauf si sa ressource
+    entière ferme au même instant (`resource:<id>` couvre déjà ses services).
     """
     snap = evaluate(now, cfg, dec, day_types)
     pending = {f"kid:{k}" for k, s in snap.kids.items() if s.status is KidStatus.AUTORISE}
     pending |= {f"resource:{r}" for r, s in snap.resources.items() if s.open}
+    pending |= _service_keys(cfg, dec, snap)
     midnight = datetime.combine(now.date() + timedelta(days=1), time(0), tzinfo=now.tzinfo)
 
     closures: dict[str, datetime] = {}
@@ -634,11 +653,23 @@ def upcoming_closures(
         if not pending:
             break
         later = evaluate(moment, cfg, _projected(dec, now, moment, in_use), day_types)
-        for key in list(pending):
+        closing: list[str] = []
+        for key in sorted(pending):
             kind, ident = key.split(":", 1)
-            is_open = (later.kids[ident].status is KidStatus.AUTORISE if kind == "kid"
-                       else later.resources[ident].open)
+            if kind == "kid":
+                is_open = later.kids[ident].status is KidStatus.AUTORISE
+            elif kind == "resource":
+                is_open = later.resources[ident].open
+            else:
+                resource_id, service = ident.split(":", 1)
+                is_open = service not in later.resources[resource_id].blocked_services
             if not is_open:
-                closures[key] = moment
-                pending.discard(key)
+                closing.append(key)
+        for key in closing:
+            pending.discard(key)
+            if key.startswith("service:"):
+                resource_id = key.split(":", 2)[1]
+                if f"resource:{resource_id}" in closing:
+                    continue
+            closures[key] = moment
     return closures
