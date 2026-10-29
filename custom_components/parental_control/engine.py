@@ -134,8 +134,18 @@ class ParentalEngine:
         self._config, self._decisions = await self._store.load()
         if self._config is None:
             _LOGGER.info("Aucune configuration valide : le moteur reste inactif")
+        else:
+            self._prune_unknown(self._config)
         self._decisions.purge(dt_util.now())
         self._build()
+        try:
+            await self._start_listening()
+        except BaseException:
+            # Écoutes déjà enregistrées : on les annule pour ne rien laisser orphelin.
+            await self.async_stop()
+            raise
+
+    async def _start_listening(self) -> None:
         self._unsubs = [
             async_track_time_interval(
                 self._hass, self._on_tick, timedelta(seconds=TICK_SECONDS)
@@ -159,6 +169,16 @@ class ParentalEngine:
         self._cancel_state_listener()
         async with self._lock:
             await self._store.flush_state(self._decisions)
+
+    def _prune_unknown(self, cfg: Config) -> None:
+        """Retire les décisions visant un enfant ou une ressource absents de `cfg`."""
+        removed = self._decisions.prune_unknown(
+            {k.id for k in cfg.kids}, {r.id for r in cfg.resources}
+        )
+        if removed:
+            _LOGGER.info(
+                "%d décision(s) retirée(s) : enfant ou ressource absent de la config", removed
+            )
 
     def _cancel_state_listener(self) -> None:
         if self._state_unsub is not None:
@@ -524,6 +544,7 @@ class ParentalEngine:
         await self._store.save_config(cfg)
         async with self._lock:
             self._config = cfg
+            self._prune_unknown(cfg)
             self._build()
         await self._refresh_calendars()
         await self.async_evaluate("config")

@@ -102,6 +102,24 @@ class Decisions:
         self.timers = [t for t in self.timers if t.end.date() >= today]
         self.exceptions = [e for e in self.exceptions if e.until is None or e.until > now]
 
+    def prune_unknown(self, kid_ids: set[str], resource_ids: set[str]) -> int:
+        """Retire les décisions visant un enfant ou une ressource absents de la config ;
+        renvoie le nombre d'entrées retirées."""
+
+        def known(kid_id: str | None, resource_id: str | None) -> bool:
+            return ((kid_id is None or kid_id in kid_ids)
+                    and (resource_id is None or resource_id in resource_ids))
+
+        before = (len(self.homework_done) + len(self.bonuses) + len(self.timers)
+                  + len(self.exceptions))
+        self.homework_done = {k: d for k, d in self.homework_done.items() if k in kid_ids}
+        self.bonuses = [b for b in self.bonuses if known(b.kid_id, b.resource_id)]
+        self.timers = [t for t in self.timers if t.kid_id in kid_ids]
+        self.exceptions = [e for e in self.exceptions
+                           if known(e.target.kid_id, e.target.resource_id)]
+        return before - (len(self.homework_done) + len(self.bonuses) + len(self.timers)
+                         + len(self.exceptions))
+
     def to_dict(self) -> dict:
         return {
             "homework_done": {k: d.isoformat() for k, d in self.homework_done.items()},

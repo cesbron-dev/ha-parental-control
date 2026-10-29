@@ -595,3 +595,69 @@ async def test_set_config_rebuilds_adapters(hass, freezer, services, hass_storag
     assert hass_storage["parental_control.config"]["data"]["resources"][0]["entity_id"] == (
         "media_player.autre"
     )
+
+
+# --- revue finale --------------------------------------------------------------
+
+
+def _without_tv() -> dict:
+    return {**EX, "resources": [r for r in EX["resources"] if r["id"] != "tv"]}
+
+
+async def test_set_config_prunes_exception_of_removed_resource(
+    hass, freezer, services, caplog
+) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 30))
+    await engine.add_exception(Target(resource_id="tv"), False, None)
+    assert len(engine.decisions.exceptions) == 1
+    with caplog.at_level(logging.INFO):
+        await engine.set_config(parse_config(_without_tv()))
+    assert engine.decisions.exceptions == []
+    assert "tv" not in engine.snapshot.resources
+    await tick(hass, freezer)
+    assert engine.snapshot.resources["iphone_gabin"].open
+
+
+async def test_restart_prunes_stored_exception_of_removed_resource(
+    hass, freezer, services, hass_storage
+) -> None:
+    await ParentalStore(hass).save_config(parse_config(_without_tv()))
+    hass_storage["parental_control.state"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.state",
+        "data": {"exceptions": [{
+            "id": "e1", "target": {"resource_id": "tv", "kid_id": None, "service": None},
+            "open": False, "created": at(TUESDAY, 15, 0).isoformat(), "until": None,
+            "signature": [["tv", None, True]],
+        }], "timers": [{"kid_id": "parti", "start": at(TUESDAY, 15, 0).isoformat(),
+                        "end": at(TUESDAY, 15, 20).isoformat()}]},
+    }
+    freezer.move_to(at(TUESDAY, 15, 30))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    engine = entry.runtime_data
+    assert engine.decisions.exceptions == []
+    assert engine.decisions.timers == []
+    assert engine.snapshot is not None
+
+
+async def test_failed_start_cancels_listeners(hass, freezer, services, monkeypatch) -> None:
+    from custom_components.parental_control import engine as engine_mod
+
+    calls = []
+
+    def boom(*args, **kwargs):
+        calls.append(args)
+        raise RuntimeError("évaluation impossible")
+
+    monkeypatch.setattr(engine_mod, "evaluate", boom)
+    freezer.move_to(at(TUESDAY, 16, 30))
+    await ParentalStore(hass).save_config(parse_config(EX))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert len(calls) == 1
+    await tick(hass, freezer, 2)
+    assert len(calls) == 1  # plus aucune écoute active

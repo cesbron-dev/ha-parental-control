@@ -297,3 +297,45 @@ def test_upcoming_closure_kid_quota_runs_out_before_timer_end(weekend_cfg):
     closures = upcoming_closures(at(10), weekend_cfg, dec, WEEKEND, {})
     assert closures["kid:gabin"] == at(10, 10)
     assert closures["resource:iphone_gabin"] == at(10, 10)
+
+
+# --------------------------------------------------------------------------- revue finale
+
+
+def test_signature_tolerates_removed_resource(cfg, make_cfg):
+    """Exception « prochaine décision » sur une ressource retirée : échue, pas d'erreur."""
+    dec = Decisions(exceptions=[_tv_close_until_next_decision(cfg, tue(15, 40))])
+
+    def drop_tv(d):
+        d["resources"] = [r for r in d["resources"] if r["id"] != "tv"]
+
+    without_tv = make_cfg(drop_tv)
+    assert rule_signature(Target(resource_id="tv"),
+                          evaluate(tue(15, 45), without_tv, Decisions(), ECOLE,
+                                   apply_exceptions=False), without_tv) == ()
+    snap = evaluate(tue(15, 45), without_tv, dec, ECOLE)
+    assert snap.expired_exception_ids == frozenset({"e1"})
+    assert "tv" not in snap.resources
+
+
+def test_prune_unknown_removes_entries_of_removed_kids_and_resources():
+    dec = Decisions(
+        homework_done={"gabin": TUESDAY, "parti": TUESDAY},
+        bonuses=[Bonus(TUESDAY, 10, kid_id="gabin"), Bonus(TUESDAY, 10, kid_id="parti"),
+                 Bonus(TUESDAY, 10, resource_id="tv"), Bonus(TUESDAY, 10, resource_id="vieux")],
+        timers=[Timer("gabin", tue(10), tue(11)), Timer("parti", tue(10), tue(11))],
+        exceptions=[
+            ManualException("ok", Target(resource_id="tv"), True, tue(10), None, None),
+            ManualException("r", Target(resource_id="vieux"), True, tue(10), None, None),
+            ManualException("k", Target(kid_id="parti", service="youtube"), True, tue(10),
+                            None, None),
+            ManualException("g", Target(service="youtube"), True, tue(10), None, None),
+        ],
+    )
+    removed = dec.prune_unknown({"gabin"}, {"tv"})
+    assert removed == 6
+    assert dec.homework_done == {"gabin": TUESDAY}
+    assert dec.bonuses == [Bonus(TUESDAY, 10, kid_id="gabin"),
+                           Bonus(TUESDAY, 10, resource_id="tv")]
+    assert dec.timers == [Timer("gabin", tue(10), tue(11))]
+    assert [e.id for e in dec.exceptions] == ["ok", "g"]
