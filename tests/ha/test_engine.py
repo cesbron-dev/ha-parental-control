@@ -40,6 +40,9 @@ def at(day: date, hh: int, mm: int) -> datetime:
     return datetime.combine(day, time(hh, mm), tzinfo=TZ)
 
 
+SERVICES_KEY = "test_parental_services"
+
+
 def svc(service: str) -> str:
     return f"switch.adguard_iphone_gabin_svc_{service}"
 
@@ -52,6 +55,15 @@ class Services:
         self.calendar_events: list[dict] = []
         self.calendar_error: Exception | None = None
         self.calendar_calls: list[ServiceCall] = []
+        hass.data[SERVICES_KEY] = self
+        self.register(hass)
+
+    def register(self, hass: HomeAssistant, only: str | None = None) -> None:
+        """Enregistre les services simulés (ou ceux du seul domaine `only`).
+
+        `switch` est à refaire après la mise en route de l'intégration : la plateforme
+        `switch` (pause générale) enregistre les vrais `switch.turn_on/turn_off`.
+        """
 
         @callback
         def record(call: ServiceCall) -> None:
@@ -70,7 +82,10 @@ class Services:
             ("nintendo_parental_controls", "add_bonus_time"),
             ("notify", NOTIFY),
         ]:
-            hass.services.async_register(domain, service, record)
+            if only is None or domain == only:
+                hass.services.async_register(domain, service, record)
+        if only is not None:
+            return
 
         @callback
         def get_events(call: ServiceCall):
@@ -119,6 +134,8 @@ async def setup(hass: HomeAssistant, freezer, moment: datetime | None = None,
         entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
+    if (services := hass.data.get(SERVICES_KEY)) is not None:
+        services.register(hass, only="switch")
     return entry, entry.runtime_data
 
 

@@ -35,6 +35,43 @@
       "invalid_code": "The code must be 4 to 8 digits."
     }
   },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Status",
+        "state": {
+          "autorise": "Allowed",
+          "bloque": "Blocked",
+          "attente_devoirs": "Waiting for homework",
+          "attente_minuteur": "Waiting for a timer",
+          "quota_epuise": "Quota exhausted",
+          "sur_demande": "On request",
+          "pause": "Paused"
+        }
+      },
+      "used_time": {
+        "name": "Time used"
+      },
+      "remaining_time": {
+        "name": "Time remaining"
+      }
+    },
+    "binary_sensor": {
+      "allowed": {
+        "name": "Allowed"
+      }
+    },
+    "button": {
+      "homework_done": {
+        "name": "Homework done"
+      }
+    },
+    "switch": {
+      "pause": {
+        "name": "Global pause"
+      }
+    }
+  },
   "exceptions": {
     "code_required": {
       "message": "A parent code is required for this action."

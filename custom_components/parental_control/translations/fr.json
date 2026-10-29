@@ -35,6 +35,43 @@
       "invalid_code": "Le code doit comporter de 4 à 8 chiffres."
     }
   },
+  "entity": {
+    "sensor": {
+      "status": {
+        "name": "Statut",
+        "state": {
+          "autorise": "Autorisé",
+          "bloque": "Bloqué",
+          "attente_devoirs": "En attente des devoirs",
+          "attente_minuteur": "En attente d'un minuteur",
+          "quota_epuise": "Quota épuisé",
+          "sur_demande": "Sur demande",
+          "pause": "En pause"
+        }
+      },
+      "used_time": {
+        "name": "Temps utilisé"
+      },
+      "remaining_time": {
+        "name": "Temps restant"
+      }
+    },
+    "binary_sensor": {
+      "allowed": {
+        "name": "Autorisée"
+      }
+    },
+    "button": {
+      "homework_done": {
+        "name": "Devoirs terminés"
+      }
+    },
+    "switch": {
+      "pause": {
+        "name": "Pause générale"
+      }
+    }
+  },
   "exceptions": {
     "code_required": {
       "message": "Un code parent est requis pour cette action."
