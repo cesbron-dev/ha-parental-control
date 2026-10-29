@@ -60,10 +60,13 @@ async def test_config_get_set_round_trip(hass, entry, hass_ws_client) -> None:
     assert dump_config(entry.runtime_data.config) == again
 
 
-async def test_config_set_non_admin_rejected(hass, entry, hass_ws_client) -> None:
+async def test_config_get_and_set_non_admin_rejected(hass, entry, hass_ws_client) -> None:
     client = await _client(hass, hass_ws_client, admin=False)
+    # La config expose les appareils et les cibles de notification : admin seulement.
     await client.send_json_auto_id({"type": "parental_control/config/get"})
-    assert (await client.receive_json())["success"]
+    resp = await client.receive_json()
+    assert not resp["success"]
+    assert resp["error"]["code"] == "unauthorized"
     await client.send_json_auto_id(
         {"type": "parental_control/config/set", "config": dump_config(parse_config(EX))}
     )

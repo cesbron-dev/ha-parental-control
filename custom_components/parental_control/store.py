@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
@@ -15,12 +16,14 @@ from .core.model import Config
 _LOGGER = logging.getLogger(__name__)
 
 _SAVE_DELAY = 1
+INVALID_CONFIG_NOTIFICATION = f"{DOMAIN}_invalid_config"
 
 
 class ParentalStore:
     """Deux `Store` : `parental_control.config` et `parental_control.state`."""
 
     def __init__(self, hass: HomeAssistant) -> None:
+        self._hass = hass
         self._config_store: Store[dict] = Store(hass, STORE_VERSION, f"{DOMAIN}.config")
         self._state_store: Store[dict] = Store(hass, STORE_VERSION, f"{DOMAIN}.state")
 
@@ -36,6 +39,12 @@ class ParentalStore:
             except ConfigError as err:
                 # Les décisions restent valables : une config corrigée les retrouvera.
                 _LOGGER.error("Configuration enregistrée invalide, moteur inactif : %s", err)
+                persistent_notification.async_create(
+                    self._hass,
+                    "Contrôle parental : configuration invalide, moteur inactif",
+                    title="Contrôle parental",
+                    notification_id=INVALID_CONFIG_NOTIFICATION,
+                )
         return cfg, dec
 
     async def save_config(self, cfg: Config) -> None:

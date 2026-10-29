@@ -701,3 +701,138 @@ async def test_nintendo_limit_raised_from_tablet_is_reset(hass, freezer, service
     assert [c.data for c in services.of("number", "set_value")] == [
         {"entity_id": LIMIT, "value": 0}
     ]
+
+
+async def test_appearing_entity_is_reapplied_in_open_window(hass, freezer, services) -> None:
+    """Switch AdGuard chargé après le moteur, à ON pendant une fenêtre ouverte."""
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 30))
+    assert engine.snapshot.resources["iphone_gabin"].open
+    assert services.of("switch", "turn_off") == []
+    hass.states.async_set(svc("youtube"), "on")
+    await hass.async_block_till_done()
+    assert services.entities("switch", "turn_off") == [svc("youtube")]
+
+
+DST_DAY = date(2026, 11, 1)  # passage à l'heure normale à 02:00 (America/Toronto)
+
+
+def _quota_all_day() -> dict:
+    gabin = {**EX["kids"][0], "profiles": {
+        **EX["kids"][0]["profiles"],
+        "fin_de_semaine": {"quota_minutes": 120,
+                           "segments": [{"start": "00:00", "type": "quota"}]},
+    }}
+    return {**EX, "kids": [gabin]}
+
+
+async def test_timer_and_exception_ends_are_real_durations_across_dst(
+    hass, freezer, services
+) -> None:
+    utc = ZoneInfo("UTC")
+    start = at(DST_DAY, 1, 50)  # 05:50 UTC, encore à l'heure d'été
+    _, engine = await setup(hass, freezer, start)
+    await engine.set_config(parse_config(_quota_all_day()))
+    await engine.start_timer("gabin", 30)
+    await engine.add_exception(Target(resource_id="tv"), True, 30)
+    expected = datetime(2026, 11, 1, 6, 20, tzinfo=utc)  # 01:20 heure normale
+    timer = engine.decisions.timers[0]
+    assert timer.end.astimezone(utc) == expected
+    assert (timer.end.hour, timer.end.minute) == (1, 20)  # heure murale locale
+    assert engine.decisions.active_timer("gabin", start) is timer
+    exc = engine.decisions.exceptions[0]
+    assert exc.until.astimezone(utc) == expected
+    assert engine.snapshot.resources["tv"].open
+    await tick(hass, freezer, 29)  # 01:19 heure normale : toujours en cours
+    assert engine.decisions.exceptions == [exc]
+    await tick(hass, freezer, 2)  # 01:21 heure normale : échue
+    assert engine.decisions.exceptions == []
+
+
+async def test_loaded_datetimes_are_local(hass, freezer, services, hass_storage) -> None:
+    await ParentalStore(hass).save_config(parse_config(EX))
+    hass_storage["parental_control.state"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.state",
+        "data": {
+            "timers": [{"kid_id": "gabin", "start": "2026-10-27T19:00:00+00:00",
+                        "end": "2026-10-27T19:20:00+00:00"}],
+            "exceptions": [{
+                "id": "e1", "target": {"resource_id": "tv", "kid_id": None,
+                                       "service": None},
+                "open": True, "created": "2026-10-27T19:00:00+00:00",
+                "until": "2026-10-27T23:00:00+00:00", "signature": None,
+            }],
+        },
+    }
+    freezer.move_to(at(TUESDAY, 15, 30))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    dec = entry.runtime_data.decisions
+    timer, exc = dec.timers[0], dec.exceptions[0]
+    for moment in (timer.start, timer.end, exc.created, exc.until):
+        assert moment.utcoffset() == timedelta(hours=-4)  # heure locale (EDT)
+    assert timer.start == at(TUESDAY, 15, 0)
+    assert exc.until == at(TUESDAY, 19, 0)
+
+
+async def test_calendar_refreshed_when_ha_started(hass, freezer, services) -> None:
+    from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+    from homeassistant.core import CoreState
+
+    hass.set_state(CoreState.starting)
+    _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
+    assert len(services.calendar_calls) == 1
+    assert engine.snapshot.kids["gabin"].day_type is DayType.ECOLE
+    services.calendar_events = [
+        {"start": "2026-10-27", "end": "2026-10-28", "summary": "Congé pédagogique"},
+    ]
+    hass.set_state(CoreState.running)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
+    await hass.async_block_till_done()
+    assert len(services.calendar_calls) == 2
+    assert engine.snapshot.kids["gabin"].day_type is DayType.CONGE_PEDA
+
+
+async def test_no_extra_calendar_refresh_when_ha_already_running(
+    hass, freezer, services
+) -> None:
+    await setup(hass, freezer, at(TUESDAY, 10, 0))
+    assert len(services.calendar_calls) == 1
+
+
+async def test_notifications_coalesced_per_closing_instant(hass, freezer, services) -> None:
+    leo = {**EX["kids"][0], "id": "leo", "name": "Léo", "calendar": None}
+    raw = {**EX, "kids": [EX["kids"][0], leo]}
+    await ParentalStore(hass).save_config(parse_config(raw))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    await setup(hass, freezer, at(TUESDAY, 15, 54), entry=entry)
+    await tick(hass, freezer)  # 15:55 : Gabin et Léo s'arrêtent tous deux à 16:00
+    assert [c.data for c in services.of("notify", NOTIFY)] == [{
+        "title": "Contrôle parental",
+        "message": "Gabin : fin des écrans dans 5 min\nLéo : fin des écrans dans 5 min",
+    }]
+
+
+async def test_invalid_stored_config_creates_persistent_notification(
+    hass, freezer, services, hass_storage
+) -> None:
+    from homeassistant.components import persistent_notification
+
+    hass_storage["parental_control.config"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.config",
+        "data": {"version": 1, "kids": "pas une liste"},
+    }
+    freezer.move_to(at(TUESDAY, 16, 30))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    notes = persistent_notification._async_get_or_create_notifications(hass)
+    assert [n["message"] for n in notes.values()] == [
+        "Contrôle parental : configuration invalide, moteur inactif"
+    ]
+
+    await entry.runtime_data.set_config(parse_config(EX))  # config corrigée
+    assert persistent_notification._async_get_or_create_notifications(hass) == {}

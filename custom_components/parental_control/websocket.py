@@ -40,6 +40,7 @@ def _engine(
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/config/get"})
+@websocket_api.require_admin
 @callback
 def ws_config_get(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
