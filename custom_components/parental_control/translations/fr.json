@@ -62,6 +62,146 @@
     },
     "quota_exhausted": {
       "message": "Le quota du jour est épuisé."
+    },
+    "code_locked": {
+      "message": "Trop de codes parent erronés. Réessayez dans {seconds} s."
+    },
+    "invalid_config": {
+      "message": "Configuration invalide : {error}"
+    }
+  },
+  "services": {
+    "devoirs_termines": {
+      "name": "Devoirs terminés",
+      "description": "Marque les devoirs du jour comme terminés pour un enfant, ce qui débloque la période après les devoirs. Débloque : code parent exigé depuis un compte non administrateur.",
+      "fields": {
+        "kid_id": {
+          "name": "Enfant",
+          "description": "Identifiant de l'enfant dans la configuration."
+        },
+        "code": {
+          "name": "Code parent",
+          "description": "Exigé depuis un compte non administrateur."
+        }
+      }
+    },
+    "ajouter_bonus": {
+      "name": "Ajouter un bonus",
+      "description": "Ajoute des minutes de bonus pour aujourd'hui à un enfant ou à une ressource (exactement l'un des deux). Débloque : code parent exigé depuis un compte non administrateur.",
+      "fields": {
+        "minutes": {
+          "name": "Minutes",
+          "description": "Durée du bonus (1 à 240 minutes)."
+        },
+        "kid_id": {
+          "name": "Enfant",
+          "description": "Identifiant de l'enfant (ou indiquer une ressource)."
+        },
+        "resource_id": {
+          "name": "Ressource",
+          "description": "Identifiant de la ressource (ou indiquer un enfant)."
+        },
+        "code": {
+          "name": "Code parent",
+          "description": "Exigé depuis un compte non administrateur."
+        }
+      }
+    },
+    "exception": {
+      "name": "Exception manuelle",
+      "description": "Force l'ouverture ou la fermeture d'une ressource, d'un enfant ou d'un service. Renvoie l'identifiant de l'exception. Ouvrir exige le code parent depuis un compte non administrateur ; fermer, jamais.",
+      "fields": {
+        "open": {
+          "name": "Ouvrir",
+          "description": "Activé pour ouvrir, désactivé pour fermer."
+        },
+        "resource_id": {
+          "name": "Ressource",
+          "description": "Identifiant de la ressource."
+        },
+        "kid_id": {
+          "name": "Enfant",
+          "description": "Identifiant de l'enfant."
+        },
+        "service": {
+          "name": "Service",
+          "description": "Service AdGuard (par exemple youtube)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Durée (1 à 240 minutes). Vide : jusqu'au prochain changement prévu."
+        },
+        "code": {
+          "name": "Code parent",
+          "description": "Exigé depuis un compte non administrateur pour ouvrir."
+        }
+      }
+    },
+    "annuler_exception": {
+      "name": "Annuler une exception",
+      "description": "Retire une exception manuelle. Annuler une fermeture rouvre et exige le code parent depuis un compte non administrateur.",
+      "fields": {
+        "exception_id": {
+          "name": "Identifiant de l'exception",
+          "description": "Identifiant renvoyé par l'action exception."
+        },
+        "code": {
+          "name": "Code parent",
+          "description": "Exigé depuis un compte non administrateur pour annuler une fermeture."
+        }
+      }
+    },
+    "demarrer_minuteur": {
+      "name": "Démarrer un minuteur",
+      "description": "Démarre un minuteur de temps d'écran pour un enfant pendant une période de quota, plafonné au quota restant. Débloque : code parent exigé depuis un compte non administrateur.",
+      "fields": {
+        "kid_id": {
+          "name": "Enfant",
+          "description": "Identifiant de l'enfant dans la configuration."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Durée du minuteur (1 à 240 minutes)."
+        },
+        "code": {
+          "name": "Code parent",
+          "description": "Exigé depuis un compte non administrateur."
+        }
+      }
+    },
+    "arreter_minuteur": {
+      "name": "Arrêter le minuteur",
+      "description": "Arrête le minuteur en cours d'un enfant. Aucun code exigé.",
+      "fields": {
+        "kid_id": {
+          "name": "Enfant",
+          "description": "Identifiant de l'enfant dans la configuration."
+        }
+      }
+    },
+    "pause": {
+      "name": "Pause",
+      "description": "Pause générale : ferme immédiatement toutes les ressources. Lever la pause exige le code parent depuis un compte non administrateur.",
+      "fields": {
+        "active": {
+          "name": "Active",
+          "description": "Activé pour mettre en pause, désactivé pour reprendre."
+        },
+        "code": {
+          "name": "Code parent",
+          "description": "Exigé depuis un compte non administrateur pour reprendre."
+        }
+      }
+    },
+    "importer_configuration": {
+      "name": "Importer la configuration",
+      "description": "Remplace toute la configuration (enfants, ressources, horaires). Réservé aux administrateurs.",
+      "fields": {
+        "config": {
+          "name": "Configuration",
+          "description": "Objet de configuration (format JSON, version 1)."
+        }
+      }
     }
   }
 }
