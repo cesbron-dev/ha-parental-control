@@ -682,3 +682,22 @@ async def test_warning_before_service_exception_ends(hass, freezer, services) ->
     assert [c.data for c in services.of("notify", NOTIFY)] == [
         {"title": "Contrôle parental", "message": message}
     ]
+
+
+async def test_add_exception_rejects_nintendo(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    with pytest.raises(ServiceValidationError) as err:
+        await engine.add_exception(Target(resource_id="switch"), True, 30)
+    assert err.value.translation_key == "nintendo_use_bonus"
+    assert engine.decisions.exceptions == []
+
+
+async def test_nintendo_limit_raised_from_tablet_is_reset(hass, freezer, services) -> None:
+    set_nintendo(hass)
+    await setup(hass, freezer, at(SATURDAY, 10, 0))
+    assert services.of("number", "set_value") == []
+    hass.states.async_set(LIMIT, "120")  # number.set_value depuis la tablette
+    await hass.async_block_till_done()
+    assert [c.data for c in services.of("number", "set_value")] == [
+        {"entity_id": LIMIT, "value": 0}
+    ]

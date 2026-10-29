@@ -81,7 +81,9 @@ def test_resource_mode_unknown_resource_rejected():
 
 
 @pytest.mark.parametrize(
-    ("index", "key"), [(1, "client"), (0, "entity_id"), (2, "device_id")]
+    ("index", "key"),
+    [(1, "client"), (0, "entity_id"), (2, "device_id"), (2, "limit_entity"),
+     (2, "remaining_entity"), (2, "used_entity")],
 )
 def test_kind_options_required(index, key):
     d = ex()

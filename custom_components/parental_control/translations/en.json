@@ -105,6 +105,9 @@
     },
     "invalid_config": {
       "message": "Invalid configuration: {error}"
+    },
+    "nintendo_use_bonus": {
+      "message": "For the Switch, use add_bonus (ajouter_bonus)."
     }
   },
   "services": {
