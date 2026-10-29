@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Parental control",
+        "description": "Choose the parent code required to unlock from a non-admin account (wall tablet).",
+        "data": {
+          "code": "Parent code"
+        },
+        "data_description": {
+          "code": "4 to 8 digits."
+        }
+      }
+    },
+    "error": {
+      "invalid_code": "The code must be 4 to 8 digits."
+    },
+    "abort": {
+      "already_configured": "Parental control is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Change the parent code",
+        "data": {
+          "code": "New parent code"
+        },
+        "data_description": {
+          "code": "4 to 8 digits."
+        }
+      }
+    },
+    "error": {
+      "invalid_code": "The code must be 4 to 8 digits."
+    }
+  },
+  "exceptions": {
+    "code_required": {
+      "message": "A parent code is required for this action."
+    },
+    "code_invalid": {
+      "message": "Invalid parent code."
+    }
+  }
+}

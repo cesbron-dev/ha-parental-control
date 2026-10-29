@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Contrôle parental",
+        "description": "Choisissez le code parent exigé pour débloquer depuis un compte non administrateur (tablette murale).",
+        "data": {
+          "code": "Code parent"
+        },
+        "data_description": {
+          "code": "4 à 8 chiffres."
+        }
+      }
+    },
+    "error": {
+      "invalid_code": "Le code doit comporter de 4 à 8 chiffres."
+    },
+    "abort": {
+      "already_configured": "Le contrôle parental est déjà configuré."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Changer le code parent",
+        "data": {
+          "code": "Nouveau code parent"
+        },
+        "data_description": {
+          "code": "4 à 8 chiffres."
+        }
+      }
+    },
+    "error": {
+      "invalid_code": "Le code doit comporter de 4 à 8 chiffres."
+    }
+  },
+  "exceptions": {
+    "code_required": {
+      "message": "Un code parent est requis pour cette action."
+    },
+    "code_invalid": {
+      "message": "Code parent invalide."
+    }
+  }
+}
