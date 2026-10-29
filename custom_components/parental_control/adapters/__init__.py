@@ -8,6 +8,7 @@ from ..core.model import Resource, ResourceKind
 from .adguard import AdGuardAdapter
 from .base import Adapter
 from .media_player import MediaPlayerAdapter
+from .nintendo import NintendoAdapter
 
 __all__ = ["Adapter", "build_adapter"]
 
@@ -20,4 +21,6 @@ def build_adapter(
         return MediaPlayerAdapter(hass, resource)
     if resource.kind is ResourceKind.ADGUARD:
         return AdGuardAdapter(hass, resource, leisure)
+    if resource.kind is ResourceKind.NINTENDO:
+        return NintendoAdapter(hass, resource)
     raise NotImplementedError(f"Type de ressource non pris en charge : {resource.kind}")

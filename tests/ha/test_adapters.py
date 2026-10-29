@@ -317,3 +317,139 @@ async def test_media_player_missing_entity_warns_once(
     warnings = [r for r in caplog.records if TV_ENTITY in r.getMessage()]
     assert len(warnings) == 1
     assert warnings[0].levelno == logging.WARNING
+
+
+# --- Nintendo ---------------------------------------------------------------
+
+from unittest.mock import AsyncMock, patch  # noqa: E402
+
+from custom_components.parental_control.adapters.nintendo import (  # noqa: E402
+    NintendoAdapter,
+)
+
+LIMIT = "number.switch_limit"
+REMAINING = "sensor.switch_remaining"
+USED = "sensor.switch_used"
+
+
+def switch_resource() -> Resource:
+    return Resource(
+        id="switch",
+        name="Switch",
+        kind=ResourceKind.NINTENDO,
+        owners=("gabin",),
+        options={
+            "device_id": "dev123",
+            "limit_entity": LIMIT,
+            "remaining_entity": REMAINING,
+            "used_entity": USED,
+        },
+    )
+
+
+def nintendo(hass: HomeAssistant, delay: float = 0) -> NintendoAdapter:
+    adapter = build_adapter(hass, switch_resource(), LEISURE)
+    assert isinstance(adapter, NintendoAdapter)
+    adapter._slice_delay = delay
+    return adapter
+
+
+async def test_nintendo_entity_ids(hass: HomeAssistant) -> None:
+    assert nintendo(hass).entity_ids() == [LIMIT, REMAINING, USED]
+
+
+async def test_nintendo_grant_slices_30_min(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
+    await nintendo(hass).grant(45)
+    assert [c.data for c in calls] == [
+        {"device_id": "dev123", "bonus_time": 30},
+        {"device_id": "dev123", "bonus_time": 15},
+    ]
+
+
+async def test_nintendo_grant_waits_between_slices(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
+    adapter = build_adapter(hass, switch_resource(), LEISURE)
+    with patch(
+        "custom_components.parental_control.adapters.nintendo.asyncio.sleep",
+        new=AsyncMock(),
+    ) as sleep:
+        await adapter.grant(75)
+    assert [c.args[0] for c in sleep.await_args_list] == [5, 5]
+
+
+async def test_nintendo_grant_single_slice_no_wait(hass: HomeAssistant) -> None:
+    async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
+    with patch(
+        "custom_components.parental_control.adapters.nintendo.asyncio.sleep",
+        new=AsyncMock(),
+    ) as sleep:
+        await build_adapter(hass, switch_resource(), LEISURE).grant(20)
+    sleep.assert_not_awaited()
+
+
+async def test_nintendo_retries_once_on_error(hass: HomeAssistant) -> None:
+    attempts: list[int] = []
+
+    async def flaky(call: ServiceCall) -> None:
+        attempts.append(call.data["bonus_time"])
+        if len(attempts) == 1:
+            raise HomeAssistantError("boom")
+
+    hass.services.async_register(
+        "nintendo_parental_controls", "add_bonus_time", flaky
+    )
+    await nintendo(hass).grant(30)
+    assert attempts == [30, 30]
+
+
+async def test_nintendo_error_after_retry_propagates(hass: HomeAssistant) -> None:
+    attempts: list[int] = []
+
+    async def failing(call: ServiceCall) -> None:
+        attempts.append(call.data["bonus_time"])
+        raise HomeAssistantError("boom")
+
+    hass.services.async_register(
+        "nintendo_parental_controls", "add_bonus_time", failing
+    )
+    with pytest.raises(HomeAssistantError):
+        await nintendo(hass).grant(45)
+    assert attempts == [30, 30]
+
+
+async def test_nintendo_apply_never_touches_limit(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "number", "set_value")
+    bonus = async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
+    adapter = nintendo(hass)
+    await adapter.apply(CLOSED)
+    await adapter.apply(OPEN)
+    await adapter.warn("msg")
+    assert not calls and not bonus
+    assert adapter.drifted(CLOSED) is False
+    assert adapter.in_use() is False
+
+
+async def test_nintendo_force_close_sets_limit_zero(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "number", "set_value")
+    await nintendo(hass).force_close()
+    assert [c.data for c in calls] == [{"entity_id": LIMIT, "value": 0}]
+
+
+async def test_nintendo_minutes(hass: HomeAssistant, caplog) -> None:
+    adapter = nintendo(hass)
+    hass.states.async_set(USED, "12.5")
+    hass.states.async_set(REMAINING, "unavailable")
+    assert adapter.used_minutes() == 12.5
+    assert adapter.remaining_minutes() is None
+    hass.states.async_set(REMAINING, "abc")
+    assert adapter.remaining_minutes() is None
+    hass.states.async_set(REMAINING, "unknown")
+    assert adapter.remaining_minutes() is None
+    hass.states.async_set(REMAINING, "7")
+    assert adapter.remaining_minutes() == 7.0
+    hass.states.async_remove(USED)
+    with caplog.at_level(logging.WARNING):
+        assert adapter.used_minutes() is None
+        assert adapter.used_minutes() is None
+    assert caplog.text.count(USED) == 1
