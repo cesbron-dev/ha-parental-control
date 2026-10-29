@@ -175,9 +175,21 @@ def _kid_remaining(kid: Kid, budget: float | None, dec: Decisions, moment: datet
     return budget - dec.kid_timer_minutes(kid.id, today, moment)
 
 
+_WEEKEND_FALLBACK = (DayType.CONGE_PEDA, DayType.VACANCES)
+
+
+def _resource_quota(resource: Resource, day_type: DayType) -> int | None:
+    """Quota de la ressource ; congé pédagogique et vacances se replient sur la fin de
+    semaine (comme `Kid.profile_for`)."""
+    quota = resource.quota_minutes.get(day_type)
+    if quota is None and day_type in _WEEKEND_FALLBACK:
+        quota = resource.quota_minutes.get(DayType.FIN_DE_SEMAINE)
+    return quota
+
+
 def _resource_budget(resource: Resource, day_type: DayType, dec: Decisions,
                      today: date) -> float | None:
-    quota = resource.quota_minutes.get(day_type)
+    quota = _resource_quota(resource, day_type)
     if quota is None:
         return None
     return quota + dec.bonus_minutes(today, resource_id=resource.id)
@@ -484,6 +496,14 @@ def _paused_resource_state(now: datetime, cfg: Config, dec: Decisions, resource:
     )
 
 
+def _in_quota_segment(now: datetime, kid: Kid, resource: Resource,
+                      slots: Sequence[_Slot]) -> bool:
+    """Le propriétaire est-il dans un segment QUOTA pour cette ressource (mode compris) ?"""
+    mode = kid.resource_modes.get(resource.id, ResourceMode.SUIT_FRISE)
+    seg_type = _effective_type(slots[_current_index(slots, now)].type, mode)
+    return seg_type is SegmentType.QUOTA
+
+
 # --------------------------------------------------------------------------- point d'entrée
 
 
@@ -514,11 +534,10 @@ def evaluate(
     midnight = datetime.combine(today + timedelta(days=1), time(0), tzinfo=now.tzinfo)
     resources: dict[str, ResourceState] = {}
     for resource in cfg.resources:
-        # Type de jour d'une ressource (pour son quota) : celui de son premier propriétaire.
-        budget = _resource_budget(
-            resource, _day_type_for(resource.owners[0], today, day_types), dec, today)
+        # Budget par propriétaire (son type de jour) ; l'usage reste un compteur commun.
         meters = {
-            kid_id: (_Meter(resource.id, budget)
+            kid_id: (_Meter(resource.id, _resource_budget(resource, kids[kid_id].day_type,
+                                                          dec, today))
                      if resource.kind is ResourceKind.MEDIA_PLAYER
                      else _Meter(budget=_kid_budget(cfg.kid(kid_id), kids[kid_id].day_type,
                                                     dec, today)))
@@ -538,9 +557,12 @@ def evaluate(
         state = _rule_resource_state(cfg, resource, now, access_at, midnight)
         if resource.kind is ResourceKind.MEDIA_PLAYER:
             used = dec.usage(resource.id, today)
+            budgets = [meters[k].budget for k in resource.owners
+                       if meters[k].budget is not None
+                       and _in_quota_segment(now, cfg.kid(k), resource, timelines[k])]
             state = replace(state, used_minutes=used,
-                            remaining_minutes=None if budget is None
-                            else max(budget - used, 0.0))
+                            remaining_minutes=max(max(budgets) - used, 0.0) if budgets
+                            else None)
         resources[resource.id] = state
 
     if not apply_exceptions:

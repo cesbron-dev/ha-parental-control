@@ -247,3 +247,53 @@ def test_upcoming_closure_midnight_only_if_closed_then(make_cfg):
     cfg = make_cfg(lambda d: d["kids"][0].update(resource_modes={"iphone_gabin": "libre"}))
     closures = upcoming_closures(tue(20), cfg, Decisions(), ECOLE, {})
     assert "resource:iphone_gabin" not in closures  # toujours ouvert à minuit
+
+
+# --------------------------------------------------------------------------- correctifs (revue)
+
+
+def test_tv_quota_falls_back_to_weekend_on_vacances(weekend_cfg):
+    vacances = {k: DayType.VACANCES for k in WEEKEND}
+    tv = evaluate(at(10), weekend_cfg, with_usage(500), vacances).resources["tv"]
+    assert tv.open is False
+    assert tv.reason == "Quota épuisé"
+    tv = evaluate(at(10), weekend_cfg, with_usage(170), vacances).resources["tv"]
+    assert tv.open is True
+    assert tv.remaining_minutes == 10
+
+
+def test_tv_quota_uses_each_owner_day_type(weekend_cfg):
+    mixed = {"gabin": DayType.ECOLE, "leo": DayType.FIN_DE_SEMAINE,
+             "mael": DayType.FIN_DE_SEMAINE}
+    tv = evaluate(at(10), weekend_cfg, with_usage(500), mixed).resources["tv"]
+    assert tv.open is False
+    tv = evaluate(at(10), weekend_cfg, with_usage(170), mixed).resources["tv"]
+    assert tv.open is True
+    assert tv.remaining_minutes == 10
+
+
+def test_tv_remaining_none_when_no_owner_in_quota_segment(weekend_cfg):
+    tv = evaluate(at(21), weekend_cfg, with_usage(170), WEEKEND).resources["tv"]
+    assert tv.remaining_minutes is None
+    assert tv.used_minutes == 170
+
+
+def test_upcoming_closure_at_midnight_when_closed_then(make_cfg):
+    def modify(d):
+        d["kids"][2]["profiles"]["ecole"]["segments"] = [
+            {"start": "00:00", "type": "bloque"},
+            {"start": "19:00", "type": "libre"},
+        ]
+
+    closures = upcoming_closures(tue(20), make_cfg(modify), Decisions(), ECOLE, {})
+    midnight = tue(0) + timedelta(days=1)
+    assert closures["kid:mael"] == midnight
+    assert closures["resource:tv"] == midnight
+
+
+def test_upcoming_closure_kid_quota_runs_out_before_timer_end(weekend_cfg):
+    dec = Decisions(timers=[Timer("gabin", at(8), at(9, 50)),     # 110 min consommées
+                            Timer("gabin", at(10), at(10, 30))])
+    closures = upcoming_closures(at(10), weekend_cfg, dec, WEEKEND, {})
+    assert closures["kid:gabin"] == at(10, 10)
+    assert closures["resource:iphone_gabin"] == at(10, 10)
