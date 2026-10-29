@@ -19,7 +19,9 @@ _UNUSABLE = frozenset({"unavailable", "unknown"})
 
 
 class NintendoAdapter:
-    """Le moteur ne coupe jamais une partie : seule la pause remet la limite à 0."""
+    """Le moteur ne coupe jamais une partie : la limite du jour reste à 0 et le temps
+    s'accorde par bonus. Une limite relevée (ex. `number.set_value` depuis la tablette)
+    est une dérive : elle est remise à 0, comme par la pause."""
 
     def __init__(self, hass: HomeAssistant, resource: Resource) -> None:
         self.hass = hass
@@ -38,10 +40,13 @@ class NintendoAdapter:
         return False
 
     def drifted(self, desired: ResourceState) -> bool:
-        return False
+        limit = self._minutes(self._limit_entity)
+        return limit is not None and limit > 0
 
     async def apply(self, desired: ResourceState) -> None:
-        return
+        # Seulement en cas de dérive : un bonus accordé ne touche pas la limite.
+        if self.drifted(desired):
+            await self._set_limit_zero()
 
     async def warn(self, message: str) -> None:
         return
@@ -98,6 +103,9 @@ class NintendoAdapter:
             remaining -= amount
 
     async def force_close(self) -> None:
+        await self._set_limit_zero()
+
+    async def _set_limit_zero(self) -> None:
         await self.hass.services.async_call(
             "number",
             "set_value",

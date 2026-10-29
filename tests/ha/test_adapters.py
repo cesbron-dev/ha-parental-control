@@ -418,16 +418,34 @@ async def test_nintendo_error_after_retry_propagates(hass: HomeAssistant) -> Non
     assert attempts == [30, 30]
 
 
-async def test_nintendo_apply_never_touches_limit(hass: HomeAssistant) -> None:
+async def test_nintendo_apply_leaves_zero_limit_alone(hass: HomeAssistant) -> None:
     calls = async_mock_service(hass, "number", "set_value")
     bonus = async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
     adapter = nintendo(hass)
-    await adapter.apply(CLOSED)
-    await adapter.apply(OPEN)
+    assert adapter.drifted(CLOSED) is False  # entité absente
+    hass.states.async_set(LIMIT, "0")
+    for state in (CLOSED, OPEN):
+        assert adapter.drifted(state) is False
+        await adapter.apply(state)
     await adapter.warn("msg")
     assert not calls and not bonus
-    assert adapter.drifted(CLOSED) is False
     assert adapter.in_use() is False
+
+
+@pytest.mark.parametrize("value", ["unavailable", "unknown", "abc"])
+async def test_nintendo_unreadable_limit_is_not_drift(hass: HomeAssistant, value) -> None:
+    hass.states.async_set(LIMIT, value)
+    assert nintendo(hass).drifted(OPEN) is False
+
+
+async def test_nintendo_raised_limit_is_drift_and_reset(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "number", "set_value")
+    adapter = nintendo(hass)
+    hass.states.async_set(LIMIT, "60")
+    assert adapter.drifted(OPEN) is True
+    assert adapter.drifted(CLOSED) is True
+    await adapter.apply(OPEN)
+    assert [c.data for c in calls] == [{"entity_id": LIMIT, "value": 0}]
 
 
 async def test_nintendo_force_close_sets_limit_zero(hass: HomeAssistant) -> None:
