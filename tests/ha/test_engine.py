@@ -661,3 +661,24 @@ async def test_failed_start_cancels_listeners(hass, freezer, services, monkeypat
     assert len(calls) == 1
     await tick(hass, freezer, 2)
     assert len(calls) == 1  # plus aucune écoute active
+
+
+async def test_warning_before_service_exception_ends(hass, freezer, services) -> None:
+    set_switches(hass, "on")
+    events = async_capture_events(hass, EVENT_WARNING)
+    _, engine = await setup(hass, freezer, at(TUESDAY, 19, 30))
+    await engine.add_exception(
+        Target(resource_id="iphone_gabin", service="youtube"), True, 30
+    )
+    key = "service:iphone_gabin:youtube"
+    assert engine.closures[key] == at(TUESDAY, 20, 0)
+    await tick(hass, freezer, 24)  # 19:54
+    assert [e for e in events if e.data["target"] == key] == []
+    await tick(hass, freezer)  # 19:55
+    warned = [e.data for e in events if e.data["target"] == key]
+    message = "youtube sur iPhone Gabin : coupure dans 5 min"
+    assert warned == [{"target": key, "closes_at": at(TUESDAY, 20, 0).isoformat(),
+                       "message": message}]
+    assert [c.data for c in services.of("notify", NOTIFY)] == [
+        {"title": "Contrôle parental", "message": message}
+    ]

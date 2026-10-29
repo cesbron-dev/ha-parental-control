@@ -339,3 +339,19 @@ def test_prune_unknown_removes_entries_of_removed_kids_and_resources():
                            Bonus(TUESDAY, 10, resource_id="tv")]
     assert dec.timers == [Timer("gabin", tue(10), tue(11))]
     assert [e.id for e in dec.exceptions] == ["ok", "g"]
+
+
+def test_upcoming_closure_service_opened_by_exception(cfg):
+    e = ManualException(id="e1", target=Target(resource_id="iphone_gabin", service="youtube"),
+                        open=True, created=tue(19, 30), until=tue(20), signature=None)
+    closures = upcoming_closures(tue(19, 30), cfg, Decisions(exceptions=[e]), ECOLE, {})
+    assert closures["service:iphone_gabin:youtube"] == tue(20)
+    assert "resource:iphone_gabin" not in closures  # la ressource reste fermée
+    assert not any(k.startswith("service:iphone_leo:") for k in closures)
+
+
+def test_upcoming_closure_service_keys_absent_when_resource_closes(cfg):
+    """La fermeture de la ressource entière couvre déjà ses services de loisirs."""
+    closures = upcoming_closures(tue(15, 40), cfg, Decisions(), ECOLE, {})
+    assert closures["resource:iphone_gabin"] == tue(16)
+    assert not any(k.startswith("service:") for k in closures)
