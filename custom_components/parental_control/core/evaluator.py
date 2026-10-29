@@ -444,8 +444,9 @@ def _apply_exceptions(
 
 
 def _signature_resources(target: Target, cfg: Config) -> list[Resource]:
+    """Ressources couvertes par la cible ; une ressource absente de la config est ignorée."""
     if target.resource_id is not None:
-        return [cfg.resource(target.resource_id)]
+        return [r for r in cfg.resources if r.id == target.resource_id]
     if target.kid_id is not None:
         return [r for r in cfg.resources if target.kid_id in r.owners]
     return list(cfg.resources)
@@ -470,12 +471,19 @@ def rule_signature(target: Target, snap: Snapshot, cfg: Config) -> tuple:
 
 def _expired_exceptions(now: datetime, cfg: Config, dec: Decisions,
                         rule: Snapshot) -> frozenset[str]:
-    """Exceptions « jusqu'à la prochaine décision » dont la règle a changé depuis."""
-    return frozenset(
-        e.id for e in _active_exceptions(now, dec)
-        if e.until is None and e.signature is not None
-        and e.signature != rule_signature(e.target, rule, cfg)
-    )
+    """Exceptions « jusqu'à la prochaine décision » dont la règle a changé depuis.
+
+    Une signature qui ne couvre plus aucune ressource (ressource ou enfant retirés de la
+    config) vaut échéance.
+    """
+    expired = set()
+    for e in _active_exceptions(now, dec):
+        if e.until is not None or e.signature is None:
+            continue
+        current = rule_signature(e.target, rule, cfg)
+        if not current or current != e.signature:
+            expired.add(e.id)
+    return frozenset(expired)
 
 
 def _paused_resource_state(now: datetime, cfg: Config, dec: Decisions, resource: Resource,
