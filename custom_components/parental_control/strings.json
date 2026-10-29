@@ -41,6 +41,27 @@
     },
     "code_invalid": {
       "message": "Invalid parent code."
+    },
+    "not_configured": {
+      "message": "Parental control has no configuration yet."
+    },
+    "unknown_kid": {
+      "message": "Unknown child: {kid_id}."
+    },
+    "unknown_resource": {
+      "message": "Unknown resource: {resource_id}."
+    },
+    "invalid_target": {
+      "message": "This target is not valid for this action."
+    },
+    "timer_active": {
+      "message": "A timer is already running for this child."
+    },
+    "not_in_quota": {
+      "message": "Timers can only be started during a quota period."
+    },
+    "quota_exhausted": {
+      "message": "The daily quota is exhausted."
     }
   }
 }

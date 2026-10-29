@@ -41,6 +41,27 @@
     },
     "code_invalid": {
       "message": "Code parent invalide."
+    },
+    "not_configured": {
+      "message": "Le contrôle parental n'est pas encore configuré."
+    },
+    "unknown_kid": {
+      "message": "Enfant inconnu : {kid_id}."
+    },
+    "unknown_resource": {
+      "message": "Ressource inconnue : {resource_id}."
+    },
+    "invalid_target": {
+      "message": "Cette cible n'est pas valide pour cette action."
+    },
+    "timer_active": {
+      "message": "Un minuteur est déjà en cours pour cet enfant."
+    },
+    "not_in_quota": {
+      "message": "Un minuteur ne peut démarrer que pendant une période de quota."
+    },
+    "quota_exhausted": {
+      "message": "Le quota du jour est épuisé."
     }
   }
 }

@@ -34,3 +34,7 @@ class ParentalStore:
     async def save_state(self, dec: Decisions) -> None:
         """Écriture différée d'1 s : les rafales de changements sont regroupées."""
         self._state_store.async_delay_save(dec.to_dict, _SAVE_DELAY)
+
+    async def flush_state(self, dec: Decisions) -> None:
+        """Écriture immédiate (déchargement) ; annule une écriture différée en attente."""
+        await self._state_store.async_save(dec.to_dict())
