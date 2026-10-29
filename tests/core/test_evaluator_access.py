@@ -232,3 +232,27 @@ def test_dst_end_day_uses_wall_clock(make_cfg):
     assert g.segment_end == datetime(2026, 11, 1, 20, 0, tzinfo=TZ)
     assert g.segment_end.utcoffset() == timedelta(hours=-5)
     assert g.until == datetime(2026, 11, 1, 20, 0, tzinfo=TZ)
+
+
+def test_shared_until_spans_owner_handoff(make_cfg):
+    def modify(d):
+        d["kids"][2]["profiles"]["ecole"]["segments"][1]["start"] = "16:00"
+
+    cfg = make_cfg(modify)
+    dec = Decisions(homework_done={"mael": TUESDAY})
+    snap = evaluate(at(15, 40), cfg, dec, ECOLE)
+    # Gabin/Léo libres jusqu'à 16:00, Maël (devoirs faits) prend le relais jusqu'à 19:00.
+    assert snap.resources["tv"].open is True
+    assert snap.resources["tv"].until == at(19, 0)
+    assert snap.resources["switch"].until == at(19, 0)
+    assert snap.resources["iphone_gabin"].until == at(16, 0)
+    assert evaluate(at(16, 0), cfg, dec, ECOLE).resources["tv"].until == at(19, 0)
+
+
+def test_shared_until_stops_at_gap(make_cfg):
+    def modify(d):
+        d["kids"][2]["profiles"]["ecole"]["segments"][1]["start"] = "16:30"
+
+    cfg = make_cfg(modify)
+    dec = Decisions(homework_done={"mael": TUESDAY})
+    assert evaluate(at(15, 40), cfg, dec, ECOLE).resources["tv"].until == at(16, 0)
