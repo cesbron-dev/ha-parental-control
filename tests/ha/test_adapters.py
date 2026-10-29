@@ -3,7 +3,8 @@
 import logging
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import async_mock_service
 
 from custom_components.parental_control.adapters import build_adapter
@@ -238,3 +239,81 @@ async def test_adguard_warn_does_nothing(hass: HomeAssistant) -> None:
     on_calls = async_mock_service(hass, "switch", "turn_on")
     await build_adapter(hass, adguard_resource(), LEISURE).warn("x")
     assert on_calls == []
+
+
+async def test_adguard_lifts_non_leisure_block_after_exception_expires(
+    hass: HomeAssistant,
+) -> None:
+    """Un service hors loisirs bloqué par exception est débloqué quand elle échoit."""
+    hass.states.async_set(svc("tiktok"), "off")
+    on_calls = async_mock_service(hass, "switch", "turn_on")
+    off_calls = async_mock_service(hass, "switch", "turn_off")
+    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+    for service in LEISURE:
+        hass.states.async_set(svc(service), "off")
+
+    await adapter.apply(state(True, frozenset({"tiktok"})))
+    assert called_entities(on_calls) == [svc("tiktok")]
+    hass.states.async_set(svc("tiktok"), "on")
+
+    # L'exception échoit : tiktok sort de blocked_services.
+    await adapter.apply(OPEN)
+    assert called_entities(off_calls) == [svc("tiktok")]
+    hass.states.async_set(svc("tiktok"), "off")
+
+    # Une fois débloqué, il n'est plus géré.
+    hass.states.async_set(svc("tiktok"), "on")
+    await adapter.apply(OPEN)
+    assert called_entities(off_calls) == [svc("tiktok")]
+
+
+async def test_adguard_failed_call_logs_and_continues(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    hass.states.async_set(svc("roblox"), "off")
+    hass.states.async_set(svc("youtube"), "off")
+    calls: list[str] = []
+
+    async def turn_on(call: ServiceCall) -> None:
+        calls.append(call.data["entity_id"])
+        if call.data["entity_id"] == svc("roblox"):
+            raise HomeAssistantError("bridge injoignable")
+
+    hass.services.async_register("switch", "turn_on", turn_on)
+    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+
+    with caplog.at_level(logging.WARNING):
+        await adapter.apply(state(False, LEISURE))
+
+    assert calls == [svc("roblox"), svc("youtube")]
+    assert any(
+        svc("roblox") in r.getMessage() and r.levelno == logging.WARNING
+        for r in caplog.records
+    )
+
+
+async def test_media_player_failed_call_logs(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    hass.states.async_set(TV_ENTITY, "on")
+
+    async def turn_off(call: ServiceCall) -> None:
+        raise HomeAssistantError("TV injoignable")
+
+    hass.services.async_register("media_player", "turn_off", turn_off)
+    with caplog.at_level(logging.WARNING):
+        await build_adapter(hass, tv_resource(), LEISURE).apply(CLOSED)
+    assert any(TV_ENTITY in r.getMessage() for r in caplog.records)
+
+
+async def test_media_player_missing_entity_warns_once(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    adapter = build_adapter(hass, tv_resource(), LEISURE)
+    with caplog.at_level(logging.WARNING):
+        assert not adapter.in_use()
+        await adapter.apply(CLOSED)
+        assert not adapter.drifted(CLOSED)
+    warnings = [r for r in caplog.records if TV_ENTITY in r.getMessage()]
+    assert len(warnings) == 1
+    assert warnings[0].levelno == logging.WARNING

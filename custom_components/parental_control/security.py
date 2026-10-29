@@ -16,7 +16,7 @@ _PREFIX = "pbkdf2"
 
 
 def _derive(code: str, salt: bytes) -> bytes:
-    return hashlib.pbkdf2_hmac("sha256", code.encode(), salt, _ITERATIONS)
+    return hashlib.pbkdf2_hmac("sha256", str(code).encode(), salt, _ITERATIONS)
 
 
 def hash_code(code: str) -> str:
@@ -51,6 +51,8 @@ async def check_unlock(
     user = await hass.auth.async_get_user(context.user_id)
     if user is not None and user.is_admin:
         return
+    if code is not None:
+        code = str(code)  # un code saisi en YAML peut arriver en entier
     if not code:
         raise ServiceValidationError(
             translation_domain=DOMAIN, translation_key="code_required"

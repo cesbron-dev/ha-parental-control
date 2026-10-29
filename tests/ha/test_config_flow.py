@@ -22,7 +22,7 @@ from custom_components.parental_control.security import (
     verify_code,
 )
 from custom_components.parental_control.store import ParentalStore
-from tests.core.test_config_io import EX
+from tests.fixtures import EX
 
 
 async def test_config_flow_creates_entry_with_hashed_code(hass: HomeAssistant) -> None:
@@ -63,10 +63,6 @@ async def test_config_flow_single_instance(hass: HomeAssistant) -> None:
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    if result["type"] is FlowResultType.FORM:
-        result = await hass.config_entries.flow.async_configure(
-            result["flow_id"], {"code": "5678"}
-        )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"
 
@@ -111,6 +107,7 @@ async def test_setup_and_unload_entry(hass: HomeAssistant) -> None:
 
 def test_verify_code() -> None:
     stored = hash_code("4321")
+    assert verify_code(4321, stored)  # type: ignore[arg-type]  # code non str (YAML)
     assert stored.count("$") == 2
     assert verify_code("4321", stored)
     assert not verify_code("1234", stored)
@@ -154,6 +151,7 @@ async def test_check_unlock_non_admin_requires_code(hass: HomeAssistant) -> None
     assert err.value.translation_key == "code_invalid"
 
     await check_unlock(hass, ctx, "1234", stored)
+    await check_unlock(hass, ctx, 1234, stored)  # type: ignore[arg-type]
 
 
 async def test_check_unlock_unknown_user_requires_code(hass: HomeAssistant) -> None:
