@@ -27,11 +27,11 @@ def _as_date(value: Any) -> date | None:
 
 async def fetch_all_day_events(
     hass: HomeAssistant, entity_id: str, day: date
-) -> list[AllDayEvent]:
+) -> list[AllDayEvent] | None:
     """Événements journée entière de `entity_id` touchant le jour local `day`.
 
-    Toute erreur (calendrier absent, réponse inattendue…) donne `[]` : le type de jour
-    se replie alors sur le jour de la semaine.
+    Toute erreur (calendrier absent, réponse inattendue…) donne `None` : le moteur garde
+    alors la dernière lecture du jour, ou se replie sur le jour de la semaine.
     """
     tz = dt_util.get_default_time_zone()
     start = datetime.combine(day, time(0), tzinfo=tz)
@@ -55,7 +55,7 @@ async def fetch_all_day_events(
             if ev_start is None or ev_end is None:
                 continue
             result.append(AllDayEvent(str(event.get("summary", "")), ev_start, ev_end))
-    except Exception as err:  # noqa: BLE001 - tout échec : repli sur le jour de semaine
+    except Exception as err:  # noqa: BLE001 - tout échec : lecture précédente ou repli
         _LOGGER.warning("Lecture du calendrier %s impossible : %s", entity_id, err)
-        return []
+        return None
     return result

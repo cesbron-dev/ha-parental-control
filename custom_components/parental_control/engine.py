@@ -16,7 +16,7 @@ import logging
 import math
 from collections.abc import Coroutine
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -41,7 +41,6 @@ from .adapters import Adapter, build_adapter
 from .adapters.nintendo import NintendoAdapter
 from .calendar_source import fetch_all_day_events
 from .const import DOMAIN, EVENT_WARNING, SIGNAL_UPDATE, TICK_SECONDS
-from .core.config_io import ConfigError
 from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
@@ -53,6 +52,7 @@ _LOGGER = logging.getLogger(__name__)
 MAX_ELAPSED = timedelta(minutes=5)
 CALENDAR_REFRESH = timedelta(minutes=15)
 DEFAULT_WARN_MINUTES = 5
+DRIFT_COOLDOWN = timedelta(seconds=30)
 NOTIFY_TITLE = "Contrôle parental"
 
 
@@ -92,12 +92,17 @@ class ParentalEngine:
         # Dernier état appliqué par ressource : (ouvert, services bloqués).
         self._applied: dict[str, tuple[bool, frozenset[str]]] = {}
         self._warned: set[tuple[str, datetime]] = set()
-        self._events: dict[str, list[AllDayEvent]] = {}
+        # Événements par enfant, avec le jour local pour lequel ils ont été lus.
+        self._events: dict[str, tuple[date, list[AllDayEvent]]] = {}
+        # Dernier envoi de commande par ressource (anti-rafale des corrections de dérive).
+        self._sent_at: dict[str, datetime] = {}
         self._last_eval: datetime | None = None
         self._lock = asyncio.Lock()
         self._unsubs: list[CALLBACK_TYPE] = []
         self._state_unsub: CALLBACK_TYPE | None = None
         self._stopped = False
+        # Faux tant que le premier calendrier et la première évaluation ne sont pas faits.
+        self._ready = False
 
     # ------------------------------------------------------------------ lecture
 
@@ -125,11 +130,8 @@ class ParentalEngine:
 
     async def async_start(self) -> None:
         """Charge, construit les adaptateurs, démarre les écoutes et resynchronise."""
-        try:
-            self._config, self._decisions = await self._store.load()
-        except ConfigError as err:
-            _LOGGER.error("Configuration enregistrée invalide, moteur inactif : %s", err)
-            self._config = None
+        # Config invalide : `load` journalise et renvoie None, les décisions sont gardées.
+        self._config, self._decisions = await self._store.load()
         if self._config is None:
             _LOGGER.info("Aucune configuration valide : le moteur reste inactif")
         self._decisions.purge(dt_util.now())
@@ -144,6 +146,8 @@ class ParentalEngine:
             async_track_time_interval(self._hass, self._on_calendar_time, CALENDAR_REFRESH),
         ]
         await self._refresh_calendars()
+        # Le verrou est libre : l'évaluation de démarrage passe avant toute tâche en attente.
+        self._ready = True
         await self.async_evaluate("start")
 
     async def async_stop(self) -> None:
@@ -154,8 +158,7 @@ class ParentalEngine:
         self._unsubs = []
         self._cancel_state_listener()
         async with self._lock:
-            if self._config is not None:
-                await self._store.flush_state(self._decisions)
+            await self._store.flush_state(self._decisions)
 
     def _cancel_state_listener(self) -> None:
         if self._state_unsub is not None:
@@ -167,6 +170,7 @@ class ParentalEngine:
         self._cancel_state_listener()
         self._adapters = {}
         self._applied = {}
+        self._sent_at = {}
         cfg = self._config
         if cfg is None:
             return
@@ -205,10 +209,16 @@ class ParentalEngine:
         if cfg is None:
             return
         today = dt_util.now().date()
-        events: dict[str, list[AllDayEvent]] = {}
+        events: dict[str, tuple[date, list[AllDayEvent]]] = {}
         for kid in cfg.kids:
-            if kid.calendar is not None:
-                events[kid.id] = await fetch_all_day_events(self._hass, kid.calendar, today)
+            if kid.calendar is None:
+                continue
+            fetched = await fetch_all_day_events(self._hass, kid.calendar, today)
+            if fetched is None:
+                # Échec passager : on garde la lecture du jour, sinon aucun événement.
+                previous = self._events.get(kid.id)
+                fetched = previous[1] if previous is not None and previous[0] == today else []
+            events[kid.id] = (today, fetched)
         self._events = events
 
     async def _refresh_and_evaluate(self) -> None:
@@ -220,7 +230,7 @@ class ParentalEngine:
     def _day_types(self, now: datetime, cfg: Config) -> dict[str, DayType]:
         return {
             kid_id: day_type(now.date(), events, cfg.calendar_map)
-            for kid_id, events in self._events.items()
+            for kid_id, (_, events) in self._events.items()
         }
 
     # ------------------------------------------------------------------ évaluation
@@ -228,7 +238,7 @@ class ParentalEngine:
     async def async_evaluate(self, reason: str) -> None:
         async with self._lock:
             cfg = self._config
-            if self._stopped or cfg is None:
+            if self._stopped or not self._ready or cfg is None:
                 return
             _LOGGER.debug("Évaluation (%s)", reason)
             dec = self._decisions
@@ -242,7 +252,7 @@ class ParentalEngine:
                     e for e in dec.exceptions if e.id not in snap.expired_exception_ids
                 ]
             self._snapshot = snap = self._with_nintendo_sensors(snap)
-            await self._apply(snap)
+            await self._apply(snap, now)
             self._closures = upcoming_closures(now, cfg, dec, day_types, in_use)
             await self._warn(now, cfg, snap)
             await self._store.save_state(dec)
@@ -277,15 +287,22 @@ class ParentalEngine:
                 )
         return replace(snap, resources=resources)
 
-    async def _apply(self, snap: Snapshot) -> None:
+    async def _apply(self, snap: Snapshot, now: datetime) -> None:
+        """Applique si l'état voulu change (immédiat) ou en cas de dérive (au plus une
+        commande par `DRIFT_COOLDOWN`, le temps que l'appareil rapporte son état)."""
         for resource_id, adapter in self._adapters.items():
             desired = snap.resources.get(resource_id)
             if desired is None:
                 continue
             key = (desired.open, desired.blocked_services)
             try:
-                if self._applied.get(resource_id) == key and not adapter.drifted(desired):
-                    continue
+                drifted = adapter.drifted(desired)
+                if self._applied.get(resource_id) == key:
+                    sent = self._sent_at.get(resource_id)
+                    if not drifted or (sent is not None and now - sent < DRIFT_COOLDOWN):
+                        continue
+                if drifted:  # l'adaptateur va envoyer une correction
+                    self._sent_at[resource_id] = now
                 await adapter.apply(desired)
             except Exception as err:  # noqa: BLE001 - un adaptateur n'arrête pas les autres
                 _LOGGER.error("%s : échec de l'application : %s", adapter.resource.name, err)
@@ -328,27 +345,32 @@ class ParentalEngine:
                 EVENT_WARNING,
                 {"target": key, "closes_at": closes_at.isoformat(), "message": message},
             )
-            adapter = self._adapters.get(ident) if kind == "resource" else None
-            if adapter is not None:
-                try:
-                    await adapter.warn(message)
-                except Exception as err:  # noqa: BLE001
-                    _LOGGER.warning("%s : avertissement impossible : %s",
-                                    adapter.resource.name, err)
-            await self._notify(cfg, message)
+            if kind == "kid":
+                self._notify(cfg, message)
+            elif (adapter := self._adapters.get(ident)) is not None:
+                # Tâche à part : un appareil lent ne retarde pas l'évaluation.
+                self._schedule(self._device_warn(adapter, message))
 
-    async def _notify(self, cfg: Config, message: str) -> None:
+    @staticmethod
+    async def _device_warn(adapter: Adapter, message: str) -> None:
+        try:
+            await adapter.warn(message)
+        except Exception as err:  # noqa: BLE001 - un avertissement ne bloque rien
+            _LOGGER.warning("%s : avertissement impossible : %s", adapter.resource.name, err)
+
+    def _notify(self, cfg: Config, message: str) -> None:
+        """Notifie les parents sans attendre l'exécution (`blocking=False`)."""
         for target in cfg.notify:
-            domain, _, service = target.partition(".")
-            try:
-                await self._hass.services.async_call(
-                    domain,
-                    service,
-                    {"title": NOTIFY_TITLE, "message": message},
-                    blocking=True,
-                )
-            except Exception as err:  # noqa: BLE001 - une notification ne bloque rien
-                _LOGGER.warning("Notification %s impossible : %s", target, err)
+            self._schedule(self._send_notify(target, message))
+
+    async def _send_notify(self, target: str, message: str) -> None:
+        domain, _, service = target.partition(".")
+        try:
+            await self._hass.services.async_call(
+                domain, service, {"title": NOTIFY_TITLE, "message": message}, blocking=False
+            )
+        except Exception as err:  # noqa: BLE001 - une notification ne bloque rien
+            _LOGGER.warning("Notification %s impossible : %s", target, err)
 
     # ------------------------------------------------------------------ validation
 
