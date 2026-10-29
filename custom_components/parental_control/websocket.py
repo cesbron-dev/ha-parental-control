@@ -41,7 +41,9 @@ def _engine(
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/config/get"})
 @callback
-def ws_config_get(hass, connection, msg) -> None:
+def ws_config_get(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     if (engine := _engine(hass, connection, msg)) is None:
         return
     cfg = engine.config
@@ -53,7 +55,9 @@ def ws_config_get(hass, connection, msg) -> None:
 )
 @websocket_api.require_admin
 @websocket_api.async_response
-async def ws_config_set(hass, connection, msg) -> None:
+async def ws_config_set(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     if (engine := _engine(hass, connection, msg)) is None:
         return
     try:
@@ -67,7 +71,9 @@ async def ws_config_set(hass, connection, msg) -> None:
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})
 @callback
-def ws_state(hass, connection, msg) -> None:
+def ws_state(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
     if (engine := _engine(hass, connection, msg)) is None:
         return
     connection.send_result(msg["id"], serialize_snapshot(engine))
@@ -75,14 +81,22 @@ def ws_state(hass, connection, msg) -> None:
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state/subscribe"})
 @callback
-def ws_state_subscribe(hass, connection, msg) -> None:
-    if (engine := _engine(hass, connection, msg)) is None:
+def ws_state_subscribe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if _engine(hass, connection, msg) is None:
         return
     msg_id = msg["id"]
 
     @callback
     def push() -> None:
-        connection.send_message(websocket_api.event_message(msg_id, serialize_snapshot(engine)))
+        # SIGNAL_UPDATE est global : on relit le moteur courant (l'entrée a pu être rechargée).
+        entries = hass.config_entries.async_loaded_entries(DOMAIN)
+        if not entries:
+            return
+        connection.send_message(
+            websocket_api.event_message(msg_id, serialize_snapshot(entries[0].runtime_data))
+        )
 
     connection.subscriptions[msg_id] = async_dispatcher_connect(hass, SIGNAL_UPDATE, push)
     connection.send_result(msg_id)
