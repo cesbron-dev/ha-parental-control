@@ -8,7 +8,7 @@ import pytest
 
 from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.model import Config
-from tests.core.test_config_io import EX
+from tests.fixtures import EX
 
 TZ = ZoneInfo("America/Toronto")
 

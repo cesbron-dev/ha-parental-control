@@ -6,6 +6,7 @@ import logging
 
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 
 from ..core.evaluator import ResourceState
 from ..core.model import Resource
@@ -14,7 +15,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class AdGuardAdapter:
-    """Gère exactement `loisirs ∪ services bloqués voulus` ; le reste n'est jamais touché."""
+    """Gère `loisirs ∪ services bloqués voulus ∪ services hors loisirs qu'il a bloqués`.
+
+    Les autres services ne sont jamais touchés.
+    """
 
     def __init__(
         self, hass: HomeAssistant, resource: Resource, leisure: frozenset[str]
@@ -24,6 +28,11 @@ class AdGuardAdapter:
         self._client: str = resource.options["client"]
         self._leisure = leisure
         self._missing_logged: set[str] = set()
+        # Services hors loisirs que l'adaptateur a lui-même bloqués (exception de
+        # service) : ils restent gérés pour être débloqués quand l'exception échoit.
+        # En mémoire seulement : après un redémarrage, un tel service reste bloqué
+        # (échec du côté fermé) jusqu'à une action manuelle.
+        self._extra_blocked: set[str] = set()
 
     def _entity_id(self, service: str) -> str:
         return f"switch.adguard_{self._client}_svc_{service}"
@@ -42,7 +51,8 @@ class AdGuardAdapter:
         return False
 
     async def apply(self, desired: ResourceState) -> None:
-        for service in sorted(self._leisure | desired.blocked_services):
+        managed = self._leisure | desired.blocked_services | self._extra_blocked
+        for service in sorted(managed):
             entity_id = self._entity_id(service)
             state = self.hass.states.get(entity_id)
             if state is None:
@@ -60,10 +70,27 @@ class AdGuardAdapter:
             elif not block and state.state == STATE_ON:
                 action = "turn_off"
             else:
+                if not block and state.state == STATE_OFF:
+                    self._extra_blocked.discard(service)
                 continue
-            await self.hass.services.async_call(
-                "switch", action, {"entity_id": entity_id}, blocking=True
-            )
+            try:
+                await self.hass.services.async_call(
+                    "switch", action, {"entity_id": entity_id}, blocking=True
+                )
+            except HomeAssistantError as err:
+                _LOGGER.warning(
+                    "%s : échec de %s sur %s : %s",
+                    self.resource.name,
+                    action,
+                    entity_id,
+                    err,
+                )
+                continue
+            if service not in self._leisure:
+                if block:
+                    self._extra_blocked.add(service)
+                else:
+                    self._extra_blocked.discard(service)
 
     async def warn(self, message: str) -> None:
         return
