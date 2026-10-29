@@ -1,0 +1,13 @@
+{
+  "domain": "parental_control",
+  "name": "Contrôle parental",
+  "version": "0.1.0",
+  "config_flow": true,
+  "iot_class": "calculated",
+  "integration_type": "service",
+  "dependencies": [],
+  "after_dependencies": ["calendar", "media_player", "notify"],
+  "requirements": [],
+  "codeowners": ["@cesbron-dev"],
+  "documentation": "https://github.com/cesbron-dev/ha-parental-control"
+}
