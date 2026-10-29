@@ -10,7 +10,7 @@ la pause l'emporte sur tout (`_paused_resource_state`).
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
@@ -222,12 +222,34 @@ def _resource_state(cfg: Config, resource: Resource, *, open_: bool, reason: str
     )
 
 
-def _rule_resource_state(cfg: Config, resource: Resource,
-                         accesses: Mapping[str, _Access], today: date) -> ResourceState:
+def _latest_until(accesses: Mapping[str, _Access]) -> datetime | None:
+    return max((a.until for a in accesses.values() if a.open and a.until is not None),
+               default=None)
+
+
+def _shared_until(start: datetime, access_at: Callable[[datetime], Mapping[str, _Access]],
+                  midnight: datetime) -> datetime | None:
+    """Fin de la période d'ouverture continue de la ressource, relais entre propriétaires
+    compris : on repart de la fin la plus tardive tant qu'un propriétaire prend le relais."""
+    until = start
+    while until < midnight:
+        nxt = _latest_until(access_at(until))
+        if nxt is None or nxt <= until:
+            break
+        until = nxt
+    return until
+
+
+def _rule_resource_state(cfg: Config, resource: Resource, now: datetime,
+                         access_at: Callable[[datetime], Mapping[str, _Access]],
+                         midnight: datetime) -> ResourceState:
     """Ressource ouverte ssi au moins un propriétaire y a accès (OU)."""
+    today = now.date()
+    accesses = access_at(now)
     open_owners = [kid_id for kid_id in resource.owners if accesses[kid_id].open]
-    if open_owners:
-        until = max(accesses[k].until for k in open_owners if accesses[k].until is not None)
+    first = _latest_until(accesses)
+    if open_owners and first is not None:
+        until = _shared_until(first, access_at, midnight)
         if len(resource.owners) > 1 and len(open_owners) < len(resource.owners):
             names = ", ".join(cfg.kid(k).name for k in open_owners)
             reason = f"Ouverte pour {names}"
@@ -358,14 +380,18 @@ def evaluate(
         }
         return Snapshot(kids, resources, frozenset())
 
+    midnight = datetime.combine(today + timedelta(days=1), time(0), tzinfo=now.tzinfo)
     resources: dict[str, ResourceState] = {}
     for resource in cfg.resources:
-        accesses = {}
-        for kid_id in resource.owners:
-            kid = cfg.kid(kid_id)
-            mode = kid.resource_modes.get(resource.id, ResourceMode.SUIT_FRISE)
-            accesses[kid_id] = _access(now, dec, kid, timelines[kid_id], mode)
-        resources[resource.id] = _rule_resource_state(cfg, resource, accesses, today)
+        def access_at(moment: datetime, resource: Resource = resource) -> dict[str, _Access]:
+            result = {}
+            for kid_id in resource.owners:
+                kid = cfg.kid(kid_id)
+                mode = kid.resource_modes.get(resource.id, ResourceMode.SUIT_FRISE)
+                result[kid_id] = _access(moment, dec, kid, timelines[kid_id], mode)
+            return result
+
+        resources[resource.id] = _rule_resource_state(cfg, resource, now, access_at, midnight)
 
     if apply_exceptions:
         resources = _apply_exceptions(now, cfg, dec, resources)
