@@ -16,13 +16,15 @@ import logging
 import math
 from collections.abc import Coroutine
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import (
     CALLBACK_TYPE,
+    CoreState,
     Event,
     EventStateChangedData,
     HomeAssistant,
@@ -35,6 +37,7 @@ from homeassistant.helpers.event import (
     async_track_time_change,
     async_track_time_interval,
 )
+from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
 from .adapters import Adapter, build_adapter
@@ -45,7 +48,7 @@ from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
 from .core.model import Config, DayType, Kid, Resource, ResourceKind, SegmentType
-from .store import ParentalStore
+from .store import INVALID_CONFIG_NOTIFICATION, ParentalStore
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,6 +65,37 @@ def _invalid(key: str, **placeholders: str) -> ServiceValidationError:
         translation_key=key,
         translation_placeholders=placeholders or None,
     )
+
+
+def _local(moment: datetime) -> datetime:
+    """Heure locale (`dt_util.as_local`) au décalage UTC figé.
+
+    Avec le fuseau lui-même, Python compare deux instants du même fuseau à l'heure
+    murale : pendant l'heure répétée du passage à l'heure normale, 01:20 (heure normale)
+    passerait avant 01:50 (heure d'été). Un décalage fixe garde l'heure murale locale
+    (dates, affichage) et une comparaison sur l'instant réel.
+    """
+    local = dt_util.as_local(moment)
+    return local.replace(tzinfo=timezone(local.utcoffset() or timedelta(0)))
+
+
+def _after(now: datetime, minutes: float) -> datetime:
+    """`now` + `minutes` de temps réel (calcul en UTC), en heure locale : une durée qui
+    franchit un changement d'heure garde sa longueur réelle."""
+    return _local(dt_util.as_utc(now) + timedelta(minutes=minutes))
+
+
+def _localize(dec: Decisions) -> None:
+    """Ramène à l'heure locale les instants relus (décalages quelconques de l'ISO)."""
+    dec.timers = [replace(t, start=_local(t.start), end=_local(t.end)) for t in dec.timers]
+    dec.exceptions = [
+        replace(
+            e,
+            created=_local(e.created),
+            until=None if e.until is None else _local(e.until),
+        )
+        for e in dec.exceptions
+    ]
 
 
 def _segment_warn_minutes(kid: Kid, dtype: DayType, now: datetime) -> int:
@@ -91,6 +125,8 @@ class ParentalEngine:
         self._adapters: dict[str, Adapter] = {}
         # Dernier état appliqué par ressource : (ouvert, services bloqués).
         self._applied: dict[str, tuple[bool, frozenset[str]]] = {}
+        # Entité pilotée -> ressources qui l'utilisent.
+        self._entity_owners: dict[str, set[str]] = {}
         self._warned: set[tuple[str, datetime]] = set()
         # Événements par enfant, avec le jour local pour lequel ils ont été lus.
         self._events: dict[str, tuple[date, list[AllDayEvent]]] = {}
@@ -132,6 +168,7 @@ class ParentalEngine:
         """Charge, construit les adaptateurs, démarre les écoutes et resynchronise."""
         # Config invalide : `load` journalise et renvoie None, les décisions sont gardées.
         self._config, self._decisions = await self._store.load()
+        _localize(self._decisions)
         if self._config is None:
             _LOGGER.info("Aucune configuration valide : le moteur reste inactif")
         else:
@@ -155,6 +192,9 @@ class ParentalEngine:
             ),
             async_track_time_interval(self._hass, self._on_calendar_time, CALENDAR_REFRESH),
         ]
+        if self._hass.state is not CoreState.running:
+            # Au démarrage de HA, les calendriers ne sont pas toujours encore chargés.
+            self._unsubs.append(async_at_started(self._hass, self._on_started))
         await self._refresh_calendars()
         # Le verrou est libre : l'évaluation de démarrage passe avant toute tâche en attente.
         self._ready = True
@@ -191,6 +231,7 @@ class ParentalEngine:
         self._adapters = {}
         self._applied = {}
         self._sent_at = {}
+        self._entity_owners = {}
         cfg = self._config
         if cfg is None:
             return
@@ -201,7 +242,10 @@ class ParentalEngine:
                 )
             except (KeyError, NotImplementedError) as err:
                 _LOGGER.error("%s : adaptateur impossible à créer : %s", resource.name, err)
-        entity_ids = sorted({e for a in self._adapters.values() for e in a.entity_ids()})
+        for resource_id, adapter in self._adapters.items():
+            for entity_id in adapter.entity_ids():
+                self._entity_owners.setdefault(entity_id, set()).add(resource_id)
+        entity_ids = sorted(self._entity_owners)
         if entity_ids:
             self._state_unsub = async_track_state_change_event(
                 self._hass, entity_ids, self._on_state_change
@@ -219,7 +263,15 @@ class ParentalEngine:
         self._schedule(self._refresh_and_evaluate())
 
     @callback
-    def _on_state_change(self, _event: Event[EventStateChangedData]) -> None:
+    def _on_started(self, _hass: HomeAssistant) -> None:
+        self._schedule(self._refresh_and_evaluate())
+
+    @callback
+    def _on_state_change(self, event: Event[EventStateChangedData]) -> None:
+        if event.data["old_state"] is None:
+            # Entité apparue après l'application : l'état appliqué n'a pas pu l'atteindre.
+            for resource_id in self._entity_owners.get(event.data["entity_id"], ()):
+                self._applied.pop(resource_id, None)
         self._schedule(self.async_evaluate("state"))
 
     # ------------------------------------------------------------------ calendrier
@@ -349,6 +401,8 @@ class ParentalEngine:
 
     async def _warn(self, now: datetime, cfg: Config, snap: Snapshot) -> None:
         self._warned = {w for w in self._warned if w[1] > now}
+        # Au plus une notification des parents par instant de fermeture.
+        to_notify: dict[datetime, list[str]] = {}
         for key, closes_at in self._closures.items():
             kind, ident = key.split(":", 1)
             service = None
@@ -373,10 +427,12 @@ class ParentalEngine:
                 {"target": key, "closes_at": closes_at.isoformat(), "message": message},
             )
             if kind in ("kid", "service"):
-                self._notify(cfg, message)
+                to_notify.setdefault(closes_at, []).append(message)
             elif (adapter := self._adapters.get(ident)) is not None:
                 # Tâche à part : un appareil lent ne retarde pas l'évaluation.
                 self._schedule(self._device_warn(adapter, message))
+        for messages in to_notify.values():
+            self._notify(cfg, "\n".join(messages))
 
     @staticmethod
     async def _device_warn(adapter: Adapter, message: str) -> None:
@@ -491,7 +547,7 @@ class ParentalEngine:
                             apply_exceptions=False)
             signature = rule_signature(target, rule, cfg)
         else:
-            until = now + timedelta(minutes=minutes)
+            until = _after(now, minutes)
         exc = ManualException(uuid4().hex, target, open, now, until, signature)
         self._decisions.exceptions.append(exc)
         await self.async_evaluate("exception")
@@ -521,7 +577,7 @@ class ParentalEngine:
                 raise _invalid("quota_exhausted")
             duration = min(duration, kid_state.remaining_minutes)
         self._decisions.timers.append(
-            Timer(kid_id, now, now + timedelta(minutes=duration))
+            Timer(kid_id, now, _after(now, duration))
         )
         await self.async_evaluate("start_timer")
 
@@ -552,6 +608,7 @@ class ParentalEngine:
     async def set_config(self, cfg: Config) -> None:
         """Enregistre une nouvelle config et reconstruit adaptateurs et écoutes."""
         await self._store.save_config(cfg)
+        persistent_notification.async_dismiss(self._hass, INVALID_CONFIG_NOTIFICATION)
         async with self._lock:
             self._config = cfg
             self._prune_unknown(cfg)
