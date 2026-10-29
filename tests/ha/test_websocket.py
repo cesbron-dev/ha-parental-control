@@ -107,3 +107,24 @@ async def test_state_subscribe_pushes_on_update(hass, entry, hass_ws_client) -> 
     pushed = await client.receive_json()
     assert pushed["type"] == "event"
     assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "exceptions"}
+
+
+async def test_state_subscribe_survives_entry_reload(hass, entry, hass_ws_client) -> None:
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state/subscribe"})
+    await client.receive_json()
+    await client.receive_json()
+
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    await hass.services.async_call(DOMAIN, "pause", {"active": True}, blocking=True)
+    await hass.async_block_till_done()
+
+    # Les messages sont ordonnés : on lit les évènements jusqu'à la réponse à `state`.
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    last = None
+    while (msg := await client.receive_json())["type"] == "event":
+        last = msg
+    assert msg["success"]
+    assert last is not None
+    assert last["event"]["paused"] is True
