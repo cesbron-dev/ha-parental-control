@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.parental_control.const import DOMAIN
 from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.decisions import Decisions
+from custom_components.parental_control.engine import ParentalEngine
 from custom_components.parental_control.security import (
     check_unlock,
     hash_code,
@@ -99,7 +100,8 @@ async def test_setup_and_unload_entry(hass: HomeAssistant) -> None:
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is config_entries.ConfigEntryState.LOADED
-    assert isinstance(entry.runtime_data, ParentalStore)
+    assert isinstance(entry.runtime_data, ParentalEngine)
+    assert isinstance(entry.runtime_data.store, ParentalStore)
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert entry.state is config_entries.ConfigEntryState.NOT_LOADED

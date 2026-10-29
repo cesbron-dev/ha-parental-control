@@ -1,21 +1,25 @@
-"""Intégration Contrôle parental (setup minimal : stockage seulement)."""
+"""Intégration Contrôle parental."""
 
 from __future__ import annotations
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
+from .engine import ParentalEngine
 from .store import ParentalStore
 
-type ParentalConfigEntry = ConfigEntry[ParentalStore]
+type ParentalConfigEntry = ConfigEntry[ParentalEngine]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ParentalConfigEntry) -> bool:
-    """Prépare le stockage ; le moteur et les plateformes viendront ensuite."""
-    entry.runtime_data = ParentalStore(hass)
+    """Démarre le moteur (chargement, resynchronisation, écoutes)."""
+    engine = ParentalEngine(hass, entry, ParentalStore(hass))
+    entry.runtime_data = engine
+    await engine.async_start()
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ParentalConfigEntry) -> bool:
-    """Rien à décharger tant qu'aucune plateforme n'est installée."""
+    """Arrête le moteur : écoutes annulées, état écrit sans délai."""
+    await entry.runtime_data.async_stop()
     return True
