@@ -1,0 +1,100 @@
+devoirs_termines:
+  fields:
+    kid_id: &kid_id
+      required: true
+      example: gabin
+      selector:
+        text:
+    code: &code
+      required: false
+      selector:
+        text:
+          type: password
+
+ajouter_bonus:
+  fields:
+    minutes: &minutes
+      required: true
+      example: 15
+      selector:
+        number:
+          min: 1
+          max: 240
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    kid_id:
+      required: false
+      example: gabin
+      selector:
+        text:
+    resource_id: &resource_id
+      required: false
+      example: tv
+      selector:
+        text:
+    code: *code
+
+exception:
+  fields:
+    open:
+      required: true
+      example: true
+      selector:
+        boolean:
+    resource_id: *resource_id
+    kid_id:
+      required: false
+      example: gabin
+      selector:
+        text:
+    service:
+      required: false
+      example: youtube
+      selector:
+        text:
+    minutes:
+      required: false
+      example: 30
+      selector:
+        number:
+          min: 1
+          max: 240
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    code: *code
+
+annuler_exception:
+  fields:
+    exception_id:
+      required: true
+      selector:
+        text:
+    code: *code
+
+demarrer_minuteur:
+  fields:
+    kid_id: *kid_id
+    minutes: *minutes
+    code: *code
+
+arreter_minuteur:
+  fields:
+    kid_id: *kid_id
+
+pause:
+  fields:
+    active:
+      required: true
+      example: true
+      selector:
+        boolean:
+    code: *code
+
+importer_configuration:
+  fields:
+    config:
+      required: true
+      selector:
+        object:

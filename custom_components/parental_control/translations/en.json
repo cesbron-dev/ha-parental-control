@@ -62,6 +62,146 @@
     },
     "quota_exhausted": {
       "message": "The daily quota is exhausted."
+    },
+    "code_locked": {
+      "message": "Too many wrong parent codes. Try again in {seconds} s."
+    },
+    "invalid_config": {
+      "message": "Invalid configuration: {error}"
+    }
+  },
+  "services": {
+    "devoirs_termines": {
+      "name": "Homework done",
+      "description": "Marks today's homework as done for a child, which unlocks the after-homework period. Unlocks: parent code required from a non-admin account.",
+      "fields": {
+        "kid_id": {
+          "name": "Child",
+          "description": "Child identifier from the configuration."
+        },
+        "code": {
+          "name": "Parent code",
+          "description": "Required from a non-admin account."
+        }
+      }
+    },
+    "ajouter_bonus": {
+      "name": "Add bonus",
+      "description": "Adds bonus minutes for today to a child or to a resource (exactly one of the two). Unlocks: parent code required from a non-admin account.",
+      "fields": {
+        "minutes": {
+          "name": "Minutes",
+          "description": "Bonus duration (1 to 240 minutes)."
+        },
+        "kid_id": {
+          "name": "Child",
+          "description": "Child identifier (or give a resource)."
+        },
+        "resource_id": {
+          "name": "Resource",
+          "description": "Resource identifier (or give a child)."
+        },
+        "code": {
+          "name": "Parent code",
+          "description": "Required from a non-admin account."
+        }
+      }
+    },
+    "exception": {
+      "name": "Manual exception",
+      "description": "Forces a resource, a child or a service open or closed. Returns the exception id. Opening requires the parent code from a non-admin account; closing never does.",
+      "fields": {
+        "open": {
+          "name": "Open",
+          "description": "On to open, off to close."
+        },
+        "resource_id": {
+          "name": "Resource",
+          "description": "Resource identifier."
+        },
+        "kid_id": {
+          "name": "Child",
+          "description": "Child identifier."
+        },
+        "service": {
+          "name": "Service",
+          "description": "AdGuard service (e.g. youtube)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Duration (1 to 240 minutes). Empty: until the next scheduled change."
+        },
+        "code": {
+          "name": "Parent code",
+          "description": "Required from a non-admin account to open."
+        }
+      }
+    },
+    "annuler_exception": {
+      "name": "Cancel exception",
+      "description": "Removes a manual exception. Cancelling a closure re-opens and requires the parent code from a non-admin account.",
+      "fields": {
+        "exception_id": {
+          "name": "Exception id",
+          "description": "Id returned by the exception action."
+        },
+        "code": {
+          "name": "Parent code",
+          "description": "Required from a non-admin account when cancelling a closure."
+        }
+      }
+    },
+    "demarrer_minuteur": {
+      "name": "Start timer",
+      "description": "Starts a screen-time timer for a child during a quota period, capped to the remaining quota. Unlocks: parent code required from a non-admin account.",
+      "fields": {
+        "kid_id": {
+          "name": "Child",
+          "description": "Child identifier from the configuration."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Timer duration (1 to 240 minutes)."
+        },
+        "code": {
+          "name": "Parent code",
+          "description": "Required from a non-admin account."
+        }
+      }
+    },
+    "arreter_minuteur": {
+      "name": "Stop timer",
+      "description": "Stops the running timer of a child. No code required.",
+      "fields": {
+        "kid_id": {
+          "name": "Child",
+          "description": "Child identifier from the configuration."
+        }
+      }
+    },
+    "pause": {
+      "name": "Pause",
+      "description": "Global pause: closes every resource immediately. Ending the pause requires the parent code from a non-admin account.",
+      "fields": {
+        "active": {
+          "name": "Active",
+          "description": "On to pause, off to resume."
+        },
+        "code": {
+          "name": "Parent code",
+          "description": "Required from a non-admin account to resume."
+        }
+      }
+    },
+    "importer_configuration": {
+      "name": "Import configuration",
+      "description": "Replaces the whole configuration (kids, resources, schedules). Administrators only.",
+      "fields": {
+        "config": {
+          "name": "Configuration",
+          "description": "Configuration object (JSON format, version 1)."
+        }
+      }
     }
   }
 }
