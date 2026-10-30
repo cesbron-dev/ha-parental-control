@@ -50,7 +50,7 @@ EX = {
             "name": "iPhone Gabin",
             "kind": "adguard_services",
             "owners": ["gabin"],
-            "client": "iphone_gabin",
+            "device_id": "adguard_iphone_gabin",
         },
         {
             "id": "switch",

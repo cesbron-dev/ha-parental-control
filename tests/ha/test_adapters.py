@@ -14,6 +14,7 @@ from custom_components.parental_control.adapters.media_player import (
 )
 from custom_components.parental_control.core.evaluator import ResourceState
 from custom_components.parental_control.core.model import Resource, ResourceKind
+from tests.ha.fake_adguard import FakeAdGuard
 
 TV_ENTITY = "media_player.tv_salon"
 LEISURE = frozenset({"youtube", "roblox"})
@@ -44,18 +45,14 @@ def tv_resource(notify_service: str | None = None) -> Resource:
     )
 
 
-def adguard_resource() -> Resource:
+def adguard_resource(device_id: str = "adguard_iphone_gabin") -> Resource:
     return Resource(
         id="iphone_gabin",
         name="iPhone Gabin",
         kind=ResourceKind.ADGUARD,
         owners=("gabin",),
-        options={"client": "iphone_gabin"},
+        options={"device_id": device_id},
     )
-
-
-def svc(service: str) -> str:
-    return f"switch.adguard_iphone_gabin_svc_{service}"
 
 
 def called_entities(calls) -> list[str]:
@@ -72,7 +69,7 @@ async def test_build_adapter_by_kind(hass: HomeAssistant) -> None:
     assert isinstance(ag, AdGuardAdapter)
     assert tv.resource.id == "tv"
     assert tv.entity_ids() == [TV_ENTITY]
-    assert ag.entity_ids() == [svc("roblox"), svc("youtube")]
+    assert ag.entity_ids() == []  # appareil inconnu du registre
     with pytest.raises(NotImplementedError):
         await tv.grant(10)
     with pytest.raises(NotImplementedError):
@@ -145,151 +142,189 @@ async def test_media_player_warn_without_notify_service(hass: HomeAssistant) -> 
 # --- adguard -------------------------------------------------------------------
 
 
-async def test_adguard_blocks_only_leisure_services(hass: HomeAssistant) -> None:
-    for service in ("youtube", "roblox", "khanacademy"):
-        hass.states.async_set(svc(service), "off")
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    off_calls = async_mock_service(hass, "switch", "turn_off")
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+@pytest.fixture
+def fake(hass: HomeAssistant) -> FakeAdGuard:
+    return FakeAdGuard(hass)
+
+
+def adguard(hass: HomeAssistant, fake: FakeAdGuard) -> AdGuardAdapter:
+    return build_adapter(hass, adguard_resource(fake.device_id), LEISURE)
+
+
+async def test_adguard_watches_device_sensor(hass: HomeAssistant, fake) -> None:
+    assert adguard(hass, fake).entity_ids() == [fake.entity_id]
+
+
+async def test_adguard_blocks_only_leisure_services(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked(["khanacademy"])
+    adapter = adguard(hass, fake)
 
     desired = state(False, LEISURE)
     assert adapter.drifted(desired)
     await adapter.apply(desired)
 
-    assert called_entities(on_calls) == [svc("roblox"), svc("youtube")]
-    assert off_calls == []
+    assert [c.data for c in fake.calls] == [
+        {"device_id": fake.device_id, "block": ["roblox", "youtube"], "unblock": []}
+    ]
+    assert fake.blocked == ["khanacademy", "roblox", "youtube"]
+    assert not adapter.drifted(desired)
     assert not adapter.in_use()
 
 
-async def test_adguard_unblocks_when_open(hass: HomeAssistant) -> None:
-    for service in ("youtube", "roblox", "khanacademy"):
-        hass.states.async_set(svc(service), "on")
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    off_calls = async_mock_service(hass, "switch", "turn_off")
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+async def test_adguard_unblocks_when_open(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked(["youtube", "roblox", "khanacademy"])
+    adapter = adguard(hass, fake)
 
     await adapter.apply(OPEN)
 
-    assert called_entities(off_calls) == [svc("roblox"), svc("youtube")]
-    assert on_calls == []
+    assert fake.unblocks() == ["roblox", "youtube"]
+    assert fake.blocks() == []
+    assert fake.blocked == ["khanacademy"]
     assert not adapter.drifted(OPEN)
 
 
-async def test_adguard_service_exception_partial(hass: HomeAssistant) -> None:
+async def test_adguard_service_exception_partial(hass: HomeAssistant, fake) -> None:
     """Ouvert avec un service bloqué par exception, hors loisirs compris."""
-    for service in ("youtube", "roblox", "tiktok"):
-        hass.states.async_set(svc(service), "off" if service != "roblox" else "on")
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    off_calls = async_mock_service(hass, "switch", "turn_off")
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+    fake.set_blocked(["roblox"])
+    adapter = adguard(hass, fake)
 
     desired = state(True, frozenset({"youtube", "tiktok"}))
     assert adapter.drifted(desired)
     await adapter.apply(desired)
 
-    assert called_entities(on_calls) == [svc("tiktok"), svc("youtube")]
-    assert called_entities(off_calls) == [svc("roblox")]
+    assert len(fake.calls) == 1
+    assert fake.blocks() == ["tiktok", "youtube"]
+    assert fake.unblocks() == ["roblox"]
 
 
-async def test_adguard_no_call_when_already_in_state(hass: HomeAssistant) -> None:
-    hass.states.async_set(svc("youtube"), "on")
-    hass.states.async_set(svc("roblox"), "on")
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    off_calls = async_mock_service(hass, "switch", "turn_off")
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+async def test_adguard_no_call_when_already_in_state(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked(["youtube", "roblox"])
+    adapter = adguard(hass, fake)
 
     desired = state(False, LEISURE)
     assert not adapter.drifted(desired)
     await adapter.apply(desired)
-
-    assert on_calls == []
-    assert off_calls == []
+    assert fake.calls == []
 
 
-async def test_adguard_unavailable_switch_is_left_alone(hass: HomeAssistant) -> None:
-    hass.states.async_set(svc("youtube"), "unavailable")
-    hass.states.async_set(svc("roblox"), "off")
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+@pytest.mark.parametrize("value", ["unavailable", "unknown"])
+async def test_adguard_unreadable_sensor_is_left_alone(
+    hass: HomeAssistant, fake, value
+) -> None:
+    hass.states.async_set(fake.entity_id, value, {"services": []})
+    adapter = adguard(hass, fake)
 
     desired = state(False, LEISURE)
+    assert not adapter.drifted(desired)
     await adapter.apply(desired)
-    assert called_entities(on_calls) == [svc("roblox")]
+    assert fake.calls == []
 
 
-async def test_adguard_missing_entity_logs_and_continues(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+async def test_adguard_missing_sensor_logs_once(
+    hass: HomeAssistant, fake, caplog: pytest.LogCaptureFixture
 ) -> None:
-    hass.states.async_set(svc("roblox"), "off")
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+    adapter = adguard(hass, fake)  # capteur enregistré, sans état
     desired = state(False, LEISURE)
 
     with caplog.at_level(logging.WARNING):
         await adapter.apply(desired)
         await adapter.apply(desired)
 
-    assert called_entities(on_calls) == [svc("roblox"), svc("roblox")]
-    warnings = [r for r in caplog.records if svc("youtube") in r.getMessage()]
+    assert fake.calls == []
+    warnings = [r for r in caplog.records if "introuvable" in r.getMessage()]
     assert len(warnings) == 1
-    assert warnings[0].levelno == logging.WARNING
 
 
-async def test_adguard_warn_does_nothing(hass: HomeAssistant) -> None:
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    await build_adapter(hass, adguard_resource(), LEISURE).warn("x")
-    assert on_calls == []
+async def test_adguard_unknown_device_has_no_entities(hass: HomeAssistant, fake) -> None:
+    adapter = build_adapter(hass, adguard_resource("inconnu"), LEISURE)
+    assert adapter.entity_ids() == []
+    assert not adapter.drifted(state(False, LEISURE))
+    await adapter.apply(state(False, LEISURE))
+    assert fake.calls == []
 
 
-async def test_adguard_lifts_non_leisure_block_after_exception_expires(
-    hass: HomeAssistant,
+async def test_adguard_global_blocked_services_warns_once(
+    hass: HomeAssistant, fake, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Un service hors loisirs bloqué par exception est débloqué quand elle échoit."""
-    hass.states.async_set(svc("tiktok"), "off")
-    on_calls = async_mock_service(hass, "switch", "turn_on")
-    off_calls = async_mock_service(hass, "switch", "turn_off")
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
-    for service in LEISURE:
-        hass.states.async_set(svc(service), "off")
-
-    await adapter.apply(state(True, frozenset({"tiktok"})))
-    assert called_entities(on_calls) == [svc("tiktok")]
-    hass.states.async_set(svc("tiktok"), "on")
-
-    # L'exception échoit : tiktok sort de blocked_services.
-    await adapter.apply(OPEN)
-    assert called_entities(off_calls) == [svc("tiktok")]
-    hass.states.async_set(svc("tiktok"), "off")
-
-    # Une fois débloqué, il n'est plus géré.
-    hass.states.async_set(svc("tiktok"), "on")
-    await adapter.apply(OPEN)
-    assert called_entities(off_calls) == [svc("tiktok")]
-
-
-async def test_adguard_failed_call_logs_and_continues(
-    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
-) -> None:
-    hass.states.async_set(svc("roblox"), "off")
-    hass.states.async_set(svc("youtube"), "off")
-    calls: list[str] = []
-
-    async def turn_on(call: ServiceCall) -> None:
-        calls.append(call.data["entity_id"])
-        if call.data["entity_id"] == svc("roblox"):
-            raise HomeAssistantError("bridge injoignable")
-
-    hass.services.async_register("switch", "turn_on", turn_on)
-    adapter = build_adapter(hass, adguard_resource(), LEISURE)
+    """Liste du client ignorée par AdGuard : on écrit quand même, on prévient."""
+    fake.use_global = True
+    fake.set_blocked([])
+    adapter = adguard(hass, fake)
 
     with caplog.at_level(logging.WARNING):
         await adapter.apply(state(False, LEISURE))
+        await adapter.apply(OPEN)
 
-    assert calls == [svc("roblox"), svc("youtube")]
+    assert fake.blocks() == ["roblox", "youtube"]
+    warnings = [r for r in caplog.records if "globaux" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+async def test_adguard_warn_does_nothing(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked([])
+    await adguard(hass, fake).warn("x")
+    assert fake.calls == []
+
+
+async def test_adguard_lifts_non_leisure_block_after_exception_expires(
+    hass: HomeAssistant, fake
+) -> None:
+    """Un service hors loisirs bloqué par exception est débloqué quand elle échoit."""
+    fake.set_blocked([])
+    adapter = adguard(hass, fake)
+
+    await adapter.apply(state(True, frozenset({"tiktok"})))
+    assert fake.blocked == ["tiktok"]
+
+    # L'exception échoit : tiktok sort de blocked_services.
+    await adapter.apply(OPEN)
+    assert fake.unblocks() == ["tiktok"]
+    assert fake.blocked == []
+
+    # Une fois débloqué, il n'est plus géré.
+    fake.set_blocked(["tiktok"])
+    await adapter.apply(OPEN)
+    assert fake.unblocks() == ["tiktok"]
+
+
+async def test_adguard_manually_unblocked_extra_is_forgotten(
+    hass: HomeAssistant, fake
+) -> None:
+    fake.set_blocked([])
+    adapter = adguard(hass, fake)
+    await adapter.apply(state(True, frozenset({"tiktok"})))
+    fake.set_blocked([])  # débloqué à la main avant l'échéance
+
+    await adapter.apply(OPEN)
+    fake.set_blocked(["tiktok"])  # rebloqué ailleurs : plus géré
+    await adapter.apply(OPEN)
+    assert fake.unblocks() == []
+
+
+async def test_adguard_failed_write_logs_and_retries(
+    hass: HomeAssistant, fake, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake.set_blocked([])
+    fake.error = HomeAssistantError("AdGuard injoignable")
+    adapter = adguard(hass, fake)
+
+    with caplog.at_level(logging.WARNING):
+        await adapter.apply(state(True, frozenset({"tiktok"})))
     assert any(
-        svc("roblox") in r.getMessage() and r.levelno == logging.WARNING
+        "injoignable" in r.getMessage() and r.levelno == logging.WARNING
         for r in caplog.records
     )
+
+    fake.error = None
+    await adapter.apply(state(True, frozenset({"tiktok"})))
+    await adapter.apply(OPEN)
+    assert fake.unblocks() == ["tiktok"]
+
+
+async def test_adguard_force_close_blocks_leisure(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked([])
+    await adguard(hass, fake).force_close()
+    assert fake.blocked == ["roblox", "youtube"]
 
 
 async def test_media_player_failed_call_logs(

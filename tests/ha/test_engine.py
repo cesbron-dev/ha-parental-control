@@ -24,6 +24,7 @@ from custom_components.parental_control.core.model import DayType
 from custom_components.parental_control.engine import ParentalEngine
 from custom_components.parental_control.store import ParentalStore
 from tests.fixtures import EX
+from tests.ha.fake_adguard import FakeAdGuard
 
 TZ = ZoneInfo("America/Toronto")
 TUESDAY = date(2026, 10, 27)
@@ -43,10 +44,6 @@ def at(day: date, hh: int, mm: int) -> datetime:
 SERVICES_KEY = "test_parental_services"
 
 
-def svc(service: str) -> str:
-    return f"switch.adguard_iphone_gabin_svc_{service}"
-
-
 class Services:
     """Services simulés : les appels mettent à jour l'état des entités."""
 
@@ -55,6 +52,7 @@ class Services:
         self.calendar_events: list[dict] = []
         self.calendar_error: Exception | None = None
         self.calendar_calls: list[ServiceCall] = []
+        self.adguard = FakeAdGuard(hass, self.calls)
         hass.data[SERVICES_KEY] = self
         self.register(hass)
 
@@ -113,9 +111,16 @@ async def services(hass: HomeAssistant) -> Services:
     return Services(hass)
 
 
-def set_switches(hass: HomeAssistant, state: str) -> None:
-    for service in LEISURE:
-        hass.states.async_set(svc(service), state)
+def config_for(services: Services | None) -> dict:
+    """Config d'exemple pointant sur l'appareil AdGuard simulé (s'il existe)."""
+    if services is None:
+        return EX
+    resources = [
+        {**r, "device_id": services.adguard.device_id}
+        if r["kind"] == "adguard_services" else r
+        for r in EX["resources"]
+    ]
+    return {**EX, "resources": resources}
 
 
 def set_nintendo(hass: HomeAssistant, used: str = "42", remaining: str = "18") -> None:
@@ -129,7 +134,8 @@ async def setup(hass: HomeAssistant, freezer, moment: datetime | None = None,
     if moment is not None:
         freezer.move_to(moment)
     if entry is None:
-        await ParentalStore(hass).save_config(parse_config(EX))
+        config = config_for(hass.data.get(SERVICES_KEY))
+        await ParentalStore(hass).save_config(parse_config(config))
         entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
         entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
@@ -247,16 +253,16 @@ async def test_drift_cooldown_when_device_state_lags(hass, freezer, services) ->
 
 
 async def test_desired_change_applies_despite_drift_cooldown(hass, freezer, services) -> None:
-    set_switches(hass, "off")
+    services.adguard.set_blocked([])
     _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
     services.calls.clear()
     await engine.start_timer("gabin", 30)  # changement voulu immédiat : ouverture
-    assert services.entities("switch", "turn_off") == sorted(svc(s) for s in LEISURE)
+    assert services.adguard.unblocks() == LEISURE
 
 
 async def test_no_duplicate_commands(hass, freezer, services) -> None:
     hass.states.async_set(TV, "on")
-    set_switches(hass, "off")
+    services.adguard.set_blocked([])
     await setup(hass, freezer, at(TUESDAY, 16, 30))
     for _ in range(5):
         await tick(hass, freezer)
@@ -264,19 +270,19 @@ async def test_no_duplicate_commands(hass, freezer, services) -> None:
                          for c in services.calls if c.domain != "notify")
     assert per_entity
     assert max(per_entity.values()) == 1
-    assert services.entities("switch", "turn_on") == sorted(svc(s) for s in LEISURE)
+    assert services.adguard.blocks() == LEISURE
 
 
 async def test_restart_restores_decisions_and_keeps_closed(
     hass, freezer, services, hass_storage
 ) -> None:
-    set_switches(hass, "off")
+    services.adguard.set_blocked([])
     entry, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
-    assert services.entities("switch", "turn_on") == sorted(svc(s) for s in LEISURE)
+    assert services.adguard.blocks() == LEISURE
     await engine.start_timer("gabin", 30)
     await engine.homework_done("gabin")
     assert engine.snapshot.resources["iphone_gabin"].open
-    assert services.entities("switch", "turn_off") == sorted(svc(s) for s in LEISURE)
+    assert services.adguard.unblocks() == LEISURE
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
@@ -289,7 +295,7 @@ async def test_restart_restores_decisions_and_keeps_closed(
     assert len(engine.decisions.timers) == 1
     assert engine.decisions.active_timer("gabin", at(SATURDAY, 10, 40)) is None
     assert not engine.snapshot.resources["iphone_gabin"].open
-    assert services.entities("switch", "turn_on") == sorted(svc(s) for s in LEISURE)
+    assert services.adguard.blocks() == LEISURE
 
 
 async def test_unload_cancels_listeners(hass, freezer, services) -> None:
@@ -319,8 +325,8 @@ async def test_adapter_exception_does_not_stop_other_resources(
     def boom(call: ServiceCall) -> None:
         raise RuntimeError("explosion")
 
-    hass.services.async_register("switch", "turn_on", boom)
-    set_switches(hass, "off")
+    hass.services.async_register("adguard_clients", "set_blocked_services", boom)
+    services.adguard.set_blocked([])
     hass.states.async_set(TV, "on")
     await setup(hass, freezer, at(TUESDAY, 16, 30))
     assert services.entities("media_player", "turn_off") == [TV]
@@ -495,7 +501,7 @@ async def test_start_timer_outside_quota_segment(hass, freezer, services) -> Non
 
 async def test_pause_force_closes_all(hass, freezer, services) -> None:
     hass.states.async_set(TV, "on")
-    set_switches(hass, "off")
+    services.adguard.set_blocked([])
     set_nintendo(hass)
     _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
     await engine.start_timer("gabin", 30)
@@ -508,7 +514,7 @@ async def test_pause_force_closes_all(hass, freezer, services) -> None:
     assert [c.data for c in services.of("number", "set_value")] == [
         {"entity_id": LIMIT, "value": 0}
     ]
-    assert services.entities("switch", "turn_on") == sorted(svc(s) for s in LEISURE)
+    assert services.adguard.blocks() == LEISURE
     assert not any(r.open for r in engine.snapshot.resources.values())
 
 
@@ -664,7 +670,7 @@ async def test_failed_start_cancels_listeners(hass, freezer, services, monkeypat
 
 
 async def test_warning_before_service_exception_ends(hass, freezer, services) -> None:
-    set_switches(hass, "on")
+    services.adguard.set_blocked(LEISURE)
     events = async_capture_events(hass, EVENT_WARNING)
     _, engine = await setup(hass, freezer, at(TUESDAY, 19, 30))
     await engine.add_exception(
@@ -704,13 +710,13 @@ async def test_nintendo_limit_raised_from_tablet_is_reset(hass, freezer, service
 
 
 async def test_appearing_entity_is_reapplied_in_open_window(hass, freezer, services) -> None:
-    """Switch AdGuard chargé après le moteur, à ON pendant une fenêtre ouverte."""
+    """Capteur AdGuard chargé après le moteur, YouTube bloqué pendant une fenêtre ouverte."""
     _, engine = await setup(hass, freezer, at(TUESDAY, 15, 30))
     assert engine.snapshot.resources["iphone_gabin"].open
-    assert services.of("switch", "turn_off") == []
-    hass.states.async_set(svc("youtube"), "on")
+    assert services.adguard.unblocks() == []
+    services.adguard.set_blocked(["youtube"])
     await hass.async_block_till_done()
-    assert services.entities("switch", "turn_off") == [svc("youtube")]
+    assert services.adguard.unblocks() == ["youtube"]
 
 
 DST_DAY = date(2026, 11, 1)  # passage à l'heure normale à 02:00 (America/Toronto)

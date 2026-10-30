@@ -23,7 +23,7 @@ DEFAULT_WARN_MINUTES = 5
 
 _REQUIRED_OPTIONS = {
     ResourceKind.MEDIA_PLAYER: ("entity_id",),
-    ResourceKind.ADGUARD: ("client",),
+    ResourceKind.ADGUARD: ("device_id",),
     ResourceKind.NINTENDO: ("device_id", "limit_entity", "remaining_entity", "used_entity"),
 }
 _RESOURCE_BASE_KEYS = {"id", "name", "kind", "owners", "quota_minutes"}

@@ -3,7 +3,7 @@
 Intégration Home Assistant (HACS) de contrôle parental. Chaque enfant a une frise
 horaire par type de journée (école, fin de semaine, congé pédagogique, vacances).
 Le moteur l'applique en continu aux téléviseurs (`media_player`), aux services
-AdGuard Home (via adguard-mqtt-bridge) et aux consoles Nintendo Switch. Il gère aussi
+AdGuard Home (via [ha-adguard-clients](https://github.com/cesbron-dev/ha-adguard-clients)) et aux consoles Nintendo Switch. Il gère aussi
 les devoirs, les quotas, les minuteurs, les bonus, les exceptions manuelles et une
 pause générale.
 
@@ -90,7 +90,7 @@ accepte pas).
       "name": "iPhone Gabin",
       "kind": "adguard_services",
       "owners": ["gabin"],
-      "client": "iphone_gabin"        // identifiant du client AdGuard
+      "device_id": "1ef9511faa6db9c5969524170a8fe8e3"  // appareil du client (adguard_clients)
     },
     {
       "id": "switch",
@@ -162,7 +162,7 @@ et `quota_minutes` (objet optionnel `{ "<type de journée>": minutes }`).
 | `kind` | Clés propres | Remarques |
 |---|---|---|
 | `media_player` | `entity_id` (obligatoire), `notify_service` (optionnel) | Éteinte quand la règle est fermée. Temps d'usage compté, `quota_minutes` applicable. |
-| `adguard_services` | `client` (obligatoire) | Pilote `switch.adguard_<client>_svc_<service>` (ON = bloqué), créés par adguard-mqtt-bridge. Seuls les services de loisirs sont gérés. |
+| `adguard_services` | `device_id` (obligatoire) | Appareil d'un client persistant de l'intégration `adguard_clients`. Le moteur lit l'attribut `services` de son capteur « Services bloqués » et écrit par `adguard_clients.set_blocked_services` (une écriture par décision). Seuls les services de loisirs sont gérés. |
 | `nintendo` | `device_id`, `limit_entity`, `remaining_entity`, `used_entity` | Les quatre sont obligatoires ; les trois entités sont celles de l'intégration Nintendo (limite du jour en `number`, temps restant et utilisé en `sensor`). La limite du jour doit rester à 0 : le temps s'accorde par bonus. |
 
 ### Charger la configuration
@@ -270,8 +270,8 @@ ressource, il est envoyé par son `notify_service` s'il est défini.
    de service. **N'écrivez jamais le code** dans une action `perform-action` d'un tableau de
    bord ni dans une automatisation ou un script qu'un non-administrateur peut déclencher.
 4. **Masquez à l'utilisateur de la tablette les entités brutes** AdGuard
-   (`switch.adguard_*`), Nintendo et télé : il pourrait les manipuler directement. Le moteur
-   corrige une dérive (switch AdGuard débloqué pendant une fermeture, télé rallumée, limite
+   (appareils `adguard_clients`), Nintendo et télé : il pourrait les manipuler directement. Le
+   moteur corrige une dérive (service AdGuard débloqué pendant une fermeture, télé rallumée, limite
    Nintendo relevée), mais pas avant qu'elle ait eu lieu.
 5. **Verrouillage** : après 5 codes faux consécutifs, les essais sont refusés 60 s ; chaque
    échec suivant double la durée, jusqu'à 15 minutes. Un bon code remet le compteur à zéro.
@@ -284,11 +284,13 @@ ressource, il est envoyé par son `notify_service` s'il est défini.
   utilisateur : le code n'est alors pas demandé. Ne créez pas d'automatisation ou de script qui
   débloque quelque chose et qu'un utilisateur non administrateur peut déclencher
   (`automation.trigger`, `script.turn_on`, etc.), ce serait un contournement du code.
-- **AdGuard.** Les identifiants de client viennent de la configuration (`client`). Les
-  interrupteurs attendus sont `switch.adguard_<client>_svc_<service>` (ON = bloqué), fournis par
-  adguard-mqtt-bridge. Un interrupteur absent est signalé dans les journaux et ignoré : **ce
-  service n'est alors pas bloqué sur cet appareil**. Un interrupteur qui apparaît plus tard est
-  pris en compte dès son apparition.
+- **AdGuard.** L'appareil vient de la configuration (`device_id`) ; son capteur « Services
+  bloqués » est retrouvé au démarrage du moteur. Un capteur absent ou indisponible est signalé
+  dans les journaux et ignoré : **les services ne sont alors pas bloqués sur cet appareil**.
+  Un client réglé sur « Utiliser les services bloqués globaux » n'applique pas sa propre liste :
+  le moteur l'écrit quand même et prévient dans les journaux ; désactivez ce réglage sur les
+  appareils des enfants. Un appareil créé après le démarrage du moteur demande de recharger
+  l'intégration.
 - **Retrait d'un loisir.** Retirer un service de `default_leisure` (ou via `leisure_remove`)
   pendant qu'il est bloqué le laisse bloqué : le moteur ne le gère plus.
 - **Nintendo.** Le moteur ne coupe jamais une partie en cours : il n'accorde que du temps
