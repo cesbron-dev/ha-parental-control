@@ -82,7 +82,7 @@ _EPS = 1e-6
 
 
 @dataclass(frozen=True)
-class _Slot:
+class Slot:
     """Segment de la frise placé sur la journée (heure murale du fuseau de `now`)."""
 
     start: datetime
@@ -111,7 +111,7 @@ def _day_type_for(kid_id: str, day: date, day_types: Mapping[str, DayType]) -> D
     return day_types.get(kid_id) or _default_day_type(day)
 
 
-def _timeline(kid: Kid, day_type: DayType, day: date, tz: tzinfo | None) -> list[_Slot]:
+def timeline(kid: Kid, day_type: DayType, day: date, tz: tzinfo | None) -> list[Slot]:
     segments = kid.profile_for(day_type).segments
     midnight = datetime.combine(day + timedelta(days=1), time(0), tzinfo=tz)
     slots = []
@@ -119,11 +119,11 @@ def _timeline(kid: Kid, day_type: DayType, day: date, tz: tzinfo | None) -> list
         start = datetime.combine(day, seg.start, tzinfo=tz)
         end = (datetime.combine(day, segments[i + 1].start, tzinfo=tz)
                if i + 1 < len(segments) else midnight)
-        slots.append(_Slot(start, end, seg.type))
+        slots.append(Slot(start, end, seg.type))
     return slots
 
 
-def _current_index(slots: Sequence[_Slot], now: datetime) -> int:
+def _current_index(slots: Sequence[Slot], now: datetime) -> int:
     wall = now.time().replace(tzinfo=None)
     index = 0
     for i, slot in enumerate(slots):
@@ -232,7 +232,7 @@ def _access(
     now: datetime,
     dec: Decisions,
     kid: Kid,
-    slots: Sequence[_Slot],
+    slots: Sequence[Slot],
     mode: ResourceMode = ResourceMode.SUIT_FRISE,
     meter: _Meter = _Meter(),
 ) -> _Access:
@@ -280,7 +280,7 @@ def _access(
 
 
 def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
-               slots: Sequence[_Slot]) -> KidState:
+               slots: Sequence[Slot]) -> KidState:
     today = now.date()
     current = slots[_current_index(slots, now)]
     budget = _kid_budget(kid, day_type, dec, today)
@@ -514,7 +514,7 @@ def _paused_resource_state(now: datetime, cfg: Config, dec: Decisions, resource:
 
 
 def _in_quota_segment(now: datetime, kid: Kid, resource: Resource,
-                      slots: Sequence[_Slot]) -> bool:
+                      slots: Sequence[Slot]) -> bool:
     """Le propriétaire est-il dans un segment QUOTA pour cette ressource (mode compris) ?"""
     mode = kid.resource_modes.get(resource.id, ResourceMode.SUIT_FRISE)
     seg_type = _effective_type(slots[_current_index(slots, now)].type, mode)
@@ -534,11 +534,11 @@ def evaluate(
 ) -> Snapshot:
     """État de tous les enfants et ressources à `now` (conscient du fuseau)."""
     today = now.date()
-    timelines: dict[str, list[_Slot]] = {}
+    timelines: dict[str, list[Slot]] = {}
     kids: dict[str, KidState] = {}
     for kid in cfg.kids:
         dtype = _day_type_for(kid.id, today, day_types)
-        timelines[kid.id] = _timeline(kid, dtype, today, now.tzinfo)
+        timelines[kid.id] = timeline(kid, dtype, today, now.tzinfo)
         kids[kid.id] = _kid_state(now, dec, kid, dtype, timelines[kid.id])
 
     if dec.paused:
@@ -609,7 +609,7 @@ def _closure_candidates(now: datetime, cfg: Config, dec: Decisions,
     today = now.date()
     candidates = {midnight}
     for kid in cfg.kids:
-        for slot in _timeline(kid, _day_type_for(kid.id, today, day_types), today, now.tzinfo):
+        for slot in timeline(kid, _day_type_for(kid.id, today, day_types), today, now.tzinfo):
             candidates.add(slot.start)
     candidates.update(t.end for t in dec.timers)
     candidates.update(e.until for e in dec.exceptions if e.until is not None)
