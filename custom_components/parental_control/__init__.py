@@ -9,6 +9,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import SIGNAL_UPDATE
 from .engine import ParentalEngine
+from .frontend import async_register_frontend
 from .services import async_setup_services, async_unload_services
 from .store import ParentalStore
 from .websocket import async_register_websocket
@@ -25,6 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ParentalConfigEntry) -> 
     await engine.async_start()
     async_setup_services(hass, entry)
     async_register_websocket(hass)
+    await async_register_frontend(hass)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Import tardif : `entity` importe ce module pour le type de l'entrée.

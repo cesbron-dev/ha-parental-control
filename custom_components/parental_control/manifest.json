@@ -6,7 +6,7 @@
   "iot_class": "calculated",
   "integration_type": "service",
   "dependencies": [],
-  "after_dependencies": ["calendar", "media_player", "notify"],
+  "after_dependencies": ["calendar", "frontend", "http", "media_player", "notify"],
   "requirements": [],
   "codeowners": ["@cesbron-dev"],
   "documentation": "https://github.com/cesbron-dev/ha-parental-control"
