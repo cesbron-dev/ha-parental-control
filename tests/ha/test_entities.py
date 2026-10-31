@@ -214,3 +214,23 @@ async def test_serialize_snapshot_shape(make_env) -> None:  # noqa: F811
     assert exc["target"] == {"resource_id": "tv", "kid_id": None, "service": None}
     assert exc["open"] is True
     json.dumps(data)  # tout est sérialisable
+
+
+async def test_serialize_display_ignores_ids_missing_from_config(make_env) -> None:  # noqa: F811
+    """Pendant `set_config`, le snapshot (ancien) peut citer un enfant ou une ressource retirés."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    raw = copy.deepcopy(EX)
+    raw["resources"] = [r for r in raw["resources"] if r["id"] != "tv"]
+    env.engine._config = parse_config(raw)  # config déjà remplacée, snapshot pas encore recalculé
+    data = serialize_snapshot(env.engine, display=True)
+    assert "tv" not in data["resources"]
+    assert "gabin" in data["kids"] and data["kids"]["gabin"]["name"]
+    assert data["resources"]["iphone_gabin"]["name"]
+
+    lea = copy.deepcopy(EX)
+    lea["kids"][0]["id"] = "lea"
+    for r in lea["resources"]:
+        r["owners"] = ["lea" if o == "gabin" else o for o in r["owners"]]
+    env.engine._config = parse_config(lea)  # « gabin » n'existe plus dans la config
+    data = serialize_snapshot(env.engine, display=True)
+    assert "gabin" not in data["kids"]

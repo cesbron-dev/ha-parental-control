@@ -78,6 +78,11 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
     cfg = engine.config
     snap = engine.snapshot
     now = dt_util.now()
+    # Pendant `set_config` le snapshot est l'ancien alors que la config est déjà la nouvelle : les
+    # enfants et ressources retirés sont omis du payload (le snapshot suivant les supprimera).
+    for kind, known in (("kids", {k.id for k in cfg.kids}), ("resources", {r.id for r in cfg.resources})):
+        for stale in [i for i in state[kind] if i not in known]:
+            del state[kind][stale]
     for kid_id, data in state["kids"].items():
         kid = cfg.kid(kid_id)
         data |= {
