@@ -10,7 +10,7 @@ pause générale.
 Le projet comporte trois pièces :
 
 1. **le moteur** (ce dépôt) : intégration, services, entités, API WebSocket ;
-2. **les cartes du tableau de bord** : à venir ;
+2. **les cartes du tableau de bord** : voir [Cartes](#cartes) ;
 3. **l'éditeur visuel de la configuration** : à venir.
 
 En attendant l'éditeur, la configuration se charge sous forme de JSON (voir plus bas).
@@ -260,12 +260,42 @@ Pour un enfant ou un service, le message est aussi envoyé aux services de `noti
 messages d'un même instant de fermeture sont regroupés en une seule notification. Pour une
 ressource, il est envoyé par son `notify_service` s'il est défini.
 
+## Cartes
+
+L'intégration charge ses cartes toute seule dans le tableau de bord (aucune ressource à
+ajouter) ; elles apparaissent dans le sélecteur de cartes, sous « Contrôle parental ».
+Elles lisent l'état du moteur en direct et n'appellent que les services `parental_control.*`.
+`resource` est l'`id` d'une ressource de la configuration JSON.
+
+| Carte | Rôle | Configuration minimale |
+|---|---|---|
+| `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. | `resource: tv` |
+| `parental-timeline-card` | La frise de la journée de chaque enfant. | `type: custom:parental-timeline-card` ; `kids: [gabin]` limite aux enfants listés |
+| `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
+
+```yaml
+type: custom:parental-resource-card
+resource: tv
+```
+
+```yaml
+type: custom:parental-switch-card
+resource: switch
+title: Nintendo Switch        # optionnel
+bonus_minutes: [15, 30, 60]   # optionnel
+```
+
+**Le code parent.** Un compte non administrateur doit saisir le code (petit cadenas sur la
+pilule) pour **autoriser** et pour les **bonus**. Il est demandé dans une fenêtre, envoyé avec
+l'appel et oublié ; il n'est jamais stocké dans une carte ni dans la configuration du
+tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmation en deux appuis.
+
 ## Tablette murale
 
 1. Créer un **utilisateur Home Assistant dédié, non administrateur**, pour la tablette.
-2. Y afficher le tableau de bord. Les cartes arriveront plus tard ; **en attendant, les
-   parents débloquent depuis leur téléphone (utilisateur administrateur)**. Sur la tablette,
-   le bouton « Devoirs terminés » et l'arrêt de la pause sont refusés.
+2. Y afficher le tableau de bord. Les [cartes](#cartes) demandent le code pour débloquer ; le bouton « Devoirs
+   terminés » et l'arrêt de la pause restent refusés sur la tablette : les parents les
+   utilisent depuis leur téléphone (utilisateur administrateur).
 3. Les actions qui débloquent demandent le **code parent** dans le champ `code` d'un appel
    de service. **N'écrivez jamais le code** dans une action `perform-action` d'un tableau de
    bord ni dans une automatisation ou un script qu'un non-administrateur peut déclencher.

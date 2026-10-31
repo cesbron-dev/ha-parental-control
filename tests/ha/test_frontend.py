@@ -39,6 +39,7 @@ async def test_registers_static_path_and_module_once(hass: HomeAssistant, http) 
     http.async_register_static_paths.assert_awaited_once()
     (config,) = http.async_register_static_paths.await_args.args[0]
     assert config.url_path == "/parental_control_static"
+    assert config.cache_headers is False  # modules importés sans `?v=` : pas de cache périmé
     assert Path(config.path).joinpath("parental-cards.js").is_file()
     assert Path(config.path).joinpath("lib.js").is_file()
     assert sorted(hass.data["frontend_extra_module_url"].urls) == [_URL]

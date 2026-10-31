@@ -1,7 +1,8 @@
 // Style « verre » commun aux cartes, pilules et confirmation en deux appuis.
-import { esc } from "./lib.js";
+import { esc, needsCode, bonusLabel } from "./lib.js";
 
 export const CONFIRM_MS = 3000;
+const ERROR_MS = 6000;
 
 export const BASE_CSS = `
   :host { display: block; }
@@ -79,5 +80,38 @@ export class ConfirmState {
     this.armed = id;
     if (id !== null) this._timer = setTimeout(() => this._set(null), CONFIRM_MS);
     this._onChange?.();
+  }
+}
+
+// Pilules bonus (+15m…) : avec code, la fenêtre de saisie sert de confirmation ; sinon deux appuis.
+export function bonusPills(hass, minutes, armed) {
+  const lock = needsCode(hass, "bonus");
+  return minutes.map((m) => {
+    const action = `bonus:${m}`;
+    return pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: armed === action, lock });
+  });
+}
+
+// Message d'erreur d'une action sans fenêtre, effacé seul après ERROR_MS.
+export class ErrorNotice {
+  constructor(onChange) {
+    this.text = "";
+    this._timer = null;
+    this._onChange = onChange;
+  }
+
+  set(text) {
+    clearTimeout(this._timer);
+    this.text = text;
+    if (text) {
+      this._timer = setTimeout(() => {
+        this.text = "";
+        this._onChange?.();
+      }, ERROR_MS);
+    }
+  }
+
+  clear() {
+    clearTimeout(this._timer);
   }
 }

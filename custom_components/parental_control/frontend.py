@@ -28,7 +28,9 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
     # `http` est une dépendance facultative (after_dependencies) : sans serveur, rien à servir.
     if not hass.data.get(_PATH_REGISTERED) and (http := getattr(hass, "http", None)) is not None:
         try:
-            await http.async_register_static_paths([StaticPathConfig(_URL_BASE, str(_WWW), True)])
+            # cache_headers=False : les modules importés par parental-cards.js n'ont pas de `?v=`,
+            # un cache long les laisserait périmés après une mise à jour.
+            await http.async_register_static_paths([StaticPathConfig(_URL_BASE, str(_WWW), False)])
         except RuntimeError:
             # Routeur déjà figé (serveur démarré) : les cartes manquent, pas le moteur.
             _LOGGER.warning("Chemin statique des cartes non enregistré", exc_info=True)
