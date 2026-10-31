@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import copy
+import json
 
 import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.parental_control.const import DOMAIN
+from custom_components.parental_control.core.decisions import ManualException, Target
 from custom_components.parental_control.core.config_io import dump_config, parse_config
 from custom_components.parental_control.security import hash_code
 from custom_components.parental_control.store import ParentalStore
@@ -88,7 +90,7 @@ async def test_state_and_not_loaded(hass, entry, hass_ws_client) -> None:
     client = await _client(hass, hass_ws_client, admin=False)
     await client.send_json_auto_id({"type": "parental_control/state"})
     result = (await client.receive_json())["result"]
-    assert set(result) == {"kids", "resources", "closures", "paused", "exceptions"}
+    assert set(result) == {"kids", "resources", "closures", "paused", "exceptions", "now"}
     assert "gabin" in result["kids"]
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -109,7 +111,7 @@ async def test_state_subscribe_pushes_on_update(hass, entry, hass_ws_client) -> 
     await hass.async_block_till_done()
     pushed = await client.receive_json()
     assert pushed["type"] == "event"
-    assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "exceptions"}
+    assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "exceptions", "now"}
 
 
 async def test_state_subscribe_survives_entry_reload(hass, entry, hass_ws_client) -> None:
@@ -131,3 +133,57 @@ async def test_state_subscribe_survives_entry_reload(hass, entry, hass_ws_client
     assert msg["success"]
     assert last is not None
     assert last["event"]["paused"] is True
+
+
+async def test_state_has_display_data_for_non_admin(hass, entry, hass_ws_client) -> None:
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    res = (await client.receive_json())["result"]
+    gabin = res["kids"]["gabin"]
+    assert (gabin["name"], gabin["emoji"], gabin["color"]) == ("Gabin", "🎮", "#FF6B6B")
+    assert gabin["timeline"]
+    iphone = res["resources"]["iphone_gabin"]
+    assert iphone["kind"] == "adguard_services"
+    assert iphone["owners"] == ["gabin"]
+    assert "youtube" in iphone["leisure"]
+    assert iphone["leisure"] == sorted(iphone["leisure"])
+    assert res["resources"]["tv"]["name"] == "Télé salon"
+    assert "used_entity" not in res["resources"]["tv"]
+    switch = res["resources"]["switch"]
+    assert switch["used_entity"] == "sensor.switch_papa_temps_d_ecran_utilise"
+    assert switch["remaining_entity"] == "sensor.switch_papa_temps_d_ecran_restant"
+    assert res["now"] == at(TUESDAY, 16, 30).isoformat()
+
+
+async def test_state_exception_has_ends_at(hass, entry, hass_ws_client) -> None:
+    engine = entry.runtime_data
+    engine.decisions.exceptions.append(
+        ManualException(
+            id="e1", target=Target(resource_id="tv"), open=True,
+            created=at(TUESDAY, 16, 30), until=at(TUESDAY, 17, 0), signature=None,
+        )
+    )
+    engine.decisions.exceptions.append(
+        ManualException(
+            id="e2", target=Target(kid_id="gabin"), open=True,
+            created=at(TUESDAY, 16, 30), until=None, signature=None,
+        )
+    )
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    res = (await client.receive_json())["result"]
+    ends = {e["id"]: e["ends_at"] for e in res["exceptions"]}
+    assert ends["e1"] == at(TUESDAY, 17, 0).isoformat()
+    assert ends["e2"] == res["kids"]["gabin"]["segment_end"]
+
+
+async def test_state_leaks_no_secret(hass, entry, hass_ws_client) -> None:
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    text = json.dumps((await client.receive_json())["result"])
+    for secret in (
+        "code_hash", "calendar", "calendar_map", "notify", "device_id", "limit_entity",
+        "calendar.ecole_primaire", "adguard_iphone_gabin", "b64d274dc045916f9a6de862a104fbb5",
+        "number.switch_papa_temps_d_ecran_max_aujourd_hui", "media_player.tv_salon",
+    ):
+        assert secret not in text

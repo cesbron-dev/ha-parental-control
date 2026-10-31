@@ -77,7 +77,7 @@ def ws_state(
 ) -> None:
     if (engine := _engine(hass, connection, msg)) is None:
         return
-    connection.send_result(msg["id"], serialize_snapshot(engine))
+    connection.send_result(msg["id"], serialize_snapshot(engine, display=True))
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state/subscribe"})
@@ -96,7 +96,7 @@ def ws_state_subscribe(
         if not entries:
             return
         connection.send_message(
-            websocket_api.event_message(msg_id, serialize_snapshot(entries[0].runtime_data))
+            websocket_api.event_message(msg_id, serialize_snapshot(entries[0].runtime_data, display=True))
         )
 
     connection.subscriptions[msg_id] = async_dispatcher_connect(hass, SIGNAL_UPDATE, push)
