@@ -17,6 +17,19 @@ const SERVICES = {
 
 const pad = (n) => String(n).padStart(2, "0");
 
+// Heure locale « HH:MM » d'une date ISO.
+const hhmm = (iso) => {
+  const d = new Date(iso);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// Échappe un texte venant du moteur avant de l'insérer dans du HTML.
+export function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+}
+
 // Durée en minutes -> « 1h 05m » (négatif ou invalide -> « 0h 00m »).
 export function fmtDuration(minutes) {
   const total = Math.max(0, Math.round(Number(minutes) || 0));
@@ -98,8 +111,7 @@ export function formatPill(exc, now) {
   if (exc.until) {
     when = fmtRemaining(new Date(exc.until) - now);
   } else if (exc.endsAt) {
-    const d = new Date(exc.endsAt);
-    when = `jusqu'à ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    when = `jusqu'à ${hhmm(exc.endsAt)}`;
   } else {
     when = "jusqu'à nouvel ordre";
   }
@@ -133,6 +145,40 @@ export function resourceView(state, resourceId) {
     nintendo: r.kind === "nintendo"
       ? { used_entity: r.used_entity, remaining_entity: r.remaining_entity }
       : null,
+  };
+}
+
+// Ligne de raison : raison du moteur, puis l'heure locale du prochain changement s'il est connu.
+export function reasonLine(view) {
+  const parts = [];
+  if (view.reason) parts.push(view.reason);
+  if (view.until) parts.push(`jusqu'à ${hhmm(view.until)}`);
+  return parts.join(" · ");
+}
+
+// Badge d'état d'une ressource : la pause l'emporte sur l'état ouvert/fermé.
+export function stateBadge(view) {
+  if (view.paused) return { label: "Pause", cls: "warn" };
+  return view.open ? { label: "Autorisé", cls: "ok" } : { label: "Bloqué", cls: "bad" };
+}
+
+// Libellé d'une pilule bonus : « +15m », « +1h », « +1h30m ».
+export function bonusLabel(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `+${m}m`;
+  return m ? `+${h}h${pad(m)}m` : `+${h}h`;
+}
+
+// Barre « utilisé / autorisé » (autorisé = utilisé + restant) ; null si la ressource n'a pas de quota.
+export function quotaBar(view) {
+  if (view.used == null && view.remaining == null) return null;
+  const used = view.used ?? 0;
+  const total = used + (view.remaining ?? 0);
+  return {
+    pct: total > 0 ? Math.min(100, (used / total) * 100) : 0,
+    text: `${fmtDuration(used)} / ${fmtDuration(total)}`,
+    over: total > 0 && used >= total,
   };
 }
 
