@@ -212,6 +212,39 @@ def test_kid_service_exception_applies_to_all_kid_devices(make_cfg):
     assert "youtube" in snap.resources["iphone_leo"].blocked_services
 
 
+def test_resource_close_beats_older_service_open(cfg):
+    dec = Decisions(exceptions=[
+        exc(Target(resource_id="iphone_gabin", service="youtube"), True, id_="yt", created=at(19)),
+        exc(Target(resource_id="iphone_gabin"), False, id_="stop", created=at(20)),
+    ])
+    snap = evaluate(at(20, 30), cfg, dec, ECOLE)
+    assert snap.resources["iphone_gabin"].blocked_services == cfg.leisure_for_resource("iphone_gabin")
+
+
+def test_newer_service_open_beats_resource_close(cfg):
+    dec = Decisions(exceptions=[
+        exc(Target(resource_id="iphone_gabin"), False, id_="stop", created=at(19)),
+        exc(Target(resource_id="iphone_gabin", service="youtube"), True, id_="yt", created=at(20)),
+    ])
+    assert "youtube" not in evaluate(at(20, 30), cfg, dec, ECOLE).resources["iphone_gabin"].blocked_services
+
+
+def test_resource_close_keeps_kid_service_open_on_other_devices(make_cfg):
+    def modify(d):
+        extra = dict(d["resources"][1])
+        extra.update(id="ipad_gabin", name="iPad Gabin", client="ipad_gabin")
+        d["resources"].append(extra)
+
+    cfg = make_cfg(modify)
+    dec = Decisions(exceptions=[
+        exc(Target(kid_id="gabin", service="youtube"), True, id_="yt", created=at(19)),
+        exc(Target(resource_id="iphone_gabin"), False, id_="stop", created=at(20)),
+    ])
+    snap = evaluate(at(20, 30), cfg, dec, ECOLE)
+    assert "youtube" in snap.resources["iphone_gabin"].blocked_services
+    assert "youtube" not in snap.resources["ipad_gabin"].blocked_services
+
+
 def test_global_service_exception_applies_to_all_adguard(cfg):
     dec = Decisions(exceptions=[exc(Target(service="youtube"), True)])
     snap = evaluate(at(20, 0), cfg, dec, ECOLE)
