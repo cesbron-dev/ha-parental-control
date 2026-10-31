@@ -83,7 +83,10 @@ class ParentalTimelineCard extends HTMLElement {
     if (this._hass) this._subscribe();
     // Heure et trait « maintenant » rafraîchis chaque minute.
     clearInterval(this._tick);
-    this._tick = setInterval(() => this._render(), 60000);
+    this._tick = setInterval(() => {
+      if (!this._unsub && !this._subConn && this.isConnected) this._subscribe();
+      this._render();
+    }, 60000);
     this._render();
   }
 
@@ -112,6 +115,8 @@ class ParentalTimelineCard extends HTMLElement {
       },
       () => {
         if (this._subToken !== token) return;
+        // Échec (ex. `not_loaded` juste après un redémarrage de HA) : le tick de 60 s réessaiera.
+        this._subConn = null;
         this._state = null;
         this._render();
       },
@@ -143,6 +148,8 @@ class ParentalTimelineCard extends HTMLElement {
     if (this._state === null || Object.keys(kids).length === 0) {
       return '<div class="muted">Contrôle parental indisponible</div>';
     }
+
+    if (ids.length === 0) return '<div class="muted">Aucun enfant à afficher</div>';
 
     const now = new Date();
     const hh = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;

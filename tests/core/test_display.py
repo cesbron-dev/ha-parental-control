@@ -40,8 +40,8 @@ def test_kid_timeline_first_segment_starts_at_midnight(cfg):
 
 
 def test_exception_end_global_takes_minimum(cfg):
-    # à 16:10 Gabin est en apres_devoirs (fin 19:00), Maël aussi (fin 19:00) ; à 15:40 Gabin
-    # est en libre (fin 16:00) alors que Maël est en bloque jusqu'à 16:15
+    # à 15:40 Gabin est en libre (fin 16:00) alors que Maël est en bloque jusqu'à 16:15 :
+    # les fins de segment diffèrent, la fin globale est la plus proche
     snap = evaluate(at(15, 40), cfg, Decisions(), ECOLE)
     ends = {k.segment_end for k in snap.kids.values()}
     assert len(ends) > 1

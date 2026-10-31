@@ -75,3 +75,16 @@ test("un callback qui lève n'empêche pas les autres de recevoir l'état", asyn
     console.error = origError;
   }
 });
+
+test("après un échec de souscription, un nouvel appel réessaie", async () => {
+  const hass = fakeHass();
+  const ok = hass.connection.subscribeMessage;
+  hass.connection.subscribeMessage = async () => { throw new Error("not_loaded"); };
+  await assert.rejects(subscribeState(hass, () => {}), /not_loaded/);
+  hass.connection.subscribeMessage = ok;
+  const got = [];
+  await subscribeState(hass, (s) => got.push(s));
+  assert.equal(hass.subs.length, 1);
+  hass.subs[0].cb({ n: 1 });
+  assert.deepEqual(got, [{ n: 1 }]);
+});

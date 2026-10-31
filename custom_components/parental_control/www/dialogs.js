@@ -82,6 +82,7 @@ export function openActionDialog(root, { title, choices = null, durations = null
       // Le code n'est jamais gardé : vidé dès la réponse du moteur.
       if (input) input.value = "";
       busy = false;
+      refresh(); // assurance si `onSubmit` a levé : les boutons ne restent pas désactivés
     }
     if (res?.ok) {
       dlg.close();

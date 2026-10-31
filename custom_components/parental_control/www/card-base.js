@@ -34,7 +34,10 @@ export class StateCard extends HTMLElement {
     if (this._hass) this._subscribe();
     // Compte à rebours des pilules rafraîchi chaque minute.
     clearInterval(this._tick);
-    this._tick = setInterval(() => this._render(), 60000);
+    this._tick = setInterval(() => {
+      if (!this._unsub && !this._subConn && this.isConnected) this._subscribe();
+      this._render();
+    }, 60000);
     this._render();
   }
 
@@ -64,6 +67,8 @@ export class StateCard extends HTMLElement {
       },
       () => {
         if (this._subToken !== token) return;
+        // Échec (ex. `not_loaded` juste après un redémarrage de HA) : le tick de 60 s réessaiera.
+        this._subConn = null;
         this._state = null;
         this._render();
       },
