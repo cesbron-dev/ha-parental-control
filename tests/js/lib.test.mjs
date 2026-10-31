@@ -18,6 +18,11 @@ const {
   stateBadge,
   bonusLabel,
   quotaBar,
+  dayTypeLabel,
+  segmentClass,
+  statusClass,
+  nextStepLabel,
+  exceptionSpans,
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
@@ -221,4 +226,48 @@ test("quotaBar", () => {
   assert.deepEqual(quotaBar({ used: 45, remaining: null }), { pct: 100, text: "0h 45m / 0h 45m", over: true });
   assert.deepEqual(quotaBar({ used: null, remaining: 60 }), { pct: 0, text: "0h 00m / 1h 00m", over: false });
   assert.deepEqual(quotaBar({ used: 0, remaining: 0 }), { pct: 0, text: "0h 00m / 0h 00m", over: false });
+});
+
+test("dayTypeLabel", () => {
+  assert.equal(dayTypeLabel("ecole"), "Jour d'école");
+  assert.equal(dayTypeLabel("fin_de_semaine"), "Fin de semaine");
+  assert.equal(dayTypeLabel("conge_peda"), "Congé pédago");
+  assert.equal(dayTypeLabel("vacances"), "Vacances");
+  assert.equal(dayTypeLabel("autre"), "autre");
+  assert.equal(dayTypeLabel(undefined), "");
+});
+
+test("segmentClass", () => {
+  for (const t of ["libre", "apres_devoirs", "quota", "sur_demande", "bloque"]) assert.equal(segmentClass(t), t);
+  assert.equal(segmentClass("inconnu"), "bloque");
+});
+
+test("statusClass", () => {
+  assert.equal(statusClass("autorise"), "ok");
+  assert.equal(statusClass("attente_devoirs"), "warn");
+  assert.equal(statusClass("pause"), "warn");
+  assert.equal(statusClass("bloque"), "bad");
+  assert.equal(statusClass("quota_epuise"), "bad");
+});
+
+test("nextStepLabel", () => {
+  assert.equal(nextStepLabel({ status: "bloque", segment_end: "2026-10-31T07:00:00-04:00" }), "reprise 07:00");
+  assert.equal(nextStepLabel({ status: "autorise", segment_end: "2026-10-30T20:30:00-04:00" }), "jusqu'à 20:30");
+  assert.equal(nextStepLabel({ status: "bloque", segment_end: null }), "");
+  assert.equal(nextStepLabel(undefined), "");
+});
+
+test("exceptionSpans", () => {
+  // Fin explicite : de 15:00 à 18:00 (62,5 % -> 75 % de la journée).
+  const [a] = exceptionSpans([{ id: "e1", endsAt: "2026-10-30T18:00:00-04:00" }], NOW);
+  assert.equal(a.id, "e1");
+  assert.equal(a.left, 62.5);
+  assert.equal(a.width, 12.5);
+  // Sans fin : jusqu'à minuit.
+  const [b] = exceptionSpans([{ id: "e2", endsAt: null }], NOW);
+  assert.equal(b.width, 37.5);
+  // Fin après minuit : bornée à la journée ; fin déjà passée : écartée.
+  assert.equal(exceptionSpans([{ id: "e3", endsAt: "2026-10-31T03:00:00-04:00" }], NOW)[0].width, 37.5);
+  assert.deepEqual(exceptionSpans([{ id: "e4", endsAt: "2026-10-30T14:00:00-04:00" }], NOW), []);
+  assert.deepEqual(exceptionSpans(undefined, NOW), []);
 });
