@@ -1,6 +1,7 @@
 // Point d'entrée chargé par l'intégration : importe les cartes et les déclare au sélecteur de cartes.
 import './resource-card.js';
 import './timeline-card.js';
+import './switch-card.js';
 
 const CARDS = [
   {
@@ -12,6 +13,11 @@ const CARDS = [
     type: 'parental-timeline-card',
     name: 'Contrôle parental — Frise',
     description: "Frise de la journée de chaque enfant : segments, maintenant et exceptions en cours.",
+  },
+  {
+    type: 'parental-switch-card',
+    name: 'Contrôle parental — Switch',
+    description: "Temps de jeu de la Nintendo Switch (jauge), état de la règle et bonus.",
   },
 ];
 

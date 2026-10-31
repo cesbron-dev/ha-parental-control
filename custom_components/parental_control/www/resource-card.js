@@ -2,11 +2,12 @@
 // « Autoriser… », « Arrêter » ou, pour une Switch, pilules bonus.
 import {
   esc, needsCode, resourceView, exceptionsForResource, formatPill, serviceLabel,
-  reasonLine, stateBadge, bonusLabel, quotaBar,
+  reasonLine, stateBadge, quotaBar, bonusMinutes,
 } from "./lib.js";
-import { subscribeState, callAction } from "./connection.js";
-import { BASE_CSS, pill, ConfirmState } from "./style.js";
-import { openActionDialog } from "./dialogs.js";
+import { callAction } from "./connection.js";
+import { StateCard } from "./card-base.js";
+import { BASE_CSS, pill, ConfirmState, ErrorNotice, bonusPills } from "./style.js";
+import { openActionDialog, runBonus } from "./dialogs.js";
 
 const KIND_ICONS = {
   media_player: "mdi:television",
@@ -21,9 +22,6 @@ const DURATIONS = [
   { value: 120, label: "2 h" },
   { value: null, label: "Jusqu'au prochain changement" },
 ];
-
-const DEFAULT_BONUS = [15, 30, 60];
-const ERROR_MS = 6000;
 
 const CSS = `
   ${BASE_CSS}
@@ -43,16 +41,10 @@ const CSS = `
   .error { margin-top: 8px; }
 `;
 
-class ParentalResourceCard extends HTMLElement {
+class ParentalResourceCard extends StateCard {
   constructor() {
     super();
-    this.attachShadow({ mode: "open" });
-    this._state = undefined; // undefined : pas encore reçu ; null : souscription impossible
-    this._unsub = null;
-    this._subConn = null;
-    this._tick = null;
-    this._error = "";
-    this._errorTimer = null;
+    this._error = new ErrorNotice(() => this._render());
     this._admin = undefined;
     this._confirm = new ConfirmState(() => this._render());
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
@@ -76,9 +68,7 @@ class ParentalResourceCard extends HTMLElement {
     return { columns: 12, min_columns: 6 };
   }
 
-  set hass(hass) {
-    this._hass = hass;
-    if (this.isConnected) this._subscribe();
+  _hassChanged(hass) {
     // `hass` change souvent : on ne redessine que si le droit admin (cadenas) change.
     const admin = !!hass?.user?.is_admin;
     if (admin !== this._admin) {
@@ -87,57 +77,10 @@ class ParentalResourceCard extends HTMLElement {
     }
   }
 
-  get hass() {
-    return this._hass;
-  }
-
-  connectedCallback() {
-    if (this._hass) this._subscribe();
-    // Compte à rebours des pilules rafraîchi chaque minute.
-    clearInterval(this._tick);
-    this._tick = setInterval(() => this._render(), 60000);
-    this._render();
-  }
-
-  disconnectedCallback() {
-    clearInterval(this._tick);
-    this._tick = null;
-    clearTimeout(this._errorTimer);
+  _cleanup() {
+    this._error.clear();
     this._confirm.clear();
     this.shadowRoot.querySelector("dialog.parental")?.close();
-    this._unsubscribe();
-  }
-
-  _subscribe() {
-    const conn = this._hass?.connection;
-    if (!conn || this._subConn === conn) return;
-    this._unsubscribe();
-    this._subConn = conn;
-    const token = {};
-    this._subToken = token;
-    subscribeState(this._hass, (msg) => {
-      if (this._subToken !== token) return;
-      this._state = msg;
-      this._render();
-    }).then(
-      (unsub) => {
-        // Déconnectée entre-temps : on relâche tout de suite la souscription.
-        if (this._subToken !== token) unsub();
-        else this._unsub = unsub;
-      },
-      () => {
-        if (this._subToken !== token) return;
-        this._state = null;
-        this._render();
-      },
-    );
-  }
-
-  _unsubscribe() {
-    this._subToken = null;
-    this._subConn = null;
-    this._unsub?.();
-    this._unsub = null;
   }
 
   _view() {
@@ -179,12 +122,7 @@ class ParentalResourceCard extends HTMLElement {
     });
 
     if (v.kind === "nintendo") {
-      const lock = needsCode(this._hass, "bonus");
-      for (const m of this._bonusMinutes()) {
-        const action = `bonus:${m}`;
-        // Avec code, la fenêtre de saisie sert de confirmation ; sinon deux appuis.
-        pills.push(pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: armed === action, lock }));
-      }
+      pills.push(...bonusPills(this._hass, bonusMinutes(this._config), armed));
     } else {
       pills.push(pill({ action: "allow", icon: "mdi:plus", label: "Autoriser…", cls: "bleu", lock: needsCode(this._hass, "open") }));
       pills.push(pill({ action: "stop", icon: "mdi:power", label: "Arrêter", cls: "rouge", confirm: true, armed: armed === "stop" }));
@@ -200,14 +138,7 @@ class ParentalResourceCard extends HTMLElement {
       ${quota ? `<div class="quota"><div class="bar"><div class="${quota.over ? "over" : ""}" style="width:${quota.pct}%"></div></div>
         <div class="muted">Utilisé ${quota.text}</div></div>` : ""}
       <div class="pills">${pills.join("")}</div>
-      ${this._error ? `<div class="error">${esc(this._error)}</div>` : ""}`;
-  }
-
-  _bonusMinutes() {
-    const list = this._config.bonus_minutes;
-    if (!Array.isArray(list)) return DEFAULT_BONUS;
-    const valid = list.map(Number).filter((m) => Number.isInteger(m) && m > 0);
-    return valid.length ? valid : DEFAULT_BONUS;
+      ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
   _onClick(ev) {
@@ -228,14 +159,9 @@ class ParentalResourceCard extends HTMLElement {
     if (action === "stop") return this._call("exception", { resource_id, open: false });
     if (action.startsWith("cancel:")) return this._call("annuler_exception", { exception_id: action.slice(7) });
     if (action.startsWith("bonus:")) {
-      const minutes = Number(action.slice(6));
-      const data = { resource_id, minutes };
-      if (!needsCode(this._hass, "bonus")) return this._call("ajouter_bonus", data);
-      openActionDialog(this.shadowRoot, {
-        title: `${bonusLabel(minutes)} · ${this._config.name || this._view().name || resource_id}`,
-        needCode: true,
-        submitLabel: "Ajouter",
-        onSubmit: ({ code }) => callAction(this._hass, "ajouter_bonus", data, code),
+      const title = this._config.name || this._view().name || resource_id;
+      return runBonus(this.shadowRoot, this._hass, {
+        resource_id, minutes: Number(action.slice(6)), title, call: (s, d) => this._call(s, d),
       });
     }
   }
@@ -265,14 +191,7 @@ class ParentalResourceCard extends HTMLElement {
   // Actions sans fenêtre (Arrêter, ✕, bonus admin) : l'erreur s'affiche sous les pilules.
   async _call(service, data) {
     const res = await callAction(this._hass, service, data);
-    clearTimeout(this._errorTimer);
-    this._error = res.ok ? "" : res.error || "Action refusée";
-    if (this._error) {
-      this._errorTimer = setTimeout(() => {
-        this._error = "";
-        this._render();
-      }, ERROR_MS);
-    }
+    this._error.set(res.ok ? "" : res.error || "Action refusée");
     this._render();
   }
 }

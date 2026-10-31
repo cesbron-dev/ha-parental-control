@@ -23,6 +23,8 @@ const {
   statusClass,
   nextStepLabel,
   exceptionSpans,
+  bonusMinutes,
+  switchGauge,
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
@@ -270,4 +272,21 @@ test("exceptionSpans", () => {
   assert.equal(exceptionSpans([{ id: "e3", endsAt: "2026-10-31T03:00:00-04:00" }], NOW)[0].width, 37.5);
   assert.deepEqual(exceptionSpans([{ id: "e4", endsAt: "2026-10-30T14:00:00-04:00" }], NOW), []);
   assert.deepEqual(exceptionSpans(undefined, NOW), []);
+});
+
+test("bonusMinutes : défaut 15/30/60, config filtrée aux entiers > 0", () => {
+  assert.deepEqual(bonusMinutes({}), [15, 30, 60]);
+  assert.deepEqual(bonusMinutes({ bonus_minutes: [10, "20", 0, -5, 1.5, "x"] }), [10, 20]);
+  assert.deepEqual(bonusMinutes({ bonus_minutes: [] }), [15, 30, 60]);
+  assert.deepEqual(bonusMinutes({ bonus_minutes: "30" }), [15, 30, 60]);
+});
+
+test("switchGauge : accordé = utilisé + restant, jauge = restant / accordé", () => {
+  const view = { nintendo: { used_entity: "sensor.u", remaining_entity: "sensor.r" } };
+  const hass = (u, r) => ({ states: { "sensor.u": { state: u }, "sensor.r": { state: r } } });
+  assert.deepEqual(switchGauge(hass("42", "18"), view), { used: 42, remaining: 18, granted: 60, pct: 30 });
+  // Non numérique, indisponible ou entité absente : 0 ; rien d'accordé -> jauge vide.
+  assert.deepEqual(switchGauge(hass("unavailable", "unknown"), view), { used: 0, remaining: 0, granted: 0, pct: 0 });
+  assert.equal(switchGauge({ states: {} }, view).granted, 0);
+  assert.equal(switchGauge(hass("0", "30.5"), view).pct, 100);
 });

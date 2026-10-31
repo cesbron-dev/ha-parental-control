@@ -170,6 +170,33 @@ export function bonusLabel(minutes) {
   return m ? `+${h}h${pad(m)}m` : `+${h}h`;
 }
 
+const DEFAULT_BONUS = [15, 30, 60];
+
+// Durées des pilules bonus : `bonus_minutes` de la config si elle contient des entiers > 0, sinon 15/30/60.
+export function bonusMinutes(config) {
+  const list = config?.bonus_minutes;
+  if (!Array.isArray(list)) return DEFAULT_BONUS;
+  const valid = list.map(Number).filter((m) => Number.isInteger(m) && m > 0);
+  return valid.length ? valid : DEFAULT_BONUS;
+}
+
+// Valeur numérique (minutes) d'une entité de `hass.states` ; absente ou non numérique -> 0.
+const entityMinutes = (hass, entityId) => {
+  const n = parseFloat(hass?.states?.[entityId]?.state);
+  return Number.isFinite(n) ? n : 0;
+};
+
+// Jauge de la carte Switch : accordé = utilisé + restant ; `pct` = restant / accordé (0 si rien d'accordé).
+export function switchGauge(hass, view) {
+  const used = entityMinutes(hass, view.nintendo?.used_entity);
+  const remaining = entityMinutes(hass, view.nintendo?.remaining_entity);
+  const granted = used + remaining;
+  return {
+    used, remaining, granted,
+    pct: granted > 0 ? Math.max(0, Math.min(100, (remaining / granted) * 100)) : 0,
+  };
+}
+
 // Barre « utilisé / autorisé » (autorisé = utilisé + restant) ; null si la ressource n'a pas de quota.
 export function quotaBar(view) {
   if (view.used == null && view.remaining == null) return null;

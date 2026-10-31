@@ -1,6 +1,7 @@
 // Fenêtre d'action des cartes (« Autoriser… », saisie du code) : un <dialog> natif dans le
 // shadow DOM de la carte, affiché en surimpression (couche supérieure du navigateur).
-import { esc } from "./lib.js";
+import { esc, needsCode, bonusLabel } from "./lib.js";
+import { callAction } from "./connection.js";
 
 const DIALOG_CSS = `
   dialog {
@@ -118,4 +119,16 @@ export function openActionDialog(root, { title, choices = null, durations = null
   dlg.showModal();
   input?.focus();
   return { close: () => dlg.open && dlg.close() };
+}
+
+// Bonus nintendo : admin -> `call` direct (déjà confirmé par deux appuis) ; sinon fenêtre de saisie du code.
+export function runBonus(root, hass, { resource_id, minutes, title, call }) {
+  const data = { resource_id, minutes };
+  if (!needsCode(hass, "bonus")) return call("ajouter_bonus", data);
+  openActionDialog(root, {
+    title: `${bonusLabel(minutes)} · ${title}`,
+    needCode: true,
+    submitLabel: "Ajouter",
+    onSubmit: ({ code }) => callAction(hass, "ajouter_bonus", data, code),
+  });
 }
