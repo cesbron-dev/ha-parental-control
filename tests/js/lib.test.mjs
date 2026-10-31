@@ -13,6 +13,11 @@ const {
   timelineGeometry,
   needsCode,
   serviceLabel,
+  esc,
+  reasonLine,
+  stateBadge,
+  bonusLabel,
+  quotaBar,
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
@@ -181,4 +186,39 @@ test("timelineGeometry clamps to day", () => {
     { left: (22 / 24) * 100, width: 100 - (22 / 24) * 100, type: "bloque" },
   ]);
   assert.deepEqual(timelineGeometry(null, NOW).bars, []);
+});
+
+test("esc", () => {
+  assert.equal(esc(`<b a="1">'&'</b>`), "&lt;b a=&quot;1&quot;&gt;&#39;&amp;&#39;&lt;/b&gt;");
+  assert.equal(esc(null), "");
+  assert.equal(esc(3), "3");
+});
+
+test("reasonLine adds local until", () => {
+  assert.equal(reasonLine({ reason: "Soirée", until: null }), "Soirée");
+  assert.equal(reasonLine({ reason: "Exception", until: "2026-10-31T02:45:00Z" }), "Exception · jusqu'à 22:45");
+  assert.equal(reasonLine({ reason: "", until: "2026-10-30T07:05:00-04:00" }), "jusqu'à 07:05");
+  assert.equal(reasonLine({ reason: "", until: null }), "");
+});
+
+test("stateBadge", () => {
+  assert.deepEqual(stateBadge({ paused: true, open: true }), { label: "Pause", cls: "warn" });
+  assert.deepEqual(stateBadge({ paused: false, open: true }), { label: "Autorisé", cls: "ok" });
+  assert.deepEqual(stateBadge({ paused: false, open: false }), { label: "Bloqué", cls: "bad" });
+});
+
+test("bonusLabel", () => {
+  assert.equal(bonusLabel(15), "+15m");
+  assert.equal(bonusLabel(30), "+30m");
+  assert.equal(bonusLabel(60), "+1h");
+  assert.equal(bonusLabel(120), "+2h");
+  assert.equal(bonusLabel(90), "+1h30m");
+});
+
+test("quotaBar", () => {
+  assert.equal(quotaBar({ used: null, remaining: null }), null);
+  assert.deepEqual(quotaBar({ used: 10, remaining: 20 }), { pct: (10 / 30) * 100, text: "0h 10m / 0h 30m", over: false });
+  assert.deepEqual(quotaBar({ used: 45, remaining: null }), { pct: 100, text: "0h 45m / 0h 45m", over: true });
+  assert.deepEqual(quotaBar({ used: null, remaining: 60 }), { pct: 0, text: "0h 00m / 1h 00m", over: false });
+  assert.deepEqual(quotaBar({ used: 0, remaining: 0 }), { pct: 0, text: "0h 00m / 0h 00m", over: false });
 });
