@@ -1,5 +1,6 @@
 // Socle des cartes qui suivent l'état du moteur : souscription WebSocket liée au cycle de vie de l'élément.
 import { subscribeState } from "./connection.js";
+import { shouldSubscribe } from "./lib.js";
 
 export class StateCard extends HTMLElement {
   constructor() {
@@ -8,6 +9,7 @@ export class StateCard extends HTMLElement {
     this._state = undefined; // undefined : pas encore reçu ; null : souscription impossible
     this._unsub = null;
     this._subConn = null;
+    this._failedConn = null; // connexion sur laquelle la souscription vient d'échouer
     this._tick = null;
   }
 
@@ -35,7 +37,10 @@ export class StateCard extends HTMLElement {
     // Compte à rebours des pilules rafraîchi chaque minute.
     clearInterval(this._tick);
     this._tick = setInterval(() => {
-      if (!this._unsub && !this._subConn && this.isConnected) this._subscribe();
+      if (!this._unsub && !this._subConn && this.isConnected) {
+        this._failedConn = null;
+        this._subscribe();
+      }
       this._render();
     }, 60000);
     this._render();
@@ -50,7 +55,7 @@ export class StateCard extends HTMLElement {
 
   _subscribe() {
     const conn = this._hass?.connection;
-    if (!conn || this._subConn === conn) return;
+    if (!shouldSubscribe(conn, this._subConn, this._failedConn)) return;
     this._unsubscribe();
     this._subConn = conn;
     const token = {};
@@ -68,6 +73,7 @@ export class StateCard extends HTMLElement {
       () => {
         if (this._subToken !== token) return;
         // Échec (ex. `not_loaded` juste après un redémarrage de HA) : le tick de 60 s réessaiera.
+        this._failedConn = this._subConn;
         this._subConn = null;
         this._state = null;
         this._render();
