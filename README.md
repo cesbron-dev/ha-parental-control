@@ -288,7 +288,8 @@ bonus_minutes: [15, 30, 60]   # optionnel
 ```
 
 **Le code parent.** Un compte non administrateur doit saisir le code (petit cadenas sur la
-pilule) pour **autoriser** et pour les **bonus**. Il est demandé dans une fenêtre, envoyé avec
+pilule) pour **autoriser** et pour les **bonus**. Il est saisi sur un pavé numérique tactile (pas de clavier
+natif qui recouvre l'écran ; le clavier physique marche aussi), envoyé avec
 l'appel et oublié ; il n'est jamais stocké dans une carte ni dans la configuration du
 tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmation en deux appuis.
 

@@ -19,6 +19,7 @@ const {
   stateBadge,
   bonusLabel,
   quotaBar,
+  keypadInput,
   dayTypeLabel,
   segmentClass,
   statusClass,
@@ -333,4 +334,14 @@ test("shouldSubscribe : pas de rafale après un échec, nouvelle connexion rées
   assert.equal(shouldSubscribe(a, a, null), false); // déjà souscrite
   assert.equal(shouldSubscribe(a, null, a), false); // échec sur cette connexion : le tick réessaiera
   assert.equal(shouldSubscribe(b, null, a), true); // autre connexion
+});
+
+test("keypadInput: digits up to 8, backspace, clear", () => {
+  assert.equal(keypadInput("", "1"), "1");
+  assert.equal(keypadInput("123", "4"), "1234");
+  assert.equal(keypadInput("12345678", "9"), "12345678"); // 8 chiffres au plus (code de 4 à 8)
+  assert.equal(keypadInput("123", "back"), "12");
+  assert.equal(keypadInput("", "back"), "");
+  assert.equal(keypadInput("123", "clear"), "");
+  assert.equal(keypadInput("12", "x"), "12"); // touche inconnue : rien
 });

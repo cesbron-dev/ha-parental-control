@@ -294,3 +294,13 @@ export function exceptionSpans(exceptions, now) {
 export function shouldSubscribe(conn, subConn, failedConn) {
   return !!conn && subConn !== conn && failedConn !== conn;
 }
+
+// Saisie au pavé numérique du code parent (4 à 8 chiffres) : chiffre ajouté, « back » efface le
+// dernier, « clear » vide ; toute autre touche est ignorée.
+const CODE_MAX = 8;
+export function keypadInput(value, key) {
+  if (key === "back") return value.slice(0, -1);
+  if (key === "clear") return "";
+  if (/^\d$/.test(key) && value.length < CODE_MAX) return value + key;
+  return value;
+}
