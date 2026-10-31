@@ -289,3 +289,13 @@ def test_shared_until_stops_at_gap(make_cfg):
     cfg = make_cfg(modify)
     dec = Decisions(homework_done={"alice": TUESDAY})
     assert evaluate(at(15, 40), cfg, dec, ECOLE).resources["tv"].until == at(16, 0)
+
+
+def test_service_exception_created_at_resource_close_is_ignored(cfg):
+    # Borne : `created` égal à celui de la fermeture -> l'exception de service est ignorée (bloquée).
+    dec = Decisions(exceptions=[
+        exc(Target(resource_id="iphone_hugo", service="youtube"), True, id_="yt", created=at(20)),
+        exc(Target(resource_id="iphone_hugo"), False, id_="stop", created=at(20)),
+    ])
+    snap = evaluate(at(20, 30), cfg, dec, ECOLE)
+    assert snap.resources["iphone_hugo"].blocked_services == cfg.leisure_for_resource("iphone_hugo")
