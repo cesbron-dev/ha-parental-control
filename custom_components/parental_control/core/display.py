@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, time
 
 from .decisions import ManualException
 from .evaluator import Snapshot, timeline
@@ -16,10 +16,15 @@ def kid_timeline(cfg: Config, snap: Snapshot, kid_id: str, now: datetime) -> lis
     l'évaluateur le considère déjà courant depuis 00:00.
     """
     slots = timeline(cfg.kid(kid_id), snap.kids[kid_id].day_type, now.date(), now.tzinfo)
-    out = [{"start": s.start, "end": s.end, "type": s.type.value} for s in slots]
-    if out:
-        out[0]["start"] = datetime.combine(now.date(), datetime.min.time(), tzinfo=now.tzinfo)
-    return [{**s, "start": s["start"].isoformat(), "end": s["end"].isoformat()} for s in out]
+    midnight = datetime.combine(now.date(), time(0), tzinfo=now.tzinfo)
+    return [
+        {
+            "start": (midnight if i == 0 else s.start).isoformat(),
+            "end": s.end.isoformat(),
+            "type": s.type.value,
+        }
+        for i, s in enumerate(slots)
+    ]
 
 
 def exception_end(cfg: Config, snap: Snapshot, exc: ManualException) -> datetime | None:
