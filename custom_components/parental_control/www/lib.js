@@ -166,7 +166,11 @@ function blockedSegmentEnd(kids, owners) {
 export function reasonLine(view) {
   const parts = [];
   if (view.reason) parts.push(view.reason);
-  if (view.until) parts.push(`jusqu'à ${hhmm(view.until)}`);
+  // le moteur met parfois déjà l'heure dans sa raison (« Écrans autorisés jusqu'à 20:00 »)
+  if (view.until) {
+    const until = `jusqu'à ${hhmm(view.until)}`;
+    if (!view.reason?.includes(until)) parts.push(until);
+  }
   else if (!view.open && view.resumesAt) parts.push(`reprise ${hhmm(view.resumesAt)}`);
   return parts.join(" · ");
 }

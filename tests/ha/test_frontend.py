@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -12,11 +11,21 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.parental_control.const import DOMAIN
-from custom_components.parental_control.frontend import async_register_frontend
+from custom_components.parental_control.frontend import async_register_frontend, files_version
 
-_MANIFEST = Path(__file__).parents[2] / "custom_components" / DOMAIN / "manifest.json"
-_VERSION = json.loads(_MANIFEST.read_text("utf-8"))["version"]
-_URL = f"/parental_control_static/parental-cards.js?v={_VERSION}"
+_WWW = Path(__file__).parents[2] / "custom_components" / DOMAIN / "www"
+_BASE = f"/parental_control_static/{files_version(_WWW)}"
+_URL = f"{_BASE}/parental-cards.js"
+
+
+def test_files_version_follows_content(tmp_path: Path) -> None:
+    # Le chemin servi change avec le contenu des fichiers : un module importé n'est jamais périmé.
+    (tmp_path / "a.js").write_text("un")
+    (tmp_path / "b.js").write_text("deux")
+    first = files_version(tmp_path)
+    assert first == files_version(tmp_path)
+    (tmp_path / "b.js").write_text("trois")
+    assert files_version(tmp_path) != first
 
 
 @pytest.fixture(autouse=True)
@@ -38,8 +47,8 @@ async def test_registers_static_path_and_module_once(hass: HomeAssistant, http) 
 
     http.async_register_static_paths.assert_awaited_once()
     (config,) = http.async_register_static_paths.await_args.args[0]
-    assert config.url_path == "/parental_control_static"
-    assert config.cache_headers is False  # modules importés sans `?v=` : pas de cache périmé
+    assert config.url_path == _BASE
+    assert config.cache_headers is True  # chemin versionné par le contenu : cache long sans risque
     assert Path(config.path).joinpath("parental-cards.js").is_file()
     assert Path(config.path).joinpath("lib.js").is_file()
     assert sorted(hass.data["frontend_extra_module_url"].urls) == [_URL]
