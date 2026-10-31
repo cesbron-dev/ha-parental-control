@@ -209,6 +209,33 @@ test("reasonLine adds local until", () => {
   assert.equal(reasonLine({ reason: "", until: null }), "");
 });
 
+test("reasonLine shows resume time of a closed resource", () => {
+  assert.equal(reasonLine({ reason: "Bloqué", until: null, open: false, resumesAt: "2026-10-31T08:00:00-04:00" }),
+    "Bloqué · reprise 08:00");
+  // ouverte : pas de « reprise »
+  assert.equal(reasonLine({ reason: "Ok", until: null, open: true, resumesAt: "2026-10-31T08:00:00-04:00" }), "Ok");
+  // `until` connu : il l'emporte
+  assert.equal(reasonLine({ reason: "Fermée", until: "2026-10-30T21:00:00-04:00", open: false,
+    resumesAt: "2026-10-31T08:00:00-04:00" }), "Fermée · jusqu'à 21:00");
+});
+
+test("resourceView resumesAt is the earliest end of the owners' blocked segments", () => {
+  const s = state();
+  s.kids.gabin = { ...s.kids.gabin, segment: "bloque", segment_end: "2026-10-31T08:00:00-04:00" };
+  s.kids.lea = { ...s.kids.lea, segment: "bloque", segment_end: "2026-10-31T07:30:00-04:00" };
+  s.resources.tv.owners = ["gabin", "lea"];
+  assert.equal(resourceView(s, "tv").resumesAt, "2026-10-31T07:30:00-04:00");
+  // un propriétaire hors segment « bloque » : la reprise n'est pas connue
+  s.kids.lea.segment = "apres_devoirs";
+  assert.equal(resourceView(s, "tv").resumesAt, null);
+  // propriétaire inconnu : pas de reprise
+  s.resources.tv.owners = ["inconnu"];
+  assert.equal(resourceView(s, "tv").resumesAt, null);
+  // Switch (sur demande) : jamais de reprise
+  s.resources.switch.owners = ["gabin"];
+  assert.equal(resourceView(s, "switch").resumesAt, null);
+});
+
 test("stateBadge", () => {
   assert.deepEqual(stateBadge({ paused: true, open: true }), { label: "Pause", cls: "warn" });
   assert.deepEqual(stateBadge({ paused: false, open: true }), { label: "Autorisé", cls: "ok" });
@@ -226,7 +253,9 @@ test("bonusLabel", () => {
 test("quotaBar", () => {
   assert.equal(quotaBar({ used: null, remaining: null }), null);
   assert.deepEqual(quotaBar({ used: 10, remaining: 20 }), { pct: (10 / 30) * 100, text: "0h 10m / 0h 30m", over: false });
-  assert.deepEqual(quotaBar({ used: 45, remaining: null }), { pct: 100, text: "0h 45m / 0h 45m", over: true });
+  // sans temps restant, la ressource n'a pas de quota : pas de barre (télé à « 0h 00m / 0h 00m »)
+  assert.equal(quotaBar({ used: 45, remaining: null }), null);
+  assert.equal(quotaBar({ used: 0, remaining: null }), null);
   assert.deepEqual(quotaBar({ used: null, remaining: 60 }), { pct: 0, text: "0h 00m / 1h 00m", over: false });
   assert.deepEqual(quotaBar({ used: 0, remaining: 0 }), { pct: 0, text: "0h 00m / 0h 00m", over: false });
 });

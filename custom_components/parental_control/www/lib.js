@@ -126,7 +126,7 @@ export function resourceView(state, resourceId) {
   const resources = state?.resources ?? {};
   const base = {
     status: "ok", name: null, kind: null, owners: [], open: false, reason: "", until: null,
-    used: null, remaining: null, leisure: [], nintendo: null, paused: !!state?.paused,
+    used: null, remaining: null, leisure: [], nintendo: null, paused: !!state?.paused, resumesAt: null,
   };
   if (Object.keys(resources).length === 0) return { ...base, status: "unavailable" };
   const r = resources[resourceId];
@@ -145,7 +145,21 @@ export function resourceView(state, resourceId) {
     nintendo: r.kind === "nintendo"
       ? { used_entity: r.used_entity, remaining_entity: r.remaining_entity }
       : null,
+    resumesAt: r.kind === "nintendo" ? null : blockedSegmentEnd(state.kids, r.owners),
   };
+}
+
+// Heure de reprise d'une ressource fermée par la frise, que le moteur ne donne pas (`until` nul) :
+// fin de segment la plus proche, seulement si tous les propriétaires sont dans un segment « bloque »
+// (la frise affiche la même heure par enfant). La Switch (« sur demande ») n'a pas de reprise.
+function blockedSegmentEnd(kids, owners) {
+  let best = null;
+  for (const id of owners ?? []) {
+    const kid = kids?.[id];
+    if (!kid || kid.segment !== "bloque" || !kid.segment_end) return null;
+    if (best === null || new Date(kid.segment_end) < new Date(best)) best = kid.segment_end;
+  }
+  return best;
 }
 
 // Ligne de raison : raison du moteur, puis l'heure locale du prochain changement s'il est connu.
@@ -153,6 +167,7 @@ export function reasonLine(view) {
   const parts = [];
   if (view.reason) parts.push(view.reason);
   if (view.until) parts.push(`jusqu'à ${hhmm(view.until)}`);
+  else if (!view.open && view.resumesAt) parts.push(`reprise ${hhmm(view.resumesAt)}`);
   return parts.join(" · ");
 }
 
@@ -199,7 +214,8 @@ export function switchGauge(hass, view) {
 
 // Barre « utilisé / autorisé » (autorisé = utilisé + restant) ; null si la ressource n'a pas de quota.
 export function quotaBar(view) {
-  if (view.used == null && view.remaining == null) return null;
+  // sans temps restant, la ressource n'a pas de quota du jour
+  if (view.remaining == null) return null;
   const used = view.used ?? 0;
   const total = used + (view.remaining ?? 0);
   return {
