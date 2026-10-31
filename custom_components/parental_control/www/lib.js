@@ -196,3 +196,48 @@ export function timelineGeometry(segments, now) {
   }
   return { bars, nowPct: pct(now) };
 }
+
+const DAY_TYPES = {
+  ecole: "Jour d'école",
+  fin_de_semaine: "Fin de semaine",
+  conge_peda: "Congé pédago",
+  vacances: "Vacances",
+};
+
+// Libellé du type de jour du moteur ; type inconnu affiché tel quel, absent -> chaîne vide.
+export function dayTypeLabel(type) {
+  return DAY_TYPES[type] ?? (type ? String(type) : "");
+}
+
+// Classe de couleur d'un segment de la frise ; un type inconnu est traité comme bloqué.
+export function segmentClass(type) {
+  return ["libre", "apres_devoirs", "quota", "sur_demande"].includes(type) ? type : "bloque";
+}
+
+// Classe de couleur du statut d'un enfant (texte de statut dans la frise).
+export function statusClass(status) {
+  if (status === "autorise") return "ok";
+  if (["attente_devoirs", "attente_minuteur", "sur_demande", "pause"].includes(status)) return "warn";
+  return "bad";
+}
+
+// Prochaine étape d'un enfant : « reprise HH:MM » s'il est bloqué, « jusqu'à HH:MM » s'il est libre ;
+// chaîne vide sans fin de segment.
+export function nextStepLabel(kid) {
+  if (!kid?.segment_end) return "";
+  const open = kid.status === "autorise" || kid.status === "sur_demande";
+  return `${open ? "jusqu'à" : "reprise"} ${hhmm(kid.segment_end)}`;
+}
+
+// Plages hachurées (en % de la journée locale de `now`) des exceptions ouvertes : de `now` à `endsAt`,
+// ou jusqu'à la fin de la journée sans `endsAt` ; les plages vides ou déjà passées sont écartées.
+export function exceptionSpans(exceptions, now) {
+  const dayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const spans = [];
+  for (const e of exceptions ?? []) {
+    const end = e.endsAt ? new Date(e.endsAt) : dayEnd;
+    const { bars } = timelineGeometry([{ start: now.toISOString(), end: end.toISOString(), type: "exception" }], now);
+    if (bars[0]) spans.push({ id: e.id, left: bars[0].left, width: bars[0].width });
+  }
+  return spans;
+}
