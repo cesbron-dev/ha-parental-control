@@ -293,6 +293,15 @@ natif qui recouvre l'écran ; le clavier physique marche aussi), envoyé avec
 l'appel et oublié ; il n'est jamais stocké dans une carte ni dans la configuration du
 tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmation en deux appuis.
 
+## Panneau « Règles »
+
+L'intégration ajoute un panneau **Règles** dans la barre latérale (administrateurs seulement) pour
+modifier la configuration sans écrire de JSON : enfants et frises par type de jour (segments,
+quotas, avertissements), loisirs, mode par appareil, appareils (télé, clients AdGuard, consoles
+Nintendo) et leurs quotas, loisirs par défaut, mots du calendrier scolaire et notifications. Les
+modifications restent en brouillon jusqu'à « Enregistrer » ; le moteur valide et, en cas d'erreur,
+indique le champ fautif. Un onglet JSON garde l'accès à la configuration brute.
+
 ## Tablette murale
 
 1. Créer un **utilisateur Home Assistant dédié, non administrateur**, pour la tablette.
