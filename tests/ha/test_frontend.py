@@ -60,7 +60,21 @@ async def test_entry_setup_registers_module_once(hass: HomeAssistant, http) -> N
     http.async_register_static_paths.assert_awaited_once()
 
 
-async def test_without_frontend_does_nothing(hass: HomeAssistant, http) -> None:
+async def test_without_frontend_injects_on_later_call(hass: HomeAssistant, http) -> None:
     del hass.data["frontend_extra_module_url"]
     await async_register_frontend(hass)
     assert "frontend_extra_module_url" not in hass.data
+
+    # Le frontend se charge ensuite : le rechargement de l'entrée rattrape l'injection.
+    hass.data["frontend_extra_module_url"] = UrlManager(lambda *_: None, [])
+    await async_register_frontend(hass)
+    assert sorted(hass.data["frontend_extra_module_url"].urls) == [_URL]
+    http.async_register_static_paths.assert_awaited_once()
+
+
+async def test_static_path_failure_is_retried(hass: HomeAssistant, http) -> None:
+    http.async_register_static_paths.side_effect = [RuntimeError("boom"), None]
+    await async_register_frontend(hass)  # l'échec n'interrompt pas le setup
+    await async_register_frontend(hass)
+    assert http.async_register_static_paths.await_count == 2
+    assert sorted(hass.data["frontend_extra_module_url"].urls) == [_URL]
