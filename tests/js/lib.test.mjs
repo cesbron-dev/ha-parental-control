@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 process.env.TZ = "America/Toronto";
 const {
   fmtDuration,
+  shouldSubscribe,
   exceptionsForResource,
   exceptionsForKid,
   formatPill,
@@ -289,4 +290,13 @@ test("switchGauge : accordé = utilisé + restant, jauge = restant / accordé", 
   assert.deepEqual(switchGauge(hass("unavailable", "unknown"), view), { used: 0, remaining: 0, granted: 0, pct: 0 });
   assert.equal(switchGauge({ states: {} }, view).granted, 0);
   assert.equal(switchGauge(hass("0", "30.5"), view).pct, 100);
+});
+
+test("shouldSubscribe : pas de rafale après un échec, nouvelle connexion réessaie", () => {
+  const a = {}, b = {};
+  assert.equal(shouldSubscribe(undefined, null, null), false);
+  assert.equal(shouldSubscribe(a, null, null), true);
+  assert.equal(shouldSubscribe(a, a, null), false); // déjà souscrite
+  assert.equal(shouldSubscribe(a, null, a), false); // échec sur cette connexion : le tick réessaiera
+  assert.equal(shouldSubscribe(b, null, a), true); // autre connexion
 });

@@ -1,7 +1,7 @@
 // Carte `parental-timeline-card` : frise de la journée de chaque enfant (segments du moteur,
 // trait « maintenant », exceptions ouvertes en hachuré bleu).
 import {
-  esc, timelineGeometry, exceptionsForKid, exceptionSpans, dayTypeLabel, segmentClass, statusClass, nextStepLabel,
+  esc, shouldSubscribe, timelineGeometry, exceptionsForKid, exceptionSpans, dayTypeLabel, segmentClass, statusClass, nextStepLabel,
 } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import { BASE_CSS } from "./style.js";
@@ -46,6 +46,7 @@ class ParentalTimelineCard extends HTMLElement {
     this._state = undefined; // undefined : pas encore reçu ; null : souscription impossible
     this._unsub = null;
     this._subConn = null;
+    this._failedConn = null; // connexion sur laquelle la souscription vient d'échouer
     this._tick = null;
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
   }
@@ -84,7 +85,10 @@ class ParentalTimelineCard extends HTMLElement {
     // Heure et trait « maintenant » rafraîchis chaque minute.
     clearInterval(this._tick);
     this._tick = setInterval(() => {
-      if (!this._unsub && !this._subConn && this.isConnected) this._subscribe();
+      if (!this._unsub && !this._subConn && this.isConnected) {
+        this._failedConn = null;
+        this._subscribe();
+      }
       this._render();
     }, 60000);
     this._render();
@@ -98,7 +102,7 @@ class ParentalTimelineCard extends HTMLElement {
 
   _subscribe() {
     const conn = this._hass?.connection;
-    if (!conn || this._subConn === conn) return;
+    if (!shouldSubscribe(conn, this._subConn, this._failedConn)) return;
     this._unsubscribe();
     this._subConn = conn;
     const token = {};
@@ -116,6 +120,7 @@ class ParentalTimelineCard extends HTMLElement {
       () => {
         if (this._subToken !== token) return;
         // Échec (ex. `not_loaded` juste après un redémarrage de HA) : le tick de 60 s réessaiera.
+        this._failedConn = this._subConn;
         this._subConn = null;
         this._state = null;
         this._render();

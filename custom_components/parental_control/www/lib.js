@@ -268,3 +268,9 @@ export function exceptionSpans(exceptions, now) {
   }
   return spans;
 }
+
+// Faut-il (ré)essayer la souscription ? Non sans connexion, si elle est déjà faite pour cette
+// connexion, ou si elle vient d'y échouer (seul le tick de 60 s réessaie, pas chaque `hass`).
+export function shouldSubscribe(conn, subConn, failedConn) {
+  return !!conn && subConn !== conn && failedConn !== conn;
+}
