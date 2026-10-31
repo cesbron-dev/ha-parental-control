@@ -8,9 +8,10 @@ import { runBonus } from "./dialogs.js";
 
 const CSS = `
   ${BASE_CSS}
-  ha-card { padding-right: 70px; }
   .logo { position: absolute; top: 14px; right: 16px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
   .logo ha-icon { --mdc-icon-size: 40px; color: #e60012; }
+  /* seule la ligne de titre laisse la place au logo */
+  .title, .rule { padding-right: 50px; }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rule { margin-bottom: 10px; font-size: .9rem; }
   .main { display: flex; flex-wrap: wrap; align-items: stretch; gap: 16px; }
@@ -22,8 +23,10 @@ const CSS = `
   .play { flex: 1; min-width: 120px; align-self: center; }
   .play h4 { margin: 0 0 6px; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: #5fb3ff; }
   .play .big { font-size: 1.1rem; font-weight: 500; }
-  .side { flex: none; padding-left: 16px; border-left: 1px solid rgba(255,255,255,.15); display: flex; flex-direction: column; justify-content: center; gap: 10px; }
-  .side .pills { flex-direction: column; align-items: stretch; gap: 8px; }
+  /* temps utilisé et bonus sur une ligne pleine largeur, sous la jauge ; boutons côte à côte */
+  .side { flex: 1 1 100%; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.15); display: flex; flex-direction: column; gap: 10px; }
+  .side .pills { gap: 8px; }
+  .side .pill { flex: 1 1 90px; justify-content: center; min-height: 44px; }
   .error { margin-top: 8px; }
 `;
 
