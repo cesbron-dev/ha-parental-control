@@ -1,4 +1,5 @@
-from datetime import timedelta
+from dataclasses import replace
+from datetime import time, timedelta
 
 from custom_components.parental_control.core.decisions import (
     Decisions,
@@ -7,7 +8,7 @@ from custom_components.parental_control.core.decisions import (
 )
 from custom_components.parental_control.core.display import exception_end, kid_timeline
 from custom_components.parental_control.core.evaluator import evaluate
-from custom_components.parental_control.core.model import SegmentType
+from custom_components.parental_control.core.model import DayType, SegmentType
 from tests.core.test_evaluator_access import ECOLE, at
 
 
@@ -25,12 +26,26 @@ def test_kid_timeline_covers_day(cfg):
 
 
 def test_kid_timeline_first_segment_starts_at_midnight(cfg):
-    # le premier segment du profil de Gabin commence après 00:00
-    snap = evaluate(at(16, 30), cfg, Decisions(), ECOLE)
-    first = cfg.kid("gabin").profile_for(snap.kids["gabin"].day_type).segments[0]
-    tl = kid_timeline(cfg, snap, "gabin", at(16, 30))
+    # profil dont le premier segment commence à 08:00 (jusqu'à 15:25) : la frise reste sans trou
+    kid = cfg.kid("gabin")
+    profile = kid.profiles[DayType.ECOLE]
+    segs = (replace(profile.segments[0], start=time(8)),) + profile.segments[1:]
+    kid = replace(kid, profiles={**kid.profiles, DayType.ECOLE: replace(profile, segments=segs)})
+    cfg2 = replace(cfg, kids=tuple(kid if k.id == "gabin" else k for k in cfg.kids))
+    snap = evaluate(at(16, 30), cfg2, Decisions(), ECOLE)
+    tl = kid_timeline(cfg2, snap, "gabin", at(16, 30))
     assert tl[0]["start"] == at(0, 0).isoformat()
-    assert tl[0]["type"] == first.type.value
+    assert tl[0]["end"] == tl[1]["start"] == at(15, 25).isoformat()
+    assert all(a["end"] == b["start"] for a, b in zip(tl, tl[1:]))
+
+
+def test_exception_end_global_takes_minimum(cfg):
+    # à 16:10 Gabin est en apres_devoirs (fin 19:00), Maël aussi (fin 19:00) ; à 15:40 Gabin
+    # est en libre (fin 16:00) alors que Maël est en bloque jusqu'à 16:15
+    snap = evaluate(at(15, 40), cfg, Decisions(), ECOLE)
+    ends = {k.segment_end for k in snap.kids.values()}
+    assert len(ends) > 1
+    assert exception_end(cfg, snap, _exc(Target())) == min(ends)
 
 
 def test_exception_end_uses_until(cfg):
