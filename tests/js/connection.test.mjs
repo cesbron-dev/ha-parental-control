@@ -54,3 +54,24 @@ test("callAction adds code only when given and never throws", async () => {
   hass.callService = async () => { throw new Error("Code invalide"); };
   assert.deepEqual(await callAction(hass, "exception", {}, "0"), { ok: false, error: "Code invalide" });
 });
+
+test("un callback qui lève n'empêche pas les autres de recevoir l'état", async () => {
+  const hass = fakeHass();
+  const errors = [];
+  const origError = console.error;
+  console.error = (e) => errors.push(e);
+  try {
+    const b = [], c = [];
+    await subscribeState(hass, () => { throw new Error("carte cassée"); });
+    await subscribeState(hass, (s) => b.push(s));
+    hass.subs[0].cb({ n: 1 });
+    assert.deepEqual(b, [{ n: 1 }]);
+    // rejeu du dernier état à un nouvel abonné : le callback fautif ne bloque pas non plus
+    await subscribeState(hass, () => { throw new Error("autre carte cassée"); });
+    await subscribeState(hass, (s) => c.push(s));
+    assert.deepEqual(c, [{ n: 1 }]);
+    assert.equal(errors.length, 2); // diffusion + rejeu
+  } finally {
+    console.error = origError;
+  }
+});

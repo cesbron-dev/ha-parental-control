@@ -2,6 +2,15 @@
 
 const entries = new WeakMap(); // connexion -> {callbacks, last, unsub}
 
+// Une carte qui lève ne doit pas priver les autres de l'état.
+function safeCall(cb, msg) {
+  try {
+    cb(msg);
+  } catch (err) {
+    console.error(err);
+  }
+}
+
 // Abonne `callback` à l'état du moteur ; renvoie (via promesse) la fonction de désabonnement.
 export async function subscribeState(hass, callback) {
   const conn = hass.connection;
@@ -14,7 +23,7 @@ export async function subscribeState(hass, callback) {
       .subscribeMessage(
         (msg) => {
           e.last = msg;
-          for (const cb of [...e.callbacks]) cb(msg);
+          for (const cb of [...e.callbacks]) safeCall(cb, msg);
         },
         { type: "parental_control/state/subscribe" },
       )
@@ -25,7 +34,7 @@ export async function subscribeState(hass, callback) {
   }
   entry.callbacks.add(callback);
   // Le dernier état reçu est servi tout de suite aux nouveaux abonnés.
-  if (entry.last !== undefined) callback(entry.last);
+  if (entry.last !== undefined) safeCall(callback, entry.last);
   const e = entry;
   await e.unsub;
   let done = false;
