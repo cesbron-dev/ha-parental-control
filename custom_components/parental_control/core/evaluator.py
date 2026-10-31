@@ -396,11 +396,17 @@ def _service_exception_applies(e: ManualException, resource: Resource) -> bool:
     return True
 
 
-def _service_overrides(exceptions: Sequence[ManualException],
-                       resource: Resource) -> dict[str, bool]:
-    """Service -> ouvert ? pour la ressource ; l'exception la plus récente gagne."""
+def _service_overrides(exceptions: Sequence[ManualException], resource: Resource,
+                       closed_at: datetime | None = None) -> dict[str, bool]:
+    """Service -> ouvert ? pour la ressource ; l'exception la plus récente gagne.
+
+    Les exceptions de service créées au plus tard à `closed_at` (fermeture manuelle de la
+    ressource) sont ignorées.
+    """
     overrides: dict[str, bool] = {}
     for e in exceptions:
+        if closed_at is not None and e.created <= closed_at:
+            continue
         if _service_exception_applies(e, resource):
             overrides[e.target.service] = e.open  # type: ignore[index]
     return overrides
@@ -413,8 +419,11 @@ def _apply_exceptions(
     """Exceptions de ressource d'abord, puis exceptions de service (AdGuard)."""
     exceptions = _active_exceptions(now, dec, ignored)
     result = dict(states)
+    closed_at: dict[str, datetime] = {}  # ressource -> dernière fermeture manuelle
     for e in exceptions:
         if _is_resource_exception(e) and e.target.resource_id in result:
+            if not e.open:
+                closed_at[e.target.resource_id] = e.created  # type: ignore[index]
             resource = cfg.resource(e.target.resource_id)  # type: ignore[arg-type]
             reason = "Ouverte manuellement" if e.open else "Fermée manuellement"
             state = _resource_state(cfg, resource, open_=e.open, reason=reason, until=e.until)
@@ -422,7 +431,7 @@ def _apply_exceptions(
                                           used_minutes=result[resource.id].used_minutes,
                                           remaining_minutes=result[resource.id].remaining_minutes)
     for resource in cfg.resources:
-        overrides = _service_overrides(exceptions, resource)
+        overrides = _service_overrides(exceptions, resource, closed_at.get(resource.id))
         if not overrides:
             continue
         state = result[resource.id]
