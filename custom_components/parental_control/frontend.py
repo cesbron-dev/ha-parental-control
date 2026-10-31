@@ -6,6 +6,7 @@ import hashlib
 import logging
 from pathlib import Path
 
+from homeassistant.components import panel_custom
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
@@ -17,6 +18,8 @@ _LOGGER = logging.getLogger(__name__)
 # Deux drapeaux distincts, posés seulement après succès : un échec se rattrape au rechargement.
 _PATH_REGISTERED = f"{DOMAIN}_frontend_path_registered"
 _MODULE_REGISTERED = f"{DOMAIN}_frontend_module_registered"
+_PANEL_REGISTERED = f"{DOMAIN}_frontend_panel_registered"
+PANEL_URL_PATH = "parental-control"
 _WWW = Path(__file__).parent / "www"
 
 
@@ -37,7 +40,7 @@ _URL_BASE = f"/parental_control_static/{files_version(_WWW)}"
 
 
 async def async_register_frontend(hass: HomeAssistant) -> None:
-    """Expose `www/` et charge le point d'entrée des cartes, une seule fois chacun."""
+    """Expose `www/`, charge les cartes et le panneau « Règles », une seule fois chacun."""
     # `http` est une dépendance facultative (after_dependencies) : sans serveur, rien à servir.
     if not hass.data.get(_PATH_REGISTERED) and (http := getattr(hass, "http", None)) is not None:
         try:
@@ -47,6 +50,18 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
             _LOGGER.warning("Chemin statique des cartes non enregistré", exc_info=True)
         else:
             hass.data[_PATH_REGISTERED] = True
+    if not hass.data.get(_PANEL_REGISTERED):
+        # Panneau d'édition des règles, réservé aux admins (config/get et config/set le sont aussi).
+        await panel_custom.async_register_panel(
+            hass,
+            frontend_url_path=PANEL_URL_PATH,
+            webcomponent_name="parental-control-panel",
+            sidebar_title="Règles",
+            sidebar_icon="mdi:shield-edit",
+            module_url=f"{_URL_BASE}/panel.js",
+            require_admin=True,
+        )
+        hass.data[_PANEL_REGISTERED] = True
     if hass.data.get(_MODULE_REGISTERED):
         return
     # `add_extra_js_url` lit ce registre, créé par le setup du composant `frontend`.

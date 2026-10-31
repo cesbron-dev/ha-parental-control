@@ -88,3 +88,16 @@ async def test_static_path_failure_is_retried(hass: HomeAssistant, http) -> None
     await async_register_frontend(hass)
     assert http.async_register_static_paths.await_count == 2
     assert sorted(hass.data["frontend_extra_module_url"].urls) == [_URL]
+
+
+async def test_registers_admin_rules_panel_once(hass: HomeAssistant, http) -> None:
+    from homeassistant.components.frontend import DATA_PANELS
+
+    await async_register_frontend(hass)
+    await async_register_frontend(hass)  # rechargement : pas de second enregistrement (ValueError)
+
+    panel = hass.data[DATA_PANELS]["parental-control"]
+    assert panel.require_admin is True
+    assert panel.sidebar_title == "Règles"
+    assert panel.config["_panel_custom"]["name"] == "parental-control-panel"
+    assert panel.config["_panel_custom"]["module_url"] == f"{_BASE}/panel.js"
