@@ -209,6 +209,11 @@ test("reasonLine adds local until", () => {
   assert.equal(reasonLine({ reason: "", until: null }), "");
 });
 
+test("reasonLine does not repeat an hour already in the engine reason", () => {
+  assert.equal(reasonLine({ reason: "Écrans autorisés jusqu'à 20:00", until: "2026-10-31T20:00:00-04:00", open: true }),
+    "Écrans autorisés jusqu'à 20:00");
+});
+
 test("reasonLine shows resume time of a closed resource", () => {
   assert.equal(reasonLine({ reason: "Bloqué", until: null, open: false, resumesAt: "2026-10-31T08:00:00-04:00" }),
     "Bloqué · reprise 08:00");

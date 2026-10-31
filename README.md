@@ -265,7 +265,9 @@ ressource, il est envoyé par son `notify_service` s'il est défini.
 L'intégration charge ses cartes toute seule dans le tableau de bord (aucune ressource à
 ajouter) ; elles apparaissent dans le sélecteur de cartes, sous « Contrôle parental ».
 Elles lisent l'état du moteur en direct et n'appellent que les services `parental_control.*`.
-`resource` est l'`id` d'une ressource de la configuration JSON.
+`resource` est l'`id` d'une ressource de la configuration JSON. Après une mise à jour,
+redémarrez Home Assistant : l'adresse des cartes change avec leur contenu, ce qui évite qu'un
+navigateur garde une ancienne version.
 
 | Carte | Rôle | Configuration minimale |
 |---|---|---|
