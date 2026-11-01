@@ -5,6 +5,7 @@ import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
 import { BASE_CSS, ConfirmState, ErrorNotice, bonusPills } from "./style.js";
 import { runBonus } from "./dialogs.js";
+import { createEditor } from "./editor.js";
 
 const CSS = `
   ${BASE_CSS}
@@ -44,6 +45,10 @@ class ParentalSwitchCard extends StateCard {
     this._config = { ...config };
     this._key = "";
     this._render();
+  }
+
+  static getConfigElement() {
+    return createEditor("switch");
   }
 
   static getStubConfig() {
