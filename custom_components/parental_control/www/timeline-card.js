@@ -5,6 +5,7 @@ import {
 } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import { BASE_CSS } from "./style.js";
+import { createEditor } from "./editor.js";
 
 const LEGEND = [
   ["libre", "libre"],
@@ -57,6 +58,10 @@ class ParentalTimelineCard extends HTMLElement {
     }
     this._config = { ...config };
     this._render();
+  }
+
+  static getConfigElement() {
+    return createEditor("timeline");
   }
 
   static getStubConfig() {

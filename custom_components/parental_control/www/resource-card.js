@@ -8,6 +8,7 @@ import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
 import { BASE_CSS, pill, ConfirmState, ErrorNotice, bonusPills } from "./style.js";
 import { openActionDialog, runBonus } from "./dialogs.js";
+import { createEditor } from "./editor.js";
 
 const KIND_ICONS = {
   media_player: "mdi:television",
@@ -54,6 +55,10 @@ class ParentalResourceCard extends StateCard {
     if (!config?.resource) throw new Error("« resource » est obligatoire (id de la ressource du moteur)");
     this._config = { ...config };
     this._render();
+  }
+
+  static getConfigElement() {
+    return createEditor("resource");
   }
 
   static getStubConfig() {
