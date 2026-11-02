@@ -171,7 +171,7 @@ class ParentalTimelineCard extends HTMLElement {
       + '<i class="exc"></i>exception';
 
     return `
-      <div class="head"><div class="title">Aujourd'hui${simulationBadge(this._state)}</div>
+      <div class="head"><div class="titlebar"><div class="title">Aujourd'hui</div>${simulationBadge(this._state)}</div>
         <div class="muted">${[dayType, hh].filter(Boolean).map(esc).join(" · ")}</div></div>
       ${rows}
       <div class="hours">${hours}</div>

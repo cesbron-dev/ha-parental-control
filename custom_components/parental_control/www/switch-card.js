@@ -12,7 +12,7 @@ const CSS = `
   .logo { position: absolute; top: 14px; right: 16px; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; }
   .logo ha-icon { --mdc-icon-size: 40px; color: #e60012; }
   /* seule la ligne de titre laisse la place au logo */
-  .title, .rule { padding-right: 50px; }
+  .titlebar, .rule { padding-right: 50px; }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rule { margin-bottom: 10px; font-size: .9rem; }
   .main { display: flex; flex-wrap: wrap; align-items: stretch; gap: 16px; }
@@ -114,7 +114,7 @@ class ParentalSwitchCard extends StateCard {
 
     return `
       <div class="logo"><ha-icon icon="mdi:nintendo-switch"></ha-icon></div>
-      <div class="title">${esc(title)}${simulationBadge(this._state)}</div>
+      <div class="titlebar"><div class="title">${esc(title)}</div>${simulationBadge(this._state)}</div>
       <div class="rule muted"><span class="badge ${badge.cls}">${badge.label}</span>${reason ? ` · ${esc(reason)}` : ""}</div>
       <div class="main">
         <div class="gauge">

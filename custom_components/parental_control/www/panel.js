@@ -147,6 +147,12 @@ class ParentalControlPanel extends HTMLElement {
     this._subConn = null;
     this._unsub?.();
     this._unsub = null;
+    // Plus d'abonnement : pas de bandeau périmé.
+    if (this._simulation) {
+      this._simulation = false;
+      const el = this.shadowRoot.querySelector(".sim-slot");
+      if (el) el.innerHTML = "";
+    }
   }
 
   _simBanner() {
