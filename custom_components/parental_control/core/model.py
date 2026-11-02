@@ -72,13 +72,58 @@ class Kid:
 
 
 @dataclass(frozen=True)
+class Integration:
+    """Intégration d'un appareil physique : `kind` et ses options (`entity_id`, `device_id`…)."""
+
+    kind: ResourceKind
+    options: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class PhysicalDevice:
+    """Appareil physique : une étiquette pour ranger des intégrations, sans règle propre."""
+
+    name: str
+    integrations: tuple[Integration, ...]
+
+
+@dataclass(frozen=True)
 class Resource:
+    """Appareil logique : ses règles s'appliquent à toutes les intégrations de ses appareils."""
+
     id: str
     name: str
-    kind: ResourceKind
     owners: tuple[str, ...]
-    options: Mapping[str, Any] = field(default_factory=dict)
+    devices: tuple[PhysicalDevice, ...]
     quota_minutes: Mapping[DayType, int] = field(default_factory=dict)
+    icon: str | None = None
+
+    @property
+    def integrations(self) -> tuple[Integration, ...]:
+        """Intégrations de tous les appareils physiques, dans l'ordre de la config."""
+        return tuple(i for device in self.devices for i in device.integrations)
+
+    @property
+    def kinds(self) -> frozenset[ResourceKind]:
+        return frozenset(i.kind for i in self.integrations)
+
+    def has(self, kind: ResourceKind) -> bool:
+        return kind in self.kinds
+
+    @property
+    def kind(self) -> ResourceKind:
+        """Type déduit : Nintendo s'il y en a une, sinon lecteur s'il y en a un, sinon AdGuard."""
+        if self.has(ResourceKind.NINTENDO):
+            return ResourceKind.NINTENDO
+        if self.has(ResourceKind.MEDIA_PLAYER):
+            return ResourceKind.MEDIA_PLAYER
+        return ResourceKind.ADGUARD
+
+    @property
+    def options(self) -> Mapping[str, Any]:
+        """Transition : options de la première intégration."""
+        integrations = self.integrations
+        return integrations[0].options if integrations else {}
 
 
 @dataclass(frozen=True)

@@ -598,9 +598,8 @@ async def test_set_config_rebuilds_adapters(hass, freezer, services, hass_storag
     await hass.async_block_till_done()
     assert services.entities("media_player", "turn_off") == ["media_player.autre"]
     await hass.async_block_till_done()
-    assert hass_storage["parental_control.config"]["data"]["resources"][0]["entity_id"] == (
-        "media_player.autre"
-    )
+    tv_devices = hass_storage["parental_control.config"]["data"]["resources"][0]["devices"]
+    assert tv_devices[0]["integrations"][0]["entity_id"] == "media_player.autre"
 
 
 # --- revue finale --------------------------------------------------------------
@@ -957,3 +956,42 @@ async def test_simulation_warns_only_when_device_can_warn(hass, freezer, service
     await engine.set_simulation(True)
     await tick(hass, freezer)  # 15:55 : avertissements (TV sans notify_service)
     assert [m for m in logbook_messages(entries) if "afficherait" in m] == []
+
+
+async def test_v1_stored_config_upgrades_without_behavior_change(
+    hass, freezer, services, hass_storage
+) -> None:
+    from homeassistant.helpers import entity_registry as er
+
+    from custom_components.parental_control.core.config_io import dump_config
+
+    v1 = config_for(services)
+    assert v1["version"] == 1
+    hass_storage["parental_control.config"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.config", "data": v1,
+    }
+    services.adguard.set_blocked([])
+    hass.states.async_set(TV, "on")
+    freezer.move_to(at(TUESDAY, 16, 30))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    _, engine = await setup(hass, freezer, entry=entry)
+
+    ids = ["tv", "iphone_hugo", "switch"]
+    assert [r.id for r in engine.config.resources] == ids
+    assert list(engine.snapshot.resources) == ids
+    prefix = f"{entry.entry_id}_resource_"
+    unique_ids = [e.unique_id for e in
+                  er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)]
+    assert all(any(u.startswith(f"{prefix}{rid}_") for u in unique_ids) for rid in ids)
+    # Mardi 16:30, devoirs à faire : tout reste fermé comme avec la config v1.
+    assert not engine.snapshot.resources["tv"].open
+    assert not engine.snapshot.resources["iphone_hugo"].open
+    assert services.entities("media_player", "turn_off") == [TV]
+    assert services.adguard.blocks() == LEISURE
+
+    # `parental_control/config/get` renvoie `dump_config(engine.config)` : du v2.
+    out = dump_config(engine.config)
+    assert out["version"] == 2
+    assert out["resources"][0]["devices"] == [{"name": "Télé salon", "integrations": [
+        {"kind": "media_player", "entity_id": TV, "notify_service": None}]}]
