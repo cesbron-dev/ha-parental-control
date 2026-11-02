@@ -136,7 +136,7 @@ class ParentalResourceCard extends StateCard {
     return `
       <div class="row">
         <div class="ico"><ha-icon icon="${esc(icon)}"></ha-icon></div>
-        <div class="grow"><div class="title">${esc(name)}${simulationBadge(this._state)}</div><div class="muted">${esc(owners)}</div></div>
+        <div class="grow"><div class="titlebar"><div class="title">${esc(name)}</div>${simulationBadge(this._state)}</div><div class="muted">${esc(owners)}</div></div>
         <span class="badge ${badge.cls}">${badge.label}</span>
       </div>
       ${reason ? `<div class="muted reason">${esc(reason)}</div>` : ""}

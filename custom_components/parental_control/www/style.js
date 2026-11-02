@@ -16,8 +16,10 @@ export const BASE_CSS = `
     font-family: var(--ha-font-family-body, Roboto, sans-serif);
   }
   .title { font-size: 1.15rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 4px; }
+  .titlebar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .titlebar .title { min-width: 0; margin: 0 0 4px; }
   .sim {
-    display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 8px; border-radius: 6px;
+    flex: none; display: inline-block; vertical-align: middle; margin-bottom: 4px; padding: 2px 8px; border-radius: 6px;
     font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: none;
     color: #ffb347; background: rgba(255,170,60,.16); border: 1px solid rgba(255,170,60,.55);
   }
