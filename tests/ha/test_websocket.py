@@ -188,3 +188,28 @@ async def test_state_leaks_no_secret(hass, entry, hass_ws_client) -> None:
         "number.switch_papa_temps_d_ecran_max_aujourd_hui", "media_player.tv_salon",
     ):
         assert secret not in text
+
+
+async def test_state_mixed_tv_exposes_kinds_and_icon(hass, freezer, hass_ws_client) -> None:
+    await hass.config.async_set_time_zone("America/Toronto")
+    freezer.move_to(at(TUESDAY, 16, 30))
+    cfg = dump_config(parse_config(EX))
+    tv = next(r for r in cfg["resources"] if r["id"] == "tv")
+    tv["icon"] = "mdi:television"
+    tv["devices"] = [
+        {"name": "Samsung", "integrations": [
+            {"kind": "media_player", "entity_id": "media_player.tv", "notify_service": None}]},
+        {"name": "TV", "integrations": [{"kind": "adguard_services", "device_id": "d1"}]},
+    ]
+    await ParentalStore(hass).save_config(parse_config(cfg))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code("0123")})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    res = (await client.receive_json())["result"]["resources"]
+    assert res["tv"]["kind"] == "media_player"
+    assert res["tv"]["kinds"] == ["adguard_services", "media_player"]
+    assert res["tv"]["icon"] == "mdi:television"
+    assert res["iphone_hugo"]["icon"] is None

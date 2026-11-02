@@ -97,6 +97,8 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
         data |= {
             "name": resource.name,
             "kind": resource.kind.value,
+            "kinds": sorted(k.value for k in resource.kinds),
+            "icon": resource.icon,
             "owners": list(resource.owners),
             "leisure": sorted(cfg.leisure_for_resource(resource_id)),
         }

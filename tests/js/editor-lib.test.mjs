@@ -7,8 +7,9 @@ const { editorSchema, editorConfig, editorData } = await import("../../custom_co
 const state = {
   kids: { hugo: { name: "Hugo" }, zoe: { name: "Zoé" } },
   resources: {
-    tv: { name: "Télé salon", kind: "media_player" },
-    ipad: { name: "iPad", kind: "adguard_services" },
+    tv: { name: "Télé salon", kind: "media_player", kinds: ["media_player"] },
+    ipad: { name: "iPad", kind: "adguard_services", kinds: ["adguard_services"] },
+    mixte: { name: "Télé chambre", kind: "media_player", kinds: ["adguard_services", "media_player"] },
     switch: { name: "Switch", kind: "nintendo" },
   },
 };
@@ -19,8 +20,9 @@ test("resource card: every resource is offered, plus name and icon", () => {
   const schema = editorSchema("resource", state, { resource: "tv" });
   const res = field(schema, "resource");
   assert.equal(res.required, true);
-  assert.deepEqual(res.selector.select.options.map((o) => o.value), ["tv", "ipad", "switch"]);
-  assert.equal(res.selector.select.options[0].label, "Télé salon (Télé)");
+  assert.deepEqual(res.selector.select.options.map((o) => o.value), ["tv", "ipad", "mixte", "switch"]);
+  const labels = res.selector.select.options.map((o) => o.label);
+  assert.deepEqual(labels, ["Télé salon (Télé)", "iPad (AdGuard)", "Télé chambre", "Switch (Nintendo)"]);
   assert.ok(field(schema, "name").selector.text);
   assert.ok(field(schema, "icon").selector.icon);
 });
