@@ -1,4 +1,4 @@
-"""Interrupteur « Pause générale »."""
+"""Interrupteurs « Pause générale » et « Simulation »."""
 
 from __future__ import annotations
 
@@ -19,7 +19,10 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     def build(_cfg: Config) -> EntityFactories:
-        return {f"{entry.entry_id}_global_pause": lambda: PauseSwitch(entry)}
+        return {
+            f"{entry.entry_id}_global_pause": lambda: PauseSwitch(entry),
+            f"{entry.entry_id}_global_simulation": lambda: SimulationSwitch(entry),
+        }
 
     async_track_entities(hass, entry, "switch", async_add_entities, build)
 
@@ -40,3 +43,21 @@ class PauseSwitch(GlobalEntity, SwitchEntity):
     async def async_turn_off(self, **kwargs: Any) -> None:
         await self._check_unlock()
         await self.engine.set_pause(False)
+
+
+class SimulationSwitch(GlobalEntity, SwitchEntity):
+    """Simulation : activer cesse de piloter (code d'un non-admin) ; désactiver ne demande rien."""
+
+    def __init__(self, entry: ParentalConfigEntry) -> None:
+        super().__init__(entry, "simulation")
+
+    @property
+    def is_on(self) -> bool:
+        return self.engine.simulation
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        await self._check_unlock()
+        await self.engine.set_simulation(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        await self.engine.set_simulation(False)
