@@ -29,6 +29,14 @@ class Adapter(Protocol):
         """Amène l'appareil dans l'état voulu."""
         ...
 
+    def describe(self, desired: ResourceState) -> list[str]:
+        """Ce que `apply(desired)` ferait maintenant, sans rien appeler ; [] si rien."""
+        ...
+
+    def describe_grant(self, minutes: int) -> list[str]:
+        """Ce que `grant(minutes)` ferait (Nintendo seulement) ; [] sinon."""
+        ...
+
     async def warn(self, message: str) -> None:
         """Avertit sur l'appareil lui-même, si possible."""
         ...

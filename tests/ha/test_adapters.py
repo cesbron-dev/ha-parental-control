@@ -506,3 +506,95 @@ async def test_nintendo_minutes(hass: HomeAssistant, caplog) -> None:
         assert adapter.used_minutes() is None
         assert adapter.used_minutes() is None
     assert caplog.text.count(USED) == 1
+
+
+# --- describe (simulation : ce que apply ferait, sans rien appeler) ---------------
+
+
+async def test_media_player_describe_closed_and_in_use(hass: HomeAssistant) -> None:
+    hass.states.async_set(TV_ENTITY, "playing")
+    calls = async_mock_service(hass, "media_player", "turn_off")
+    adapter = build_adapter(hass, tv_resource(), LEISURE)
+
+    assert adapter.describe(CLOSED) == [f"éteindrait Télé salon ({TV_ENTITY})"]
+    assert adapter.describe(OPEN) == []
+    assert adapter.describe_grant(15) == []
+    assert calls == []
+
+
+async def test_media_player_describe_not_in_use(hass: HomeAssistant) -> None:
+    hass.states.async_set(TV_ENTITY, "off")
+    calls = async_mock_service(hass, "media_player", "turn_off")
+    assert build_adapter(hass, tv_resource(), LEISURE).describe(CLOSED) == []
+    assert calls == []
+
+
+async def test_adguard_describe_block_and_unblock(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked(["roblox", "khanacademy"])
+    adapter = adguard(hass, fake)
+
+    assert adapter.describe(state(False, LEISURE)) == [
+        "bloquerait youtube sur iPhone Gabin"
+    ]
+    assert adapter.describe(OPEN) == ["débloquerait roblox sur iPhone Gabin"]
+    # les deux lignes quand les deux se produisent
+    fake.set_blocked(["roblox"])
+    assert adapter.describe(state(True, frozenset({"youtube", "tiktok"}))) == [
+        "bloquerait tiktok, youtube sur iPhone Gabin",
+        "débloquerait roblox sur iPhone Gabin",
+    ]
+    assert adapter.describe_grant(15) == []
+    assert fake.calls == []
+
+
+async def test_adguard_describe_nothing_to_do(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked(["youtube", "roblox"])
+    adapter = adguard(hass, fake)
+    assert adapter.describe(state(False, LEISURE)) == []
+    assert fake.calls == []
+
+
+async def test_adguard_describe_unreadable_sensor(hass: HomeAssistant, fake) -> None:
+    hass.states.async_set(fake.entity_id, "unavailable", {"services": []})
+    assert adguard(hass, fake).describe(CLOSED) == []
+
+
+async def test_adguard_describe_does_not_mutate_extra_blocked(
+    hass: HomeAssistant, fake
+) -> None:
+    fake.set_blocked([])
+    adapter = adguard(hass, fake)
+    await adapter.apply(state(True, frozenset({"tiktok"})))
+    assert adapter._extra_blocked == {"tiktok"}
+    calls_before = len(fake.calls)
+
+    # débloqué à la main : apply l'oublierait, describe ne doit pas le faire
+    fake.set_blocked([])
+    assert adapter.describe(OPEN) == []
+    assert adapter._extra_blocked == {"tiktok"}
+    # tiktok reste décrit comme à débloquer tant que apply ne l'a pas oublié
+    fake.set_blocked(["tiktok"])
+    assert adapter.describe(OPEN) == ["débloquerait tiktok sur iPhone Gabin"]
+    assert adapter._extra_blocked == {"tiktok"}
+    assert len(fake.calls) == calls_before
+
+
+async def test_nintendo_describe_drift(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "number", "set_value")
+    bonus = async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
+    adapter = nintendo(hass)
+    hass.states.async_set(LIMIT, "60")
+
+    assert adapter.describe(OPEN) == ["remettrait la limite de Switch à 0 min"]
+    assert adapter.describe(CLOSED) == ["remettrait la limite de Switch à 0 min"]
+    assert adapter.describe_grant(15) == ["accorderait 15 min sur Switch"]
+    assert not calls and not bonus
+
+
+async def test_nintendo_describe_no_drift(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "number", "set_value")
+    adapter = nintendo(hass)
+    assert adapter.describe(OPEN) == []  # entité absente
+    hass.states.async_set(LIMIT, "0")
+    assert adapter.describe(CLOSED) == []
+    assert not calls

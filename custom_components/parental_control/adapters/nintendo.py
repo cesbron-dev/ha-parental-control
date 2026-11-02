@@ -48,6 +48,15 @@ class NintendoAdapter:
         if self.drifted(desired):
             await self._set_limit_zero()
 
+    def describe(self, desired: ResourceState) -> list[str]:
+        # même condition qu'`apply` : seule la dérive de la limite est corrigée
+        if not self.drifted(desired):
+            return []
+        return [f"remettrait la limite de {self.resource.name} à 0 min"]
+
+    def describe_grant(self, minutes: int) -> list[str]:
+        return [f"accorderait {minutes} min sur {self.resource.name}"]
+
     async def warn(self, message: str) -> None:
         return
 

@@ -42,8 +42,19 @@ class MediaPlayerAdapter:
     def drifted(self, desired: ResourceState) -> bool:
         return not desired.open and self.in_use()
 
+    def _must_turn_off(self, desired: ResourceState) -> bool:
+        return not desired.open and self.in_use()
+
+    def describe(self, desired: ResourceState) -> list[str]:
+        if not self._must_turn_off(desired):
+            return []
+        return [f"éteindrait {self.resource.name} ({self._entity_id})"]
+
+    def describe_grant(self, minutes: int) -> list[str]:
+        return []
+
     async def apply(self, desired: ResourceState) -> None:
-        if desired.open or not self.in_use():
+        if not self._must_turn_off(desired):
             return
         try:
             await self.hass.services.async_call(
