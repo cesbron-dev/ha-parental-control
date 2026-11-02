@@ -8,7 +8,9 @@ from typing import Any
 from .model import (
     Config,
     DayType,
+    Integration,
     Kid,
+    PhysicalDevice,
     Profile,
     Resource,
     ResourceKind,
@@ -18,7 +20,7 @@ from .model import (
 )
 
 DEFAULT_LEISURE = ("youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch")
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 DEFAULT_WARN_MINUTES = 5
 
 _REQUIRED_OPTIONS = {
@@ -26,6 +28,7 @@ _REQUIRED_OPTIONS = {
     ResourceKind.ADGUARD: ("device_id",),
     ResourceKind.NINTENDO: ("device_id", "limit_entity", "remaining_entity", "used_entity"),
 }
+# Version 1 : ressource plate, ses options sont les clés hors de celles-ci.
 _RESOURCE_BASE_KEYS = {"id", "name", "kind", "owners", "quota_minutes"}
 
 
@@ -148,12 +151,49 @@ def _parse_kid(raw: Any, path: str) -> Kid:
     )
 
 
-def _parse_resource(raw: Any, path: str) -> Resource:
-    raw = _expect_dict(raw, path)
-    kind = _enum(ResourceKind, raw.get("kind"), f"{path}.kind")
-    options = {k: v for k, v in raw.items() if k not in _RESOURCE_BASE_KEYS}
+def _parse_integration(kind_raw: Any, options: dict, kind_path: str, path: str) -> Integration:
+    kind = _enum(ResourceKind, kind_raw, kind_path)
     for key in _REQUIRED_OPTIONS[kind]:
         _str(options.get(key), f"{path}.{key}")
+    return Integration(kind, options)
+
+
+def _parse_devices_v1(raw: dict, path: str) -> tuple[PhysicalDevice, ...]:
+    """Ressource plate : un appareil physique du même nom, une intégration du même type."""
+    options = {k: v for k, v in raw.items() if k not in _RESOURCE_BASE_KEYS}
+    integration = _parse_integration(raw.get("kind"), options, f"{path}.kind", path)
+    return (PhysicalDevice(_str(raw.get("name"), f"{path}.name"), (integration,)),)
+
+
+def _parse_devices(raw: Any, path: str) -> tuple[PhysicalDevice, ...]:
+    devices: list[PhysicalDevice] = []
+    for j, device in enumerate(_expect_list(raw, path)):
+        p = f"{path}[{j}]"
+        device = _expect_dict(device, p)
+        name = _str(device.get("name"), f"{p}.name")
+        integrations = []
+        for k, item in enumerate(_expect_list(device.get("integrations"), f"{p}.integrations")):
+            q = f"{p}.integrations[{k}]"
+            item = _expect_dict(item, q)
+            options = {key: v for key, v in item.items() if key != "kind"}
+            integrations.append(_parse_integration(item.get("kind"), options, f"{q}.kind", q))
+        devices.append(PhysicalDevice(name, tuple(integrations)))
+    kinds = [i.kind for d in devices for i in d.integrations]
+    if not kinds:
+        raise _fail(path, "au moins une intégration")
+    if ResourceKind.NINTENDO in kinds and len(kinds) > 1:
+        raise _fail(path, "une console Nintendo ne se regroupe pas")
+    return tuple(devices)
+
+
+def _parse_resource(raw: Any, path: str, version: int) -> Resource:
+    raw = _expect_dict(raw, path)
+    if version == 1:
+        devices = _parse_devices_v1(raw, path)
+        icon = None
+    else:
+        devices = _parse_devices(raw.get("devices"), f"{path}.devices")
+        icon = _opt_str(raw.get("icon"), f"{path}.icon")
     quotas_raw = _expect_dict(raw.get("quota_minutes", {}), f"{path}.quota_minutes")
     quotas = {
         _enum(DayType, day, f"{path}.quota_minutes.{day}"): _int(
@@ -164,25 +204,26 @@ def _parse_resource(raw: Any, path: str) -> Resource:
     return Resource(
         id=_str(raw.get("id"), f"{path}.id"),
         name=_str(raw.get("name"), f"{path}.name"),
-        kind=kind,
         owners=tuple(_str_list(raw.get("owners"), f"{path}.owners")),
-        options=options,
+        devices=devices,
         quota_minutes=quotas,
+        icon=icon,
     )
 
 
 def parse_config(data: dict) -> Config:
     """Valide le JSON de configuration et construit le modèle."""
     data = _expect_dict(data, "config")
-    version = data.get("version", CONFIG_VERSION)
-    if version != CONFIG_VERSION:
+    # Sans `version`, c'est une config d'avant la version 2.
+    version = data.get("version", 1)
+    if isinstance(version, bool) or version not in (1, CONFIG_VERSION):
         raise _fail("version", f"version non prise en charge : {version!r}")
 
     kids = tuple(
         _parse_kid(k, f"kids[{i}]") for i, k in enumerate(_expect_list(data.get("kids", []), "kids"))
     )
     resources = tuple(
-        _parse_resource(r, f"resources[{i}]")
+        _parse_resource(r, f"resources[{i}]", version)
         for i, r in enumerate(_expect_list(data.get("resources", []), "resources"))
     )
 
@@ -247,15 +288,21 @@ def _dump_kid(kid: Kid) -> dict:
     }
 
 
+def _dump_integration(integration: Integration) -> dict:
+    return {"kind": integration.kind.value, **integration.options}
+
+
 def _dump_resource(resource: Resource) -> dict:
-    return {
-        "id": resource.id,
-        "name": resource.name,
-        "kind": resource.kind.value,
-        "owners": list(resource.owners),
-        **resource.options,
-        "quota_minutes": {day.value: m for day, m in resource.quota_minutes.items()},
-    }
+    out: dict[str, Any] = {"id": resource.id, "name": resource.name}
+    if resource.icon is not None:
+        out["icon"] = resource.icon
+    out["owners"] = list(resource.owners)
+    out["quota_minutes"] = {day.value: m for day, m in resource.quota_minutes.items()}
+    out["devices"] = [
+        {"name": d.name, "integrations": [_dump_integration(i) for i in d.integrations]}
+        for d in resource.devices
+    ]
+    return out
 
 
 def dump_config(cfg: Config) -> dict:

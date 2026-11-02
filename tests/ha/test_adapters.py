@@ -13,7 +13,12 @@ from custom_components.parental_control.adapters.media_player import (
     MediaPlayerAdapter,
 )
 from custom_components.parental_control.core.evaluator import ResourceState
-from custom_components.parental_control.core.model import Resource, ResourceKind
+from custom_components.parental_control.core.model import (
+    Integration,
+    PhysicalDevice,
+    Resource,
+    ResourceKind,
+)
 from tests.ha.fake_adguard import FakeAdGuard
 
 TV_ENTITY = "media_player.tv_salon"
@@ -39,9 +44,10 @@ def tv_resource(notify_service: str | None = None) -> Resource:
     return Resource(
         id="tv",
         name="Télé salon",
-        kind=ResourceKind.MEDIA_PLAYER,
         owners=("gabin",),
-        options={"entity_id": TV_ENTITY, "notify_service": notify_service},
+        devices=(PhysicalDevice("Télé salon", (Integration(
+            ResourceKind.MEDIA_PLAYER, {"entity_id": TV_ENTITY, "notify_service": notify_service}
+        ),)),),
     )
 
 
@@ -49,9 +55,10 @@ def adguard_resource(device_id: str = "adguard_iphone_gabin") -> Resource:
     return Resource(
         id="iphone_gabin",
         name="iPhone Gabin",
-        kind=ResourceKind.ADGUARD,
         owners=("gabin",),
-        options={"device_id": device_id},
+        devices=(PhysicalDevice("iPhone Gabin", (
+            Integration(ResourceKind.ADGUARD, {"device_id": device_id}),
+        )),),
     )
 
 
@@ -371,14 +378,13 @@ def switch_resource() -> Resource:
     return Resource(
         id="switch",
         name="Switch",
-        kind=ResourceKind.NINTENDO,
         owners=("gabin",),
-        options={
+        devices=(PhysicalDevice("Switch", (Integration(ResourceKind.NINTENDO, {
             "device_id": "dev123",
             "limit_entity": LIMIT,
             "remaining_entity": REMAINING,
             "used_entity": USED,
-        },
+        }),)),),
     )
 
 
