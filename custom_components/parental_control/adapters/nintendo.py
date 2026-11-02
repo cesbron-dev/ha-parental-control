@@ -111,6 +111,16 @@ class NintendoAdapter:
                 await self._add_bonus(amount)
             remaining -= amount
 
+    def pause_state(self) -> ResourceState:
+        return ResourceState(
+            open=False,
+            reason="pause",
+            until=None,
+            used_minutes=None,
+            remaining_minutes=None,
+            blocked_services=frozenset(),
+        )
+
     async def force_close(self) -> None:
         await self._set_limit_zero()
 

@@ -21,6 +21,7 @@ from typing import Any
 from uuid import uuid4
 
 from homeassistant.components import persistent_notification
+from homeassistant.components.logbook import async_log_entry
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import (
     CALLBACK_TYPE,
@@ -42,6 +43,7 @@ from homeassistant.util import dt as dt_util
 
 from .adapters import Adapter, build_adapter
 from .adapters.nintendo import NintendoAdapter
+from .adapters.simulation import SimulatedAdapter
 from .calendar_source import fetch_all_day_events
 from .const import DOMAIN, EVENT_WARNING, SIGNAL_UPDATE, TICK_SECONDS
 from .core.daytype import AllDayEvent, day_type
@@ -57,6 +59,7 @@ CALENDAR_REFRESH = timedelta(minutes=15)
 DEFAULT_WARN_MINUTES = 5
 DRIFT_COOLDOWN = timedelta(seconds=30)
 NOTIFY_TITLE = "Contrôle parental"
+SIMULATION_PREFIX = "[Simulation] "
 
 
 def _invalid(key: str, **placeholders: str) -> ServiceValidationError:
@@ -122,7 +125,7 @@ class ParentalEngine:
         self._decisions = Decisions()
         self._snapshot: Snapshot | None = None
         self._closures: dict[str, datetime] = {}
-        self._adapters: dict[str, Adapter] = {}
+        self._adapters: dict[str, SimulatedAdapter] = {}
         # Dernier état appliqué par ressource : (ouvert, services bloqués).
         self._applied: dict[str, tuple[bool, frozenset[str]]] = {}
         # Entité pilotée -> ressources qui l'utilisent.
@@ -157,6 +160,10 @@ class ParentalEngine:
     @property
     def decisions(self) -> Decisions:
         return self._decisions
+
+    @property
+    def simulation(self) -> bool:
+        return self._decisions.simulation
 
     @property
     def closures(self) -> dict[str, datetime]:
@@ -237,8 +244,12 @@ class ParentalEngine:
             return
         for resource in cfg.resources:
             try:
-                self._adapters[resource.id] = build_adapter(
-                    self._hass, resource, cfg.leisure_for_resource(resource.id)
+                self._adapters[resource.id] = SimulatedAdapter(
+                    build_adapter(
+                        self._hass, resource, cfg.leisure_for_resource(resource.id)
+                    ),
+                    lambda: self._decisions.simulation,
+                    self._record_simulation,
                 )
             except (KeyError, NotImplementedError) as err:
                 _LOGGER.error("%s : adaptateur impossible à créer : %s", resource.name, err)
@@ -250,6 +261,11 @@ class ParentalEngine:
             self._state_unsub = async_track_state_change_event(
                 self._hass, entity_ids, self._on_state_change
             )
+
+    def _record_simulation(self, name: str, line: str) -> None:
+        """Journal de bord et journal HA : ce que le moteur aurait fait."""
+        _LOGGER.info("Simulation : %s", line)
+        async_log_entry(self._hass, name, f"Simulation : {line}", domain=DOMAIN)
 
     def _schedule(self, coro: Coroutine[Any, Any, None]) -> None:
         self._entry.async_create_task(self._hass, coro, f"{DOMAIN} engine")
@@ -350,7 +366,9 @@ class ParentalEngine:
 
     def _with_nintendo_sensors(self, snap: Snapshot) -> Snapshot:
         resources = dict(snap.resources)
-        for resource_id, adapter in self._adapters.items():
+        for resource_id, wrapper in self._adapters.items():
+            # L'enveloppe cache l'adaptateur réel : on lit toujours l'appareil.
+            adapter = wrapper.inner
             if isinstance(adapter, NintendoAdapter) and resource_id in resources:
                 resources[resource_id] = replace(
                     resources[resource_id],
@@ -447,6 +465,8 @@ class ParentalEngine:
             self._schedule(self._send_notify(target, message))
 
     async def _send_notify(self, target: str, message: str) -> None:
+        if self._decisions.simulation:
+            message = SIMULATION_PREFIX + message
         domain, _, service = target.partition(".")
         try:
             await self._hass.services.async_call(
@@ -524,6 +544,7 @@ class ParentalEngine:
                 adapter = self._adapters.get(resource_id)
                 if adapter is None:
                     raise _invalid("invalid_target")
+                # Via l'enveloppe : en simulation, rien n'est accordé.
                 await adapter.grant(minutes)
             elif resource.kind is ResourceKind.MEDIA_PLAYER:
                 self._decisions.bonuses.append(
@@ -604,6 +625,17 @@ class ParentalEngine:
                 except Exception as err:  # noqa: BLE001 - un adaptateur n'arrête pas les autres
                     _LOGGER.error("%s : échec de la pause : %s", adapter.resource.name, err)
         await self.async_evaluate("pause")
+
+    async def set_simulation(self, on: bool) -> None:
+        """Active ou quitte la simulation ; la quitter resynchronise tous les appareils."""
+        self._decisions.simulation = on
+        if not on:
+            # Rien n'a été envoyé pendant la simulation : tout est à rappliquer.
+            self._applied.clear()
+            self._sent_at.clear()
+            for adapter in self._adapters.values():
+                adapter.reset()
+        await self.async_evaluate("simulation")
 
     async def set_config(self, cfg: Config) -> None:
         """Enregistre une nouvelle config et reconstruit adaptateurs et écoutes."""
