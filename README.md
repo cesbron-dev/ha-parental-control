@@ -37,7 +37,7 @@ accepte pas).
 
 ```jsonc
 {
-  "version": 1,                       // seule valeur acceptée
+  "version": 2,                       // 2 (la version 1 est convertie, voir « Appareils logiques »)
   "default_leisure": ["youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch"],
   "calendar_map": {                   // mot (sans accent ni casse) -> type de journée
     "pédagogique": "conge_peda",
@@ -75,32 +75,58 @@ accepte pas).
       }
     }
   ],
-  "resources": [
+  "resources": [                      // appareils logiques
     {
       "id": "tv",
       "name": "Télé salon",
-      "kind": "media_player",
+      "icon": "mdi:television",       // optionnel
       "owners": ["hugo"],
-      "entity_id": "media_player.tv_salon",
-      "notify_service": null,         // optionnel : "notify.xxx" pour avertir sur l'appareil
-      "quota_minutes": { "fin_de_semaine": 180 }
+      "quota_minutes": { "fin_de_semaine": 180 },
+      "devices": [                    // appareils physiques
+        {
+          "name": "Samsung",
+          "integrations": [
+            {
+              "kind": "media_player",
+              "entity_id": "media_player.tv_salon",
+              "notify_service": null  // optionnel : "notify.xxx" pour avertir sur l'appareil
+            },
+            { "kind": "adguard_services", "device_id": "1ef9511faa6db9c5969524170a8fe8e3" }
+          ]
+        }
+      ]
     },
     {
       "id": "iphone_hugo",
       "name": "iPhone Hugo",
-      "kind": "adguard_services",
       "owners": ["hugo"],
-      "device_id": "1ef9511faa6db9c5969524170a8fe8e3"  // appareil du client (adguard_clients)
+      "devices": [
+        {
+          "name": "iPhone Hugo",
+          "integrations": [
+            { "kind": "adguard_services", "device_id": "7c2a9e0b4d1f4e6a8b3c5d7e9f102132" }
+          ]
+        }
+      ]
     },
     {
       "id": "switch",
       "name": "Switch",
-      "kind": "nintendo",
       "owners": ["hugo"],
-      "device_id": "c52a9e7f10b84d3698e1f4a7d3b60c28",
-      "limit_entity": "number.switch_papa_temps_d_ecran_max_aujourd_hui",
-      "remaining_entity": "sensor.switch_papa_temps_d_ecran_restant",
-      "used_entity": "sensor.switch_papa_temps_d_ecran_utilise"
+      "devices": [
+        {
+          "name": "Switch",
+          "integrations": [
+            {
+              "kind": "nintendo",
+              "device_id": "c52a9e7f10b84d3698e1f4a7d3b60c28",
+              "limit_entity": "number.switch_papa_temps_d_ecran_max_aujourd_hui",
+              "remaining_entity": "sensor.switch_papa_temps_d_ecran_restant",
+              "used_entity": "sensor.switch_papa_temps_d_ecran_utilise"
+            }
+          ]
+        }
+      ]
     }
   ]
 }
@@ -112,12 +138,12 @@ accepte pas).
 
 | Clé | Rôle |
 |---|---|
-| `version` | `1` (défaut). |
+| `version` | `2`. Une configuration en `1` (ou sans `version`) est convertie à la lecture. |
 | `default_leisure` | Services AdGuard considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Défaut : `youtube`, `roblox`, `tiktok`, `netflix`, `disneyplus`, `twitch`. |
 | `calendar_map` | Associe un mot cherché dans le titre des événements « journée entière » du calendrier de l'enfant à un type de journée. Comparaison sans accent ni casse, par inclusion. |
 | `notify` | Services `notify.*` des parents : avertissements de fin de plage d'un enfant et de re-blocage d'un service AdGuard ouvert par exception. |
 | `kids` | Liste des enfants. |
-| `resources` | Liste des appareils contrôlés. |
+| `resources` | Liste des appareils logiques contrôlés (voir [Appareils logiques](#appareils-logiques)). |
 
 **Enfant (`kids[]`)**
 
@@ -145,7 +171,7 @@ accepte pas).
 | `bloque` | Tout est bloqué. |
 | `libre` | Tout est autorisé. |
 | `apres_devoirs` | Autorisé seulement après `devoirs_termines` du jour ; sinon statut « en attente des devoirs ». |
-| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seule une ressource `media_player` (TV) a son propre budget : le `quota_minutes` de la ressource, décompté par l'usage réel. Sans quota défini : illimité. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
+| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seule une appareil avec un lecteur multimédia (`media_player`) a son propre budget, décompté par l'usage réel (voir [Appareils logiques](#appareils-logiques)). Sans quota défini : illimité. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
 | `sur_demande` | Bloqué jusqu'à ce qu'un parent ouvre (service `exception` avec `open: true`) ; statut « sur demande ». Pour la Switch, pas d'exception : `ajouter_bonus` avec `resource_id: switch`. |
 
 **Type de journée.** Le calendrier de l'enfant fixe le type via `calendar_map`. Priorité en
@@ -154,16 +180,95 @@ cas de recoupement : `vacances`, puis `conge_peda`, puis `ecole` / `fin_de_semai
 Si le profil `conge_peda` ou `vacances` n'existe pas, c'est le profil `fin_de_semaine` qui
 s'applique (et, pour une ressource, son `quota_minutes` de `fin_de_semaine`).
 
-**Ressource (`resources[]`)**
+**Ressource (`resources[]`, appareil logique)**
 
-Clés communes : `id`, `name`, `kind`, `owners` (liste d'`id` d'enfants, qui doivent exister)
-et `quota_minutes` (objet optionnel `{ "<type de journée>": minutes }`).
+| Clé | Rôle |
+|---|---|
+| `id`, `name` | Identifiant unique et nom affiché (obligatoires). |
+| `icon` | Icône `mdi:` (optionnel, sinon déduite). |
+| `owners` | Liste d'`id` d'enfants, qui doivent exister. |
+| `quota_minutes` | Objet optionnel `{ "<type de journée>": minutes }`. |
+| `devices` | Appareils physiques : `{ "name": ..., "integrations": [...] }`. Au moins une intégration au total. |
+
+Chaque intégration porte un `kind` :
 
 | `kind` | Clés propres | Remarques |
 |---|---|---|
 | `media_player` | `entity_id` (obligatoire), `notify_service` (optionnel) | Éteinte quand la règle est fermée. Temps d'usage compté, `quota_minutes` applicable. |
 | `adguard_services` | `device_id` (obligatoire) | Appareil d'un client persistant de l'intégration `adguard_clients`. Le moteur lit l'attribut `services` de son capteur « Services bloqués » et écrit par `adguard_clients.set_blocked_services` (une écriture par décision). Seuls les services de loisirs sont gérés. |
 | `nintendo` | `device_id`, `limit_entity`, `remaining_entity`, `used_entity` | Les quatre sont obligatoires ; les trois entités sont celles de l'intégration Nintendo (limite du jour en `number`, temps restant et utilisé en `sensor`). La limite du jour doit rester à 0 : le temps s'accorde par bonus. |
+
+## Appareils logiques
+
+Pour la famille, « la Télé » est un seul appareil, même si le moteur doit en piloter plusieurs
+morceaux. La configuration a donc trois niveaux :
+
+1. l'**appareil logique** (`resources[]`) : celui des cartes et des règles (enfants concernés,
+   quota par type de journée, mode par enfant) ;
+2. ses **appareils physiques** (`devices`) : de simples étiquettes pour ranger, sans règle propre ;
+3. leurs **intégrations** (`integrations`) : un lecteur `media_player`, un client AdGuard, une
+   console Nintendo.
+
+Exemple : la Télé, avec la Samsung (lecteur et client AdGuard) et la Google TV (lecteur et deux
+clients AdGuard, un en local et un par le VPN).
+
+```json
+{
+  "id": "tv",
+  "name": "Télé",
+  "icon": "mdi:television",
+  "owners": ["hugo", "zoe"],
+  "quota_minutes": { "fin_de_semaine": 90 },
+  "devices": [
+    {
+      "name": "Samsung",
+      "integrations": [
+        { "kind": "media_player", "entity_id": "media_player.tv_salon" },
+        { "kind": "adguard_services", "device_id": "1ef9511faa6db9c5969524170a8fe8e3" }
+      ]
+    },
+    {
+      "name": "Google TV",
+      "integrations": [
+        { "kind": "media_player", "entity_id": "media_player.google_tv" },
+        { "kind": "adguard_services", "device_id": "7c2a9e0b4d1f4e6a8b3c5d7e9f102132" },
+        { "kind": "adguard_services", "device_id": "a4d8f6e2c0b14a39857e6d5c4b3a2918" }
+      ]
+    }
+  ]
+}
+```
+
+**Les règles s'appliquent une fois, à l'appareil logique.** Fermée, la Télé éteint tous ses
+lecteurs et bloque les loisirs sur chaque client AdGuard ; « Autoriser » ouvre tout, « Arrêter »
+ferme tout. Une exception sur un service (YouTube) s'ouvre sur tous les clients AdGuard de
+l'appareil. Le mode par enfant (`resource_modes`) est unique par appareil logique et vaut pour
+toutes ses intégrations.
+
+**Quota.** Pour un appareil qui contient un lecteur multimédia, le temps compte dès qu'un lecteur
+est en marche, une seule fois même si plusieurs tournent ensemble : c'est le compteur commun de
+l'appareil. Le budget est le `quota_minutes` de l'appareil pour le type de journée ; à défaut, le
+quota de temps d'écran de la frise de chaque enfant concerné (avec ses bonus), et comme
+l'appareil est partagé, c'est le plus généreux de ces quotas qui s'applique. Aucun quota nulle
+part ce jour-là : pas de limite. Cela vaut aussi pour une télé seule. Un appareil sans lecteur
+(AdGuard seul) s'ouvre pendant un minuteur de l'enfant et puise dans son budget.
+
+**Nintendo.** Une console doit rester seule dans son appareil logique : une seule intégration
+`nintendo`, aucune autre. Le moteur refuse sinon la configuration (« une console Nintendo ne se
+regroupe pas »). Son fonctionnement ne change pas (bonus, pas d'exception).
+
+**Intégration absente.** Un lecteur, un client AdGuard ou une console introuvable dans Home
+Assistant (un Chromecast débranché, par exemple) est signalé une fois dans les journaux et
+ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
+
+**Anciennes configurations.** Une configuration en version 1 (ressources plates avec `kind`) est
+acceptée et convertie à la lecture : chaque ressource devient un appareil logique avec un seul
+appareil physique (même nom) et une seule intégration. Le stockage est réécrit en version 2 au
+premier enregistrement ; rien ne change dans le comportement tant qu'on ne regroupe pas. Le
+moteur ne devine pas que `tv_adguard` va avec `tv` : on les regroupe dans le panneau
+« Règles », onglet Appareils, avec **Déplacer vers…** sur l'appareil physique. La ressource
+ainsi vidée est supprimée à l'enregistrement, avec ses autorisations en cours et le temps du jour
+qui lui étaient rattachés ; les modes qui la citent sont retirés.
 
 ### Charger la configuration
 
@@ -174,7 +279,7 @@ et `quota_minutes` (objet optionnel `{ "<type de journée>": minutes }`).
   action: parental_control.importer_configuration
   data:
     config:
-      version: 1
+      version: 2
       kids: []
       resources: []
   ```
@@ -300,8 +405,9 @@ tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmatio
 
 L'intégration ajoute un panneau **Règles** dans la barre latérale (administrateurs seulement) pour
 modifier la configuration sans écrire de JSON : enfants et frises par type de jour (segments,
-quotas, avertissements), loisirs, mode par appareil, appareils (télé, clients AdGuard, consoles
-Nintendo) et leurs quotas, loisirs par défaut, mots du calendrier scolaire et notifications. Les
+quotas, avertissements), loisirs, mode par appareil, appareils logiques en arbre (appareils
+physiques, puis intégrations : lecteur, clients AdGuard, console Nintendo, avec une pastille qui
+dit si l'entité ou l'appareil existe dans Home Assistant) et leurs quotas, loisirs par défaut, mots du calendrier scolaire et notifications. Les
 modifications restent en brouillon jusqu'à « Enregistrer » ; le moteur valide et, en cas d'erreur,
 indique le champ fautif. Un onglet JSON garde l'accès à la configuration brute.
 
