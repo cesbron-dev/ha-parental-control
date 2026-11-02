@@ -100,9 +100,10 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "owners": list(resource.owners),
             "leisure": sorted(cfg.leisure_for_resource(resource_id)),
         }
-        if resource.kind is ResourceKind.NINTENDO:
-            data["used_entity"] = resource.options["used_entity"]
-            data["remaining_entity"] = resource.options["remaining_entity"]
+        for integration in resource.integrations:
+            if integration.kind is ResourceKind.NINTENDO:
+                data["used_entity"] = integration.options["used_entity"]
+                data["remaining_entity"] = integration.options["remaining_entity"]
     for data, exc in zip(state["exceptions"], engine.decisions.exceptions, strict=True):
         end = exception_end(cfg, snap, exc) if snap is not None else None
         data["ends_at"] = _value(end)

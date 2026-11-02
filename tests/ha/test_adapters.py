@@ -9,6 +9,7 @@ from pytest_homeassistant_custom_component.common import async_mock_service
 
 from custom_components.parental_control.adapters import build_adapter
 from custom_components.parental_control.adapters.adguard import AdGuardAdapter
+from custom_components.parental_control.adapters.composite import CompositeAdapter
 from custom_components.parental_control.adapters.media_player import (
     MediaPlayerAdapter,
 )
@@ -22,6 +23,7 @@ from custom_components.parental_control.core.model import (
 from tests.ha.fake_adguard import FakeAdGuard
 
 TV_ENTITY = "media_player.tv_salon"
+TV_LABEL = f"Télé salon ({TV_ENTITY})"
 LEISURE = frozenset({"youtube", "roblox"})
 
 
@@ -62,6 +64,12 @@ def adguard_resource(device_id: str = "adguard_iphone_gabin") -> Resource:
     )
 
 
+def tv_adapter(hass: HomeAssistant, notify_service: str | None = None) -> MediaPlayerAdapter:
+    return MediaPlayerAdapter(
+        hass, TV_LABEL, {"entity_id": TV_ENTITY, "notify_service": notify_service}
+    )
+
+
 def called_entities(calls) -> list[str]:
     return sorted(c.data["entity_id"] for c in calls)
 
@@ -69,18 +77,24 @@ def called_entities(calls) -> list[str]:
 # --- build_adapter -------------------------------------------------------------
 
 
-async def test_build_adapter_by_kind(hass: HomeAssistant) -> None:
+async def test_build_adapter_is_composite(hass: HomeAssistant) -> None:
     tv = build_adapter(hass, tv_resource(), LEISURE)
     ag = build_adapter(hass, adguard_resource(), LEISURE)
-    assert isinstance(tv, MediaPlayerAdapter)
-    assert isinstance(ag, AdGuardAdapter)
+    assert isinstance(tv, CompositeAdapter)
+    assert isinstance(ag, CompositeAdapter)
+    assert [type(m) for m in tv.members] == [MediaPlayerAdapter]
+    assert [type(m) for m in ag.members] == [AdGuardAdapter]
     assert tv.resource.id == "tv"
+    assert tv.members[0].label == TV_LABEL
+    assert ag.members[0].label == "iPhone Gabin"
     assert tv.entity_ids() == [TV_ENTITY]
     assert ag.entity_ids() == []  # appareil inconnu du registre
+    assert tv.nintendo is None
     with pytest.raises(NotImplementedError):
         await tv.grant(10)
     with pytest.raises(NotImplementedError):
         await ag.grant(10)
+    assert tv.describe_grant(10) == []
 
 
 # --- media_player --------------------------------------------------------------
@@ -92,7 +106,7 @@ async def test_media_player_turn_off_when_closed_and_on(
 ) -> None:
     hass.states.async_set(TV_ENTITY, tv_state)
     calls = async_mock_service(hass, "media_player", "turn_off")
-    adapter = build_adapter(hass, tv_resource(), LEISURE)
+    adapter = tv_adapter(hass)
 
     assert adapter.in_use()
     assert adapter.drifted(CLOSED)
@@ -110,7 +124,7 @@ async def test_media_player_unavailable_is_not_in_use(
     if tv_state is not None:
         hass.states.async_set(TV_ENTITY, tv_state)
     calls = async_mock_service(hass, "media_player", "turn_off")
-    adapter = build_adapter(hass, tv_resource(), LEISURE)
+    adapter = tv_adapter(hass)
 
     assert not adapter.in_use()
     await adapter.apply(CLOSED)
@@ -121,20 +135,20 @@ async def test_media_player_unavailable_is_not_in_use(
 async def test_media_player_open_does_nothing(hass: HomeAssistant) -> None:
     hass.states.async_set(TV_ENTITY, "playing")
     calls = async_mock_service(hass, "media_player", "turn_off")
-    await build_adapter(hass, tv_resource(), LEISURE).apply(OPEN)
+    await tv_adapter(hass).apply(OPEN)
     assert calls == []
 
 
 async def test_media_player_force_close(hass: HomeAssistant) -> None:
     hass.states.async_set(TV_ENTITY, "on")
     calls = async_mock_service(hass, "media_player", "turn_off")
-    await build_adapter(hass, tv_resource(), LEISURE).force_close()
+    await tv_adapter(hass).force_close()
     assert called_entities(calls) == [TV_ENTITY]
 
 
 async def test_media_player_warn_uses_notify_service(hass: HomeAssistant) -> None:
     calls = async_mock_service(hass, "notify", "tv_salon")
-    adapter = build_adapter(hass, tv_resource("notify.tv_salon"), LEISURE)
+    adapter = tv_adapter(hass, "notify.tv_salon")
     await adapter.warn("Télé salon : coupure dans 5 min")
     assert len(calls) == 1
     assert calls[0].data == {"message": "Télé salon : coupure dans 5 min"}
@@ -142,7 +156,7 @@ async def test_media_player_warn_uses_notify_service(hass: HomeAssistant) -> Non
 
 async def test_media_player_warn_without_notify_service(hass: HomeAssistant) -> None:
     calls = async_mock_service(hass, "notify", "tv_salon")
-    await build_adapter(hass, tv_resource(None), LEISURE).warn("x")
+    await tv_adapter(hass, None).warn("x")
     assert calls == []
 
 
@@ -155,7 +169,7 @@ def fake(hass: HomeAssistant) -> FakeAdGuard:
 
 
 def adguard(hass: HomeAssistant, fake: FakeAdGuard) -> AdGuardAdapter:
-    return build_adapter(hass, adguard_resource(fake.device_id), LEISURE)
+    return AdGuardAdapter(hass, "iPhone Gabin", {"device_id": fake.device_id}, LEISURE)
 
 
 async def test_adguard_watches_device_sensor(hass: HomeAssistant, fake) -> None:
@@ -243,7 +257,7 @@ async def test_adguard_missing_sensor_logs_once(
 
 
 async def test_adguard_unknown_device_has_no_entities(hass: HomeAssistant, fake) -> None:
-    adapter = build_adapter(hass, adguard_resource("inconnu"), LEISURE)
+    adapter = AdGuardAdapter(hass, "iPhone Gabin", {"device_id": "inconnu"}, LEISURE)
     assert adapter.entity_ids() == []
     assert not adapter.drifted(state(False, LEISURE))
     await adapter.apply(state(False, LEISURE))
@@ -344,14 +358,14 @@ async def test_media_player_failed_call_logs(
 
     hass.services.async_register("media_player", "turn_off", turn_off)
     with caplog.at_level(logging.WARNING):
-        await build_adapter(hass, tv_resource(), LEISURE).apply(CLOSED)
+        await tv_adapter(hass).apply(CLOSED)
     assert any(TV_ENTITY in r.getMessage() for r in caplog.records)
 
 
 async def test_media_player_missing_entity_warns_once(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
-    adapter = build_adapter(hass, tv_resource(), LEISURE)
+    adapter = tv_adapter(hass)
     with caplog.at_level(logging.WARNING):
         assert not adapter.in_use()
         await adapter.apply(CLOSED)
@@ -369,9 +383,18 @@ from custom_components.parental_control.adapters.nintendo import (  # noqa: E402
     NintendoAdapter,
 )
 
+SLICE_DELAY = 5
 LIMIT = "number.switch_limit"
 REMAINING = "sensor.switch_remaining"
 USED = "sensor.switch_used"
+
+
+SWITCH_OPTIONS = {
+    "device_id": "dev123",
+    "limit_entity": LIMIT,
+    "remaining_entity": REMAINING,
+    "used_entity": USED,
+}
 
 
 def switch_resource() -> Resource:
@@ -379,20 +402,26 @@ def switch_resource() -> Resource:
         id="switch",
         name="Switch",
         owners=("gabin",),
-        devices=(PhysicalDevice("Switch", (Integration(ResourceKind.NINTENDO, {
-            "device_id": "dev123",
-            "limit_entity": LIMIT,
-            "remaining_entity": REMAINING,
-            "used_entity": USED,
-        }),)),),
+        devices=(PhysicalDevice("Switch", (
+            Integration(ResourceKind.NINTENDO, SWITCH_OPTIONS),
+        )),),
     )
 
 
 def nintendo(hass: HomeAssistant, delay: float = 0) -> NintendoAdapter:
-    adapter = build_adapter(hass, switch_resource(), LEISURE)
-    assert isinstance(adapter, NintendoAdapter)
+    adapter = NintendoAdapter(hass, "Switch", SWITCH_OPTIONS)
     adapter._slice_delay = delay
     return adapter
+
+
+async def test_build_adapter_exposes_nintendo(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
+    composite = build_adapter(hass, switch_resource(), LEISURE)
+    assert isinstance(composite.nintendo, NintendoAdapter)
+    assert composite.nintendo.label == "Switch"
+    assert composite.describe_grant(15) == ["accorderait 15 min sur Switch"]
+    await composite.grant(20)
+    assert [c.data for c in calls] == [{"device_id": "dev123", "bonus_time": 20}]
 
 
 async def test_nintendo_entity_ids(hass: HomeAssistant) -> None:
@@ -410,7 +439,7 @@ async def test_nintendo_grant_slices_30_min(hass: HomeAssistant) -> None:
 
 async def test_nintendo_grant_waits_between_slices(hass: HomeAssistant) -> None:
     async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
-    adapter = build_adapter(hass, switch_resource(), LEISURE)
+    adapter = nintendo(hass, SLICE_DELAY)
     with patch(
         "custom_components.parental_control.adapters.nintendo.asyncio.sleep",
         new=AsyncMock(),
@@ -425,7 +454,7 @@ async def test_nintendo_grant_single_slice_no_wait(hass: HomeAssistant) -> None:
         "custom_components.parental_control.adapters.nintendo.asyncio.sleep",
         new=AsyncMock(),
     ) as sleep:
-        await build_adapter(hass, switch_resource(), LEISURE).grant(20)
+        await nintendo(hass, SLICE_DELAY).grant(20)
     sleep.assert_not_awaited()
 
 
@@ -520,7 +549,7 @@ async def test_nintendo_minutes(hass: HomeAssistant, caplog) -> None:
 async def test_media_player_describe_closed_and_in_use(hass: HomeAssistant) -> None:
     hass.states.async_set(TV_ENTITY, "playing")
     calls = async_mock_service(hass, "media_player", "turn_off")
-    adapter = build_adapter(hass, tv_resource(), LEISURE)
+    adapter = tv_adapter(hass)
 
     assert adapter.describe(CLOSED) == [f"éteindrait Télé salon ({TV_ENTITY})"]
     assert adapter.describe(OPEN) == []
@@ -531,7 +560,7 @@ async def test_media_player_describe_closed_and_in_use(hass: HomeAssistant) -> N
 async def test_media_player_describe_not_in_use(hass: HomeAssistant) -> None:
     hass.states.async_set(TV_ENTITY, "off")
     calls = async_mock_service(hass, "media_player", "turn_off")
-    assert build_adapter(hass, tv_resource(), LEISURE).describe(CLOSED) == []
+    assert tv_adapter(hass).describe(CLOSED) == []
     assert calls == []
 
 
@@ -609,10 +638,237 @@ async def test_nintendo_describe_no_drift(hass: HomeAssistant) -> None:
 async def test_describe_warn_only_where_warn_does_something(
     hass: HomeAssistant, fake
 ) -> None:
-    with_notify = build_adapter(hass, tv_resource("notify.tv_salon"), LEISURE)
+    with_notify = tv_adapter(hass, "notify.tv_salon")
     assert with_notify.describe_warn("bientôt") == [
-        f"afficherait « bientôt » sur {with_notify.resource.name}"
+        f"afficherait « bientôt » sur {TV_LABEL}"
     ]
-    assert build_adapter(hass, tv_resource(None), LEISURE).describe_warn("x") == []
+    assert tv_adapter(hass, None).describe_warn("x") == []
     assert adguard(hass, fake).describe_warn("x") == []
     assert nintendo(hass).describe_warn("x") == []
+
+
+# --- composite : un appareil logique, plusieurs intégrations ------------------------
+
+from custom_components.parental_control.adapters.simulation import (  # noqa: E402
+    SimulatedAdapter,
+)
+
+SAMSUNG = "media_player.samsung"
+GOOGLE_TV = "media_player.google_tv"
+
+
+class MixedTv:
+    """Télé : Samsung (lecteur + AdGuard), Google TV (lecteur + AdGuard), Chromecast (VPN)."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self.calls: list[ServiceCall] = []
+        self.samsung = FakeAdGuard(hass, self.calls, name="Samsung")
+        self.google = FakeAdGuard(hass, self.calls, name="Google TV")
+        self.vpn = FakeAdGuard(hass, self.calls, name="Chromecast (VPN)")
+
+        async def turn_off(call: ServiceCall) -> None:
+            self.calls.append(call)
+            hass.states.async_set(call.data["entity_id"], "off")
+
+        hass.services.async_register("media_player", "turn_off", turn_off)
+        self.resource = Resource(
+            id="tv",
+            name="Télé",
+            owners=("gabin",),
+            devices=(
+                PhysicalDevice("Samsung", (
+                    Integration(ResourceKind.MEDIA_PLAYER, {"entity_id": SAMSUNG}),
+                    Integration(ResourceKind.ADGUARD, {"device_id": self.samsung.device_id}),
+                )),
+                PhysicalDevice("Google TV", (
+                    Integration(ResourceKind.MEDIA_PLAYER, {"entity_id": GOOGLE_TV}),
+                    Integration(ResourceKind.ADGUARD, {"device_id": self.google.device_id}),
+                )),
+                PhysicalDevice("Chromecast (VPN)", (
+                    Integration(ResourceKind.ADGUARD, {"device_id": self.vpn.device_id}),
+                )),
+            ),
+        )
+        self.adapter = build_adapter(hass, self.resource, LEISURE)
+
+    @property
+    def fakes(self) -> list[FakeAdGuard]:
+        return [self.samsung, self.google, self.vpn]
+
+    def turn_offs(self) -> list[str]:
+        return sorted(c.data["entity_id"] for c in self.calls if c.domain == "media_player")
+
+    def adguard_writes(self) -> list[ServiceCall]:
+        return [c for c in self.calls if c.domain == "adguard_clients"]
+
+
+@pytest.fixture
+def mixed(hass: HomeAssistant) -> MixedTv:
+    return MixedTv(hass)
+
+
+async def test_mixed_tv_watches_every_member(hass: HomeAssistant, mixed) -> None:
+    assert mixed.adapter.entity_ids() == [
+        SAMSUNG, mixed.samsung.entity_id, GOOGLE_TV, mixed.google.entity_id,
+        mixed.vpn.entity_id,
+    ]
+    assert mixed.adapter.nintendo is None
+
+
+async def test_mixed_tv_closes_every_member(hass: HomeAssistant, mixed) -> None:
+    hass.states.async_set(SAMSUNG, "on")
+    hass.states.async_set(GOOGLE_TV, "playing")
+    for fake in mixed.fakes:
+        fake.set_blocked([])
+    closed = state(False, LEISURE)
+
+    assert mixed.adapter.drifted(closed)
+    await mixed.adapter.apply(closed)
+
+    assert mixed.turn_offs() == [GOOGLE_TV, SAMSUNG]
+    assert len(mixed.adguard_writes()) == 3
+    assert all(fake.blocked == ["roblox", "youtube"] for fake in mixed.fakes)
+    assert not mixed.adapter.drifted(closed)
+
+
+async def test_mixed_tv_in_use_if_one_player_plays(hass: HomeAssistant, mixed) -> None:
+    hass.states.async_set(SAMSUNG, "off")
+    hass.states.async_set(GOOGLE_TV, "playing")
+    assert mixed.adapter.in_use()
+    hass.states.async_set(GOOGLE_TV, "off")
+    assert not mixed.adapter.in_use()
+
+
+async def test_missing_integration_does_not_stop_siblings(
+    hass: HomeAssistant, mixed, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Samsung absente de HA, Chromecast VPN débranché : les autres sont pilotés."""
+    hass.states.async_set(GOOGLE_TV, "on")
+    mixed.samsung.set_blocked([])
+    mixed.google.set_blocked([])  # le capteur du VPN n'a pas d'état
+    closed = state(False, LEISURE)
+
+    with caplog.at_level(logging.WARNING):
+        await mixed.adapter.apply(closed)
+        await mixed.adapter.apply(closed)
+
+    assert mixed.turn_offs() == [GOOGLE_TV]
+    assert mixed.samsung.blocked == mixed.google.blocked == ["roblox", "youtube"]
+    assert mixed.vpn.blocks() == []
+    assert sum(SAMSUNG in r.getMessage() for r in caplog.records) == 1
+    assert sum("Chromecast (VPN)" in r.getMessage() for r in caplog.records) == 1
+
+
+async def test_member_error_does_not_stop_siblings(
+    hass: HomeAssistant, mixed, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Une erreur inattendue d'un membre est journalisée avec son label."""
+    hass.states.async_set(SAMSUNG, "on")
+    for fake in mixed.fakes:
+        fake.set_blocked([])
+
+    async def broken(call: ServiceCall) -> None:
+        raise RuntimeError("panne")
+
+    hass.services.async_register("media_player", "turn_off", broken)
+    with caplog.at_level(logging.ERROR):
+        await mixed.adapter.apply(state(False, LEISURE))
+        await mixed.adapter.force_close()
+
+    assert all(fake.blocked == ["roblox", "youtube"] for fake in mixed.fakes)
+    errors = [r.getMessage() for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 2
+    assert all(f"Samsung ({SAMSUNG})" in m and "panne" in m for m in errors)
+
+
+async def test_service_exception_opens_every_adguard_client(
+    hass: HomeAssistant, mixed
+) -> None:
+    """Exception « youtube ouvert » sur la Télé : chaque client AdGuard le débloque."""
+    for fake in mixed.fakes:
+        fake.set_blocked(["roblox", "youtube"])
+
+    await mixed.adapter.apply(state(False, frozenset({"roblox"})))
+
+    assert [c.data["unblock"] for c in mixed.adguard_writes()] == [["youtube"]] * 3
+    assert all(fake.blocked == ["roblox"] for fake in mixed.fakes)
+
+
+async def test_mixed_tv_force_close_pauses_every_member(
+    hass: HomeAssistant, mixed
+) -> None:
+    hass.states.async_set(SAMSUNG, "on")
+    hass.states.async_set(GOOGLE_TV, "on")
+    for fake in mixed.fakes:
+        fake.set_blocked([])
+
+    await mixed.adapter.force_close()
+
+    assert mixed.turn_offs() == [GOOGLE_TV, SAMSUNG]
+    assert all(fake.blocked == ["roblox", "youtube"] for fake in mixed.fakes)
+
+
+async def test_mixed_tv_describe_per_integration(hass: HomeAssistant, mixed) -> None:
+    hass.states.async_set(SAMSUNG, "on")
+    hass.states.async_set(GOOGLE_TV, "off")
+    for fake in mixed.fakes:
+        fake.set_blocked([])
+
+    expected = [
+        f"éteindrait Samsung ({SAMSUNG})",
+        "bloquerait roblox, youtube sur Samsung",
+        "bloquerait roblox, youtube sur Google TV",
+        "bloquerait roblox, youtube sur Chromecast (VPN)",
+    ]
+    assert mixed.adapter.describe(state(False, LEISURE)) == expected
+    # pause : chaque membre avec son propre état fermé (loisirs pour AdGuard)
+    assert mixed.adapter.describe_pause() == expected
+    assert mixed.calls == []
+
+
+async def test_simulated_composite_logs_each_line_once(
+    hass: HomeAssistant, mixed
+) -> None:
+    hass.states.async_set(SAMSUNG, "on")
+    for fake in mixed.fakes:
+        fake.set_blocked([])
+    logged: list[str] = []
+    sim = SimulatedAdapter(mixed.adapter, lambda: True, lambda _name, line: logged.append(line))
+    closed = state(False, LEISURE)
+
+    await sim.apply(closed)
+    await sim.apply(closed)  # même état, mêmes lignes : rien de nouveau
+    assert len(logged) == 4
+    await sim.force_close()  # la pause décrit les mêmes actions : déjà journalisées
+    assert len(logged) == 4
+
+    hass.states.async_set(SAMSUNG, "off")
+    for fake in mixed.fakes:
+        fake.set_blocked(["roblox", "youtube"])
+    await sim.apply(closed)  # plus rien à faire : la mémoire est oubliée
+    hass.states.async_set(SAMSUNG, "on")
+    await sim.apply(closed)
+    assert logged.count(f"éteindrait Samsung ({SAMSUNG})") == 2
+    assert mixed.calls == []
+
+
+async def test_simulated_composite_dedups_identical_lines(hass: HomeAssistant) -> None:
+    """Deux clients AdGuard du même appareil physique : une seule ligne."""
+    first = FakeAdGuard(hass, name="Google TV")
+    second = FakeAdGuard(hass, first.calls, name="Google TV")
+    first.set_blocked([])
+    second.set_blocked([])
+    resource = Resource(
+        id="tv", name="Télé", owners=("gabin",),
+        devices=(PhysicalDevice("Google TV", (
+            Integration(ResourceKind.ADGUARD, {"device_id": first.device_id}),
+            Integration(ResourceKind.ADGUARD, {"device_id": second.device_id}),
+        )),),
+    )
+    logged: list[str] = []
+    sim = SimulatedAdapter(
+        build_adapter(hass, resource, LEISURE), lambda: True,
+        lambda _name, line: logged.append(line),
+    )
+    await sim.apply(state(False, LEISURE))
+    assert logged == ["bloquerait roblox, youtube sur Google TV"]

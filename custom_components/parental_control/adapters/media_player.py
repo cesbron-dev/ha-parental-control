@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import logging
 
+from collections.abc import Mapping
+from typing import Any
+
 from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 
 from ..core.evaluator import ResourceState
-from ..core.model import Resource
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -16,11 +18,11 @@ IN_USE_STATES = frozenset({"on", "playing", "paused", "idle", "buffering"})
 
 
 class MediaPlayerAdapter:
-    def __init__(self, hass: HomeAssistant, resource: Resource) -> None:
+    def __init__(self, hass: HomeAssistant, label: str, options: Mapping[str, Any]) -> None:
         self.hass = hass
-        self.resource = resource
-        self._entity_id: str = resource.options["entity_id"]
-        self._notify_service: str | None = resource.options.get("notify_service")
+        self.label = label  # « <appareil physique> (<entity_id>) »
+        self._entity_id: str = options["entity_id"]
+        self._notify_service: str | None = options.get("notify_service")
         self._missing_logged = False
 
     def entity_ids(self) -> list[str]:
@@ -30,9 +32,7 @@ class MediaPlayerAdapter:
         state = self.hass.states.get(self._entity_id)
         if state is None and not self._missing_logged:
             self._missing_logged = True
-            _LOGGER.warning(
-                "%s : entité introuvable %s", self.resource.name, self._entity_id
-            )
+            _LOGGER.warning("%s : entité introuvable", self.label)
         return state
 
     def in_use(self) -> bool:
@@ -48,7 +48,7 @@ class MediaPlayerAdapter:
     def describe(self, desired: ResourceState) -> list[str]:
         if not self._must_turn_off(desired):
             return []
-        return [f"éteindrait {self.resource.name} ({self._entity_id})"]
+        return [f"éteindrait {self.label}"]
 
     def describe_grant(self, minutes: int) -> list[str]:
         return []
@@ -64,17 +64,12 @@ class MediaPlayerAdapter:
                 blocking=True,
             )
         except HomeAssistantError as err:
-            _LOGGER.warning(
-                "%s : échec de l'extinction de %s : %s",
-                self.resource.name,
-                self._entity_id,
-                err,
-            )
+            _LOGGER.warning("%s : échec de l'extinction : %s", self.label, err)
 
     def describe_warn(self, message: str) -> list[str]:
         if not self._notify_service:
             return []
-        return [f"afficherait « {message} » sur {self.resource.name}"]
+        return [f"afficherait « {message} » sur {self.label}"]
 
     async def warn(self, message: str) -> None:
         if not self._notify_service:

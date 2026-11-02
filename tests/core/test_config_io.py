@@ -26,7 +26,7 @@ def test_parse_example_config():
     assert cfg.kid("gabin").profile_for(DayType.ECOLE).segments[1] == Segment(
         time(15, 25), SegmentType.LIBRE
     )
-    assert cfg.resource("tv").options["entity_id"] == "media_player.tv_salon"
+    assert cfg.resource("tv").integrations[0].options["entity_id"] == "media_player.tv_salon"
     assert cfg.resource("tv").quota_minutes[DayType.FIN_DE_SEMAINE] == 180
     assert cfg.kid("gabin").profile_for(DayType.FIN_DE_SEMAINE).quota_minutes == 120
 
@@ -167,7 +167,8 @@ def test_v1_keeps_kind_and_options():
     cfg = parse_config(ex())
     assert [r.kind for r in cfg.resources] == [
         ResourceKind.MEDIA_PLAYER, ResourceKind.ADGUARD, ResourceKind.NINTENDO]
-    assert cfg.resource("switch").options["used_entity"] == EX["resources"][2]["used_entity"]
+    switch = cfg.resource("switch").integrations[0]
+    assert switch.options["used_entity"] == EX["resources"][2]["used_entity"]
 
 
 def test_mixed_tv_kinds_and_integrations():
@@ -181,7 +182,7 @@ def test_mixed_tv_kinds_and_integrations():
         "media_player.samsung", "adguard_samsung", "media_player.google_tv",
         "adguard_google_tv", "adguard_chromecast_vpn"]
     assert [d.name for d in res.devices] == ["Samsung", "Google TV"]
-    assert res.options == {"entity_id": "media_player.samsung"}
+    assert res.integrations[0].options == {"entity_id": "media_player.samsung"}
     assert res.icon == "mdi:television"
 
 
