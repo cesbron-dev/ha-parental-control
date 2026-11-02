@@ -154,6 +154,9 @@ class AdGuardAdapter:
         self._extra_blocked |= set(block) - self._leisure
         self._extra_blocked -= set(unblock)
 
+    def describe_warn(self, message: str) -> list[str]:
+        return []
+
     async def warn(self, message: str) -> None:
         return
 

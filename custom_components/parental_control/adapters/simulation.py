@@ -37,6 +37,8 @@ class SimulatedAdapter:
 
     def _log(self, lines: list[str]) -> None:
         if not lines:
+            # Rien à faire (rouvert, plus de dérive) : la prochaine action sera journalisée.
+            self._last = set()
             return
         for line in lines:
             if line not in self._last:
@@ -59,6 +61,9 @@ class SimulatedAdapter:
 
     def describe_grant(self, minutes: int) -> list[str]:
         return self.inner.describe_grant(minutes)
+
+    def describe_warn(self, message: str) -> list[str]:
+        return self.inner.describe_warn(message)
 
     def pause_state(self) -> ResourceState:
         return self.inner.pause_state()
@@ -87,4 +92,4 @@ class SimulatedAdapter:
         if not self._active():
             await self.inner.warn(message)
             return
-        self._log([f"afficherait « {message} » sur {self.resource.name}"])
+        self._log(self.inner.describe_warn(message))

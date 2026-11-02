@@ -57,6 +57,9 @@ class NintendoAdapter:
     def describe_grant(self, minutes: int) -> list[str]:
         return [f"accorderait {minutes} min sur {self.resource.name}"]
 
+    def describe_warn(self, message: str) -> list[str]:
+        return []
+
     async def warn(self, message: str) -> None:
         return
 
