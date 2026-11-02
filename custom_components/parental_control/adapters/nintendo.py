@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Mapping
+from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from ..core.evaluator import ResourceState
-from ..core.model import Resource
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,13 +24,13 @@ class NintendoAdapter:
     s'accorde par bonus. Une limite relevée (ex. `number.set_value` depuis la tablette)
     est une dérive : elle est remise à 0, comme par la pause."""
 
-    def __init__(self, hass: HomeAssistant, resource: Resource) -> None:
+    def __init__(self, hass: HomeAssistant, label: str, options: Mapping[str, Any]) -> None:
         self.hass = hass
-        self.resource = resource
-        self._device_id: str = resource.options["device_id"]
-        self._limit_entity: str = resource.options["limit_entity"]
-        self._remaining_entity: str = resource.options["remaining_entity"]
-        self._used_entity: str = resource.options["used_entity"]
+        self.label = label  # nom de l'appareil physique
+        self._device_id: str = options["device_id"]
+        self._limit_entity: str = options["limit_entity"]
+        self._remaining_entity: str = options["remaining_entity"]
+        self._used_entity: str = options["used_entity"]
         self._slice_delay: float = SLICE_DELAY_SECONDS
         self._missing_logged: set[str] = set()
 
@@ -52,10 +53,10 @@ class NintendoAdapter:
         # même condition qu'`apply` : seule la dérive de la limite est corrigée
         if not self.drifted(desired):
             return []
-        return [f"remettrait la limite de {self.resource.name} à 0 min"]
+        return [f"remettrait la limite de {self.label} à 0 min"]
 
     def describe_grant(self, minutes: int) -> list[str]:
-        return [f"accorderait {minutes} min sur {self.resource.name}"]
+        return [f"accorderait {minutes} min sur {self.label}"]
 
     def describe_warn(self, message: str) -> list[str]:
         return []
@@ -69,7 +70,7 @@ class NintendoAdapter:
             if entity_id not in self._missing_logged:
                 self._missing_logged.add(entity_id)
                 _LOGGER.warning(
-                    "%s : entité introuvable %s", self.resource.name, entity_id
+                    "%s : entité introuvable %s", self.label, entity_id
                 )
             return None
         if state.state in _UNUSABLE:
@@ -106,7 +107,7 @@ class NintendoAdapter:
             except HomeAssistantError as err:
                 _LOGGER.warning(
                     "%s : échec du bonus de %d min, nouvel essai : %s",
-                    self.resource.name,
+                    self.label,
                     amount,
                     err,
                 )

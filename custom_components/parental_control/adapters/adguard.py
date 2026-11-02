@@ -7,6 +7,8 @@ Lecture : attribut `services` du capteur « Services bloqués » de l'appareil.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
+from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -14,7 +16,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from ..core.evaluator import ResourceState
-from ..core.model import Resource
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,11 +31,15 @@ class AdGuardAdapter:
     """
 
     def __init__(
-        self, hass: HomeAssistant, resource: Resource, leisure: frozenset[str]
+        self,
+        hass: HomeAssistant,
+        label: str,
+        options: Mapping[str, Any],
+        leisure: frozenset[str],
     ) -> None:
         self.hass = hass
-        self.resource = resource
-        self._device_id: str = resource.options["device_id"]
+        self.label = label  # nom de l'appareil physique
+        self._device_id: str = options["device_id"]
         self._leisure = leisure
         self._sensor: str | None = None
         self._missing_logged = False
@@ -68,7 +73,7 @@ class AdGuardAdapter:
                 self._missing_logged = True
                 _LOGGER.warning(
                     "%s : capteur AdGuard introuvable pour l'appareil %s, ignoré",
-                    self.resource.name,
+                    self.label,
                     self._device_id,
                 )
             return None
@@ -83,7 +88,7 @@ class AdGuardAdapter:
                 "%s : le client AdGuard utilise les services bloqués globaux, sa liste "
                 "n'est pas appliquée ; désactivez « Utiliser les services bloqués "
                 "globaux » sur l'appareil",
-                self.resource.name,
+                self.label,
             )
         return set(services)
 
@@ -119,9 +124,9 @@ class AdGuardAdapter:
         block, unblock, _ = plan
         lines = []
         if block:
-            lines.append(f"bloquerait {', '.join(block)} sur {self.resource.name}")
+            lines.append(f"bloquerait {', '.join(block)} sur {self.label}")
         if unblock:
-            lines.append(f"débloquerait {', '.join(unblock)} sur {self.resource.name}")
+            lines.append(f"débloquerait {', '.join(unblock)} sur {self.label}")
         return lines
 
     def describe_grant(self, minutes: int) -> list[str]:
@@ -145,7 +150,7 @@ class AdGuardAdapter:
         except HomeAssistantError as err:
             _LOGGER.warning(
                 "%s : échec de l'écriture AdGuard (bloquer %s, débloquer %s) : %s",
-                self.resource.name,
+                self.label,
                 block,
                 unblock,
                 err,

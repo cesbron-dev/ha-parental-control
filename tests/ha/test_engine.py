@@ -593,7 +593,7 @@ async def test_set_config_rebuilds_adapters(hass, freezer, services, hass_storag
     raw = {**EX, "resources": [{**EX["resources"][0], "entity_id": "media_player.autre"},
                                *EX["resources"][1:]]}
     await engine.set_config(parse_config(raw))
-    assert engine.config.resource("tv").options["entity_id"] == "media_player.autre"
+    assert engine.config.resource("tv").integrations[0].options["entity_id"] == "media_player.autre"
     hass.states.async_set("media_player.autre", "on")
     await hass.async_block_till_done()
     assert services.entities("media_player", "turn_off") == ["media_player.autre"]
@@ -995,3 +995,42 @@ async def test_v1_stored_config_upgrades_without_behavior_change(
     assert out["version"] == 2
     assert out["resources"][0]["devices"] == [{"name": "Télé salon", "integrations": [
         {"kind": "media_player", "entity_id": TV, "notify_service": None}]}]
+
+
+# --- appareil logique à plusieurs intégrations -----------------------------------
+
+
+async def grouped_tv(hass, services) -> FakeAdGuard:
+    """Config v2 : la Télé salon regroupe le lecteur et son client AdGuard « TV »."""
+    from custom_components.parental_control.core.config_io import dump_config
+
+    tv_adguard = FakeAdGuard(hass, services.calls, name="TV")
+    tv_adguard.set_blocked([])
+    cfg = dump_config(parse_config(config_for(services)))
+    cfg["resources"][0]["devices"] = [
+        {"name": "Samsung", "integrations": [
+            {"kind": "media_player", "entity_id": TV, "notify_service": None}]},
+        {"name": "TV", "integrations": [
+            {"kind": "adguard_services", "device_id": tv_adguard.device_id}]},
+    ]
+    await ParentalStore(hass).save_config(parse_config(cfg))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    return tv_adguard, entry
+
+
+async def test_simulation_pause_describes_every_integration(
+    hass, freezer, services
+) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    hass.states.async_set(TV, "on")
+    freezer.move_to(at(SATURDAY, 10, 0))
+    tv_adguard, entry = await grouped_tv(hass, services)
+    _, engine = await setup(hass, freezer, entry=entry)
+    assert tv_adguard.entity_id in engine._entity_owners  # client écouté avec le lecteur
+    await engine.set_simulation(True)
+    await engine.set_pause(True)
+    messages = logbook_messages(entries)
+    assert f"Simulation : éteindrait Samsung ({TV})" in messages
+    assert f"Simulation : bloquerait {', '.join(LEISURE)} sur TV" in messages
+    assert [c for c in services.calls if c.domain != "notify"] == []

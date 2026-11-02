@@ -119,12 +119,6 @@ class Resource:
             return ResourceKind.MEDIA_PLAYER
         return ResourceKind.ADGUARD
 
-    @property
-    def options(self) -> Mapping[str, Any]:
-        """Transition : options de la première intégration."""
-        integrations = self.integrations
-        return integrations[0].options if integrations else {}
-
 
 @dataclass(frozen=True)
 class Config:

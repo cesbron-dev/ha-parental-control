@@ -6,20 +6,22 @@ from collections.abc import Callable
 
 from ..core.evaluator import ResourceState
 from ..core.model import Resource
-from .base import Adapter
+from .composite import CompositeAdapter
 
 
 class SimulatedAdapter:
-    """Même contrat qu'`Adapter`. Hors simulation, tout passe à `inner` ; en simulation,
-    `apply`/`force_close`/`grant`/`warn` décrivent leur effet via `record(nom, ligne)`.
+    """Même contrat que le composite. Hors simulation, tout passe à `inner` ; en
+    simulation, `apply`/`force_close`/`grant`/`warn` décrivent leur effet via
+    `record(nom, ligne)`, une ligne par intégration.
 
     Une ligne déjà enregistrée par l'appel précédent n'est pas répétée (une dérive
-    persistante ne remplit pas le journal) ; `reset()` oublie cette mémoire.
+    persistante ne remplit pas le journal) ; `reset()` oublie cette mémoire. La mémoire
+    couvre tous les membres : les lignes portent le label de leur intégration.
     """
 
     def __init__(
         self,
-        inner: Adapter,
+        inner: CompositeAdapter,
         active: Callable[[], bool],
         record: Callable[[str, str], None],
     ) -> None:
@@ -40,7 +42,8 @@ class SimulatedAdapter:
             # Rien à faire (rouvert, plus de dérive) : la prochaine action sera journalisée.
             self._last = set()
             return
-        for line in lines:
+        # deux membres peuvent décrire la même ligne (même appareil physique)
+        for line in dict.fromkeys(lines):
             if line not in self._last:
                 self._record(self.resource.name, line)
         self._last = set(lines)
@@ -65,9 +68,6 @@ class SimulatedAdapter:
     def describe_warn(self, message: str) -> list[str]:
         return self.inner.describe_warn(message)
 
-    def pause_state(self) -> ResourceState:
-        return self.inner.pause_state()
-
     # Écriture : décrite en simulation, déléguée sinon.
 
     async def apply(self, desired: ResourceState) -> None:
@@ -80,7 +80,7 @@ class SimulatedAdapter:
         if not self._active():
             await self.inner.force_close()
             return
-        self._log(self.inner.describe(self.inner.pause_state()))
+        self._log(self.inner.describe_pause())
 
     async def grant(self, minutes: int) -> None:
         if not self._active():

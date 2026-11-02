@@ -1,17 +1,16 @@
-"""Contrat commun des adaptateurs de ressources."""
+"""Contrat commun des adaptateurs d'intégration (membres d'un `CompositeAdapter`)."""
 
 from __future__ import annotations
 
 from typing import Protocol
 
 from ..core.evaluator import ResourceState
-from ..core.model import Resource
 
 
 class Adapter(Protocol):
-    """Traduit l'état voulu d'une ressource en appels de services HA."""
+    """Traduit l'état voulu d'une ressource en appels de services HA, pour une intégration."""
 
-    resource: Resource
+    label: str  # « <appareil physique> (<entity_id>) » pour un lecteur, l'appareil sinon
 
     def entity_ids(self) -> list[str]:
         """Entités à écouter pour détecter une dérive."""

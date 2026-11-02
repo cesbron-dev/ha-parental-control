@@ -41,8 +41,7 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.start import async_at_started
 from homeassistant.util import dt as dt_util
 
-from .adapters import Adapter, build_adapter
-from .adapters.nintendo import NintendoAdapter
+from .adapters import build_adapter
 from .adapters.simulation import SimulatedAdapter
 from .calendar_source import fetch_all_day_events
 from .const import DOMAIN, EVENT_WARNING, SIGNAL_UPDATE, TICK_SECONDS
@@ -367,13 +366,13 @@ class ParentalEngine:
     def _with_nintendo_sensors(self, snap: Snapshot) -> Snapshot:
         resources = dict(snap.resources)
         for resource_id, wrapper in self._adapters.items():
-            # L'enveloppe cache l'adaptateur réel : on lit toujours l'appareil.
-            adapter = wrapper.inner
-            if isinstance(adapter, NintendoAdapter) and resource_id in resources:
+            # L'enveloppe cache le composite réel : on lit toujours l'appareil.
+            nintendo = wrapper.inner.nintendo
+            if nintendo is not None and resource_id in resources:
                 resources[resource_id] = replace(
                     resources[resource_id],
-                    used_minutes=adapter.used_minutes(),
-                    remaining_minutes=adapter.remaining_minutes(),
+                    used_minutes=nintendo.used_minutes(),
+                    remaining_minutes=nintendo.remaining_minutes(),
                 )
         return replace(snap, resources=resources)
 
@@ -453,7 +452,7 @@ class ParentalEngine:
             self._notify(cfg, "\n".join(messages))
 
     @staticmethod
-    async def _device_warn(adapter: Adapter, message: str) -> None:
+    async def _device_warn(adapter: SimulatedAdapter, message: str) -> None:
         try:
             await adapter.warn(message)
         except Exception as err:  # noqa: BLE001 - un avertissement ne bloque rien
@@ -540,10 +539,8 @@ class ParentalEngine:
         else:
             assert resource_id is not None
             resource = self._check_resource(cfg, resource_id)
-            if resource.kind is ResourceKind.NINTENDO:
-                adapter = self._adapters.get(resource_id)
-                if adapter is None:
-                    raise _invalid("invalid_target")
+            adapter = self._adapters.get(resource_id)
+            if adapter is not None and adapter.inner.nintendo is not None:
                 # Via l'enveloppe : en simulation, rien n'est accordé.
                 await adapter.grant(minutes)
             elif resource.kind is ResourceKind.MEDIA_PLAYER:
