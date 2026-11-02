@@ -13,6 +13,9 @@ const TABS = [
   { id: "general", label: "Général", icon: "mdi:tune-variant" },
   { id: "json", label: "JSON", icon: "mdi:code-json" },
 ];
+// Icône déduite comme sur la carte appareil (Nintendo, sinon lecteur, sinon AdGuard).
+const KIND_ICONS = { nintendo: "mdi:nintendo-switch", media_player: "mdi:television", adguard_services: "mdi:cellphone" };
+const INTEGRATION_ICONS = { media_player: "mdi:play-box-outline", adguard_services: "mdi:shield-half-full", nintendo: "mdi:nintendo-switch" };
 const SEGMENT_COLORS = { bloque: "#e05561", libre: "#3ddc84", apres_devoirs: "#ffb347", quota: "#4f8dff", sur_demande: "#9aa4b2" };
 
 const CSS = `
@@ -62,6 +65,27 @@ const CSS = `
   td input[type=time] { width: 120px; }
   td input.num { width: 90px; }
   textarea { width: 100%; min-height: 420px; font-family: ui-monospace, Menlo, monospace; font-size: .85rem; }
+  .notice { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; color: #ffb347;
+    background: rgba(255,170,60,.12); border: 1px solid rgba(255,170,60,.45); }
+  .tree { margin: 12px 0 0 16px; padding-left: 16px; border-left: 2px solid rgba(255,255,255,.15); }
+  .node { position: relative; margin: 12px 0; }
+  .node::before { content: ""; position: absolute; left: -16px; top: 18px; width: 12px; border-top: 2px solid rgba(255,255,255,.15); }
+  .node-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .node-head .grow { flex: 1 1 160px; min-width: 0; }
+  .node-head input.grow { font-weight: 600; }
+  .ico { width: 36px; height: 36px; border-radius: 10px; flex: none; display: flex; align-items: center; justify-content: center;
+    background: rgba(255,255,255,.08); }
+  .ico ha-icon { --mdc-icon-size: 22px; }
+  .leaf .ico { width: 28px; height: 28px; border-radius: 8px; }
+  .leaf .ico ha-icon { --mdc-icon-size: 16px; }
+  .leaf-body { margin: 8px 0 0 36px; }
+  .name { font-weight: 600; }
+  .tag { font-size: .78rem; padding: 3px 9px; border-radius: 10px; background: rgba(255,255,255,.1); white-space: nowrap; }
+  .tag.found { color: #3ddc84; }
+  .tag.missing { color: #ff7b7b; }
+  .tree > .row input { flex: 0 1 260px; }
+  button.link, select.link { color: #6fb1ff; background: none; border-color: transparent; padding: 5px 2px; }
+  select.link { cursor: pointer; }
   .error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; color: #ffb4b4; background: rgba(230,60,60,.16);
     border: 1px solid rgba(255,110,110,.5); white-space: pre-wrap; }
   @media (max-width: 760px) { .layout { grid-template-columns: 1fr; } .list { flex-direction: row; flex-wrap: wrap; } }
@@ -90,6 +114,13 @@ class ParentalControlPanel extends HTMLElement {
     this._armTimer = null;
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
     this.shadowRoot.addEventListener("change", (ev) => this._onChange(ev));
+    // Sélecteur d'icône de HA (s'il est chargé) : ne redessine que l'en-tête, comme une saisie.
+    this.shadowRoot.addEventListener("value-changed", (ev) => {
+      const path = ev.target.dataset?.icon;
+      if (!path) return;
+      L.setPath(this._draft, path, ev.detail?.value ?? "");
+      this._renderHeader();
+    });
     this.shadowRoot.addEventListener("keydown", (ev) => {
       if (ev.key === "Enter" && ev.target.dataset?.enter) this._act(ev.target.dataset.enter, ev.target);
     });
@@ -274,6 +305,19 @@ class ParentalControlPanel extends HTMLElement {
         break;
       }
       case "toggle-owner": L.toggleOwner(res, arg); break;
+      case "add-dev": {
+        const name = this._input("new-dev");
+        if (!name) return;
+        L.addDevice(res, name);
+        break;
+      }
+      case "del-dev": if (!this._confirm(`del-dev:${res.id}:${arg}`)) return; L.removeDevice(res, Number(arg)); break;
+      case "del-integ": {
+        if (!this._confirm(`del-integ:${res.id}:${arg}`)) return;
+        const [j, k] = arg.split(":").map(Number);
+        L.removeIntegration(res.devices[j], k);
+        break;
+      }
       case "del-leisure": L.toggleListValue(d.default_leisure, arg); break;
       case "add-leisure": {
         const v = this._input("leisure");
@@ -313,6 +357,12 @@ class ParentalControlPanel extends HTMLElement {
       L.setMode(this._draft.kids[this._kid], el.dataset.mode, el.value);
     } else if (el.dataset.calday !== undefined) {
       this._draft.calendar_map[el.dataset.calday] = el.value;
+    } else if (el.dataset.move) {
+      if (!el.value) return;
+      this._move(Number(el.dataset.move), Number(el.value));
+    } else if (el.dataset.addInteg) {
+      if (!el.value) return;
+      L.addIntegration(this._draft.resources[this._res].devices[Number(el.dataset.addInteg)], el.value);
     } else if (el.dataset.rename) {
       this._rename(el.dataset.rename, el.value);
     } else if (el.dataset.path) {
@@ -320,6 +370,7 @@ class ParentalControlPanel extends HTMLElement {
       let value = el.value;
       if (kind === "int") value = el.value === "" ? null : Math.max(0, Math.round(Number(el.value)));
       L.setPath(this._draft, el.dataset.path, value);
+      this._refreshDot(el.dataset.path);
     } else {
       return;
     }
@@ -327,6 +378,25 @@ class ParentalControlPanel extends HTMLElement {
     // cours de frappe) et perdrait le clic qui a provoqué la perte de focus.
     if (el.tagName === "INPUT" && !el.dataset.rename) this._renderHeader();
     else this._render();
+  }
+
+  // Si la ressource source se vide, elle disparaît : la sélection suit l'appareil vers sa cible.
+  _move(deviceIndex, toIndex) {
+    const d = this._draft;
+    const target = d.resources[toIndex];
+    const removed = L.moveDevice(d, this._res, deviceIndex, toIndex);
+    if (!removed) return;
+    this._newIds.delete(`res:${removed}`);
+    this._res = d.resources.indexOf(target);
+  }
+
+  // La pastille d'une entité saisie au clavier se met à jour sans redessiner le reste.
+  _refreshDot(path) {
+    const m = /^(resources\.\d+\.devices\.\d+\.integrations\.\d+)\.entity_id$/.exec(path);
+    const el = m && this.shadowRoot.querySelector(`[data-dot="${m[1]}"]`);
+    if (!el) return;
+    const [i, j, k] = m[1].match(/\d+/g).map(Number);
+    el.outerHTML = this._dot(this._draft.resources[i].devices[j].integrations[k], m[1]);
   }
 
   // Identifiant d'un élément pas encore enregistré : modifiable, mentions mises à jour.
@@ -352,9 +422,9 @@ class ParentalControlPanel extends HTMLElement {
     this._newIds.add(`${kind}:${id}`);
   }
 
-  _btn(act, label, { arg = "", cls = "", icon = "", disabled = false, confirmKey = null } = {}) {
+  _btn(act, label, { arg = "", cls = "", icon = "", title = "", disabled = false, confirmKey = null } = {}) {
     const armed = confirmKey && this._armed === confirmKey;
-    return `<button type="button" class="${cls} ${armed ? "armed" : ""}" data-act="${act}" data-arg="${esc(arg)}" ${disabled ? "disabled" : ""}>
+    return `<button type="button" class="${cls} ${armed ? "armed" : ""}" data-act="${act}" data-arg="${esc(arg)}" ${title ? `title="${esc(title)}"` : ""} ${disabled ? "disabled" : ""}>
       ${icon ? `<ha-icon icon="${armed ? "mdi:check" : icon}"></ha-icon>` : ""}${armed ? "Confirmer ?" : esc(label)}</button>`;
   }
 
@@ -379,10 +449,24 @@ class ParentalControlPanel extends HTMLElement {
       <div class="wrap">
         <div class="sim-slot">${this._simBanner()}</div>
         <header>${this._header()}</header>
+        ${this._removedNotice()}
         ${msg?.kind === "error" ? `<div class="error">${esc(msg.text)}</div>` : ""}
         ${d ? `<div class="tabs">${TABS.map((t) => this._btn("tab", t.label, { arg: t.id, icon: t.icon, cls: t.id === this._tab ? "sel" : "" })).join("")}</div>
           ${this._body()}` : `<div class="card muted">Chargement…</div>`}
       </div>`;
+    const res = d?.resources[this._res];
+    for (const el of this.shadowRoot.querySelectorAll("ha-icon-picker[data-icon]")) {
+      el.hass = this._hass;
+      el.value = res?.icon ?? "";
+    }
+  }
+
+  // Appareils enregistrés absents du brouillon (supprimés, ou vidés par « Déplacer vers… »).
+  _removedNotice() {
+    const kept = new Set((this._draft?.resources ?? []).map((r) => r.id));
+    return (this._original?.resources ?? []).filter((r) => !kept.has(r.id))
+      .map((r) => `<div class="notice">« ${esc(r.name)} » sera supprimé à l'enregistrement : ses autorisations en cours et son temps du jour sont perdus.</div>`)
+      .join("");
   }
 
   _body() {
@@ -494,26 +578,100 @@ class ParentalControlPanel extends HTMLElement {
     </div>`;
     if (!res) return `<div class="layout">${list}<div class="card muted">Aucun appareil : ajoutez-en un.</div></div>`;
     const p = `resources.${this._res}`;
-    // Édition minimale : première intégration du premier appareil physique (arbre complet : tâche suivante).
-    const integ = res.devices?.[0]?.integrations?.[0] ?? {};
-    const kind = L.KINDS.find((k) => k.value === integ.kind);
     const owners = `<div class="chips">${d.kids.map((k) => this._btn("toggle-owner", k.name, { arg: k.id, cls: res.owners.includes(k.id) ? "sel" : "chip-off" })).join("")}</div>`;
+    const icon = customElements.get("ha-icon-picker")
+      ? `<ha-icon-picker data-icon="${p}.icon"></ha-icon-picker>`
+      : `<input data-path="${p}.icon" value="${esc(res.icon ?? "")}" placeholder="${esc(this._resIcon(res))}">`;
     const quotas = `<div class="grid">${L.DAY_TYPES.map((day) => `<label class="f">${esc(day.label)} (min)
       <input type="number" min="0" data-type="int" data-path="${p}.quota_minutes.${day.value}" value="${esc(res.quota_minutes?.[day.value] ?? "")}" placeholder="aucun"></label>`).join("")}</div>`;
     return `<div class="layout">${list}<div>
-      <div class="card"><h2>${esc(res.name)}</h2>
+      ${this._tree(res, p)}
+      <div class="card"><h2>Réglages</h2>
         <div class="grid">
           <label class="f">Nom<input data-path="${p}.name" value="${esc(res.name)}"></label>
           ${this._idField("res", res.id)}
-          <label class="f">Type<input value="${esc(kind?.label ?? integ.kind ?? '')}" readonly></label>
+          <label class="f">Icône${icon}</label>
         </div>
         <h3>Enfants concernés</h3>${owners}
-        <h3>Appareil Home Assistant</h3>${this._kindOptions(integ, `${p}.devices.0.integrations.0`)}
       </div>
       <div class="card"><h2>Quota par type de jour</h2>${quotas}
         <div class="muted">Vide : pas de quota propre à l'appareil.</div></div>
       <div class="card"><h3>Zone sensible</h3>${this._btn("del-res", "Supprimer cet appareil", { cls: "danger", icon: "mdi:delete", confirmKey: `del-res:${res.id}` })}</div>
     </div></div>`;
+  }
+
+  _resIcon(res) {
+    const kinds = res.devices.flatMap((dev) => dev.integrations.map((i) => i.kind));
+    const kind = ["nintendo", "media_player", "adguard_services"].find((k) => kinds.includes(k));
+    return KIND_ICONS[kind] ?? "mdi:shield-account";
+  }
+
+  // Arbre de la ressource : appareils physiques, puis leurs intégrations.
+  _tree(res, p) {
+    const d = this._draft;
+    const count = res.devices.reduce((n, dev) => n + dev.integrations.length, 0);
+    const kids = res.owners.map((id) => d.kids.find((k) => k.id === id)?.name ?? id).join(" · ");
+    const allowed = L.integrationKindsAllowed(res);
+    const devices = res.devices.map((dev, j) => this._physical(res, dev, j, `${p}.devices.${j}`, allowed)).join("");
+    const addDevice = allowed.length ? `<div class="row">
+        <input data-input="new-dev" data-enter="add-dev" placeholder="Nom de l'appareil physique">
+        ${this._btn("add-dev", "Ajouter un appareil physique", { cls: "link", icon: "mdi:plus" })}
+      </div>` : "";
+    return `<div class="card">
+      <div class="node-head">
+        <div class="ico"><ha-icon icon="${esc(res.icon || this._resIcon(res))}"></ha-icon></div>
+        <div class="grow"><div class="name">${esc(res.name)}</div><div class="muted">${esc(kids || "Aucun enfant")}</div></div>
+        <span class="tag">${count} intégration${count > 1 ? "s" : ""}</span>
+      </div>
+      <div class="tree">${devices}${addDevice}</div>
+      ${this._datalist("mps", this._entities("media_player."))}
+    </div>`;
+  }
+
+  _physical(res, dev, j, p, allowed) {
+    const targets = L.moveTargets(this._draft, this._res, j);
+    const move = targets.length ? `<select data-move="${j}" title="Déplacer vers un autre appareil">
+        <option value="" selected>Déplacer vers…</option>
+        ${targets.map((i) => opt(String(i), this._draft.resources[i].name, null)).join("")}
+      </select>` : "";
+    const integrations = dev.integrations.map((integ, k) => this._integration(res, integ, j, k, `${p}.integrations.${k}`)).join("");
+    const add = allowed.length ? `<select class="link" data-add-integ="${j}">
+        <option value="" selected>+ Ajouter une intégration</option>
+        ${allowed.map((kind) => opt(kind, L.KINDS.find((k) => k.value === kind).label, null)).join("")}
+      </select>` : "";
+    return `<div class="node">
+      <div class="node-head">
+        <div class="ico"><ha-icon icon="mdi:monitor-cellphone"></ha-icon></div>
+        <input class="grow" data-path="${p}.name" value="${esc(dev.name)}" title="Nom de l'appareil physique">
+        ${move}
+        ${this._btn("del-dev", "", { arg: j, icon: "mdi:delete", title: "Supprimer cet appareil physique", confirmKey: `del-dev:${res.id}:${j}` })}
+      </div>
+      <div class="tree">
+        ${integrations || `<div class="muted">Aucune intégration : cet appareil physique ne pilote rien.</div>`}
+        ${add}
+      </div>
+    </div>`;
+  }
+
+  _integration(res, integ, j, k, p) {
+    const kind = L.KINDS.find((x) => x.value === integ.kind);
+    return `<div class="node leaf">
+      <div class="node-head">
+        <div class="ico"><ha-icon icon="${INTEGRATION_ICONS[integ.kind] ?? "mdi:puzzle"}"></ha-icon></div>
+        <div class="grow">${esc(kind?.label ?? integ.kind)}</div>
+        ${this._dot(integ, p)}
+        ${this._btn("del-integ", "", { arg: `${j}:${k}`, icon: "mdi:close", title: "Retirer cette intégration", confirmKey: `del-integ:${res.id}:${j}:${k}` })}
+      </div>
+      <div class="leaf-body">${this._kindOptions(integ, p, `${j}-${k}`)}</div>
+    </div>`;
+  }
+
+  // Pastille : l'entité (lecteur) ou l'appareil (AdGuard, Nintendo) existe-t-il dans HA ?
+  _dot(integ, p) {
+    const found = integ.kind === "media_player"
+      ? !!integ.entity_id && integ.entity_id in (this._hass?.states ?? {})
+      : !!integ.device_id && this._devices.some((dev) => dev.id === integ.device_id);
+    return `<span class="tag ${found ? "found" : "missing"}" data-dot="${p}">● ${found ? "trouvé" : "introuvable"}</span>`;
   }
 
   _deviceSelect(path, domain, current) {
@@ -526,11 +684,9 @@ class ParentalControlPanel extends HTMLElement {
     </select>`;
   }
 
-  _kindOptions(integ, p) {
-    if (!integ.kind) return `<div class="muted">Aucune intégration.</div>`;
+  _kindOptions(integ, p, key) {
     if (integ.kind === "media_player") {
-      return `<label class="f">Entité télé<input data-path="${p}.entity_id" value="${esc(integ.entity_id ?? "")}" list="mps" placeholder="media_player.tv_salon"></label>
-        ${this._datalist("mps", this._entities("media_player."))}`;
+      return `<label class="f">Entité télé<input data-path="${p}.entity_id" value="${esc(integ.entity_id ?? "")}" list="mps" placeholder="media_player.tv_salon"></label>`;
     }
     if (integ.kind === "adguard_services") {
       return `<label class="f">Client AdGuard${this._deviceSelect(`${p}.device_id`, ADGUARD_DOMAIN, integ.device_id)}</label>`;
@@ -538,10 +694,10 @@ class ParentalControlPanel extends HTMLElement {
     const ents = this._entities("", integ.device_id || null);
     return `<div class="grid">
       <label class="f">Console Nintendo${this._deviceSelect(`${p}.device_id`, NINTENDO_DOMAIN, integ.device_id)}</label>
-      <label class="f">Limite du jour<input data-path="${p}.limit_entity" value="${esc(integ.limit_entity ?? "")}" list="nent" placeholder="number.…"></label>
-      <label class="f">Temps restant<input data-path="${p}.remaining_entity" value="${esc(integ.remaining_entity ?? "")}" list="nent" placeholder="sensor.…"></label>
-      <label class="f">Temps utilisé<input data-path="${p}.used_entity" value="${esc(integ.used_entity ?? "")}" list="nent" placeholder="sensor.…"></label>
-    </div>${this._datalist("nent", ents)}`;
+      <label class="f">Limite du jour<input data-path="${p}.limit_entity" value="${esc(integ.limit_entity ?? "")}" list="nent-${key}" placeholder="number.…"></label>
+      <label class="f">Temps restant<input data-path="${p}.remaining_entity" value="${esc(integ.remaining_entity ?? "")}" list="nent-${key}" placeholder="sensor.…"></label>
+      <label class="f">Temps utilisé<input data-path="${p}.used_entity" value="${esc(integ.used_entity ?? "")}" list="nent-${key}" placeholder="sensor.…"></label>
+    </div>${this._datalist(`nent-${key}`, ents)}`;
   }
 
   _general() {

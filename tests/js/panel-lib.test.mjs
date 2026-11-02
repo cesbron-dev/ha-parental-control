@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 const {
   slugify, uniqueId, setPath, addKid, removeKid, addResource, removeResource,
-  addDevice, removeDevice, addIntegration, removeIntegration, integrationKindsAllowed, moveDevice,
+  addDevice, removeDevice, addIntegration, removeIntegration, integrationKindsAllowed, moveDevice, moveTargets,
   addSegment, removeSegment, setMode, toggleOwner, toggleProfile, toggleListValue,
   profileGeometry, isDirty,
 } = await import("../../custom_components/parental_control/www/panel-lib.js");
@@ -148,6 +148,18 @@ test("moveDevice garde la ressource source si elle a encore des appareils", () =
   assert.equal(d.resources.length, 3);
   assert.deepEqual(d.resources[0].devices.map((x) => x.name), ["Autre"]);
   assert.deepEqual(d.resources[1].devices.map((x) => x.name), ["Box", "Télé"]);
+});
+
+test("moveTargets respecte la règle Nintendo seule dans sa ressource", () => {
+  const d = draft();
+  assert.deepEqual(moveTargets(d, 1, 0), [0]); // AdGuard : la Télé, pas la Switch
+  assert.deepEqual(moveTargets(d, 2, 0), []); // Nintendo : aucune ressource vide
+  const vide = addResource(d, "Vide");
+  assert.deepEqual(moveTargets(d, 2, 0), [3]);
+  assert.deepEqual(moveTargets(d, 0, 0), [1, 3]);
+  addIntegration(vide.devices[0], "media_player");
+  assert.deepEqual(moveTargets(d, 2, 0), []);
+  assert.deepEqual(moveTargets(d, 0, 5), []); // appareil absent
 });
 
 test("addSegment / removeSegment", () => {

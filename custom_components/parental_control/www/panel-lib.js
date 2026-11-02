@@ -111,9 +111,11 @@ export function removeIntegration(device, index) {
   device.integrations.splice(index, 1);
 }
 
+const kindsOf = (resource) => resource.devices.flatMap((d) => d.integrations.map((i) => i.kind));
+
 // Types ajoutables à la ressource : une Nintendo doit rester seule dans sa ressource.
 export function integrationKindsAllowed(resource) {
-  const kinds = resource.devices.flatMap((d) => d.integrations.map((i) => i.kind));
+  const kinds = kindsOf(resource);
   if (kinds.includes("nintendo")) return [];
   const all = KINDS.map((k) => k.value);
   return kinds.length ? all.filter((k) => k !== "nintendo") : all;
@@ -131,6 +133,20 @@ export function moveDevice(cfg, fromIndex, deviceIndex, toIndex) {
   if (source.devices.length) return null;
   removeResource(cfg, fromIndex);
   return source.id;
+}
+
+// Index des ressources où l'appareil physique peut aller sans casser la règle « une Nintendo reste
+// seule » : un appareil avec Nintendo ne va que dans une ressource sans intégration, les autres
+// jamais dans une ressource Nintendo.
+export function moveTargets(cfg, fromIndex, deviceIndex) {
+  const device = cfg.resources[fromIndex]?.devices[deviceIndex];
+  if (!device) return [];
+  const nintendo = device.integrations.some((i) => i.kind === "nintendo");
+  return cfg.resources.flatMap((r, i) => {
+    if (i === fromIndex) return [];
+    const kinds = kindsOf(r);
+    return (nintendo ? !kinds.length : !kinds.includes("nintendo")) ? [i] : [];
+  });
 }
 
 // Retire l'appareil et les modes qui le citent (sinon le moteur refuse la config).
