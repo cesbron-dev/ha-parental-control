@@ -88,3 +88,14 @@ def test_bonus_minutes_filters_target_and_day():
     assert d.bonus_minutes(day, kid_id="max") == 15
     assert d.bonus_minutes(day, resource_id="tv") == 20
     assert d.bonus_minutes(day, kid_id="lea") == 0
+
+
+def test_simulation_roundtrip():
+    d = Decisions(simulation=True)
+    data = d.to_dict()
+    assert data["simulation"] is True
+    assert Decisions.from_dict(data).simulation is True
+
+
+def test_simulation_missing_key_is_false():
+    assert Decisions.from_dict({}).simulation is False

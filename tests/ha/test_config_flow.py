@@ -164,7 +164,8 @@ async def test_check_unlock_unknown_user_requires_code(hass: HomeAssistant) -> N
 async def test_store_load_empty(hass: HomeAssistant) -> None:
     cfg, dec = await ParentalStore(hass).load()
     assert cfg is None
-    assert dec.to_dict() == Decisions().to_dict()
+    # Nouvelle installation : décisions vides, mais en simulation.
+    assert dec.to_dict() == Decisions(simulation=True).to_dict()
 
 
 async def test_store_round_trip(hass: HomeAssistant, hass_storage) -> None:
