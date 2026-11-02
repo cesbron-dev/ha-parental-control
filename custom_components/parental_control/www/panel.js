@@ -198,7 +198,7 @@ class ParentalControlPanel extends HTMLElement {
     this._message = null;
     try {
       const { config } = await this._hass.connection.sendMessagePromise({ type: "parental_control/config/get" });
-      this._original = config ?? { version: 1, default_leisure: [], calendar_map: {}, notify: [], kids: [], resources: [] };
+      this._original = config ?? L.emptyConfig();
       this._draft = clone(this._original);
       this._newIds.clear();
     } catch (err) {
@@ -601,7 +601,7 @@ class ParentalControlPanel extends HTMLElement {
   }
 
   _resIcon(res) {
-    const kinds = res.devices.flatMap((dev) => dev.integrations.map((i) => i.kind));
+    const kinds = L.hasDevices(res) ? res.devices.flatMap((dev) => dev.integrations.map((i) => i.kind)) : [res.kind];
     const kind = ["nintendo", "media_player", "adguard_services"].find((k) => kinds.includes(k));
     return KIND_ICONS[kind] ?? "mdi:shield-account";
   }
@@ -609,6 +609,10 @@ class ParentalControlPanel extends HTMLElement {
   // Arbre de la ressource : appareils physiques, puis leurs intégrations.
   _tree(res, p) {
     const d = this._draft;
+    if (!L.hasDevices(res)) {
+      return `<div class="card"><div class="name">${esc(res.name ?? res.id ?? "")}</div>
+        <div class="muted">Format ancien : enregistrez pour convertir.</div></div>`;
+    }
     const count = res.devices.reduce((n, dev) => n + dev.integrations.length, 0);
     const kids = res.owners.map((id) => d.kids.find((k) => k.id === id)?.name ?? id).join(" · ");
     const allowed = L.integrationKindsAllowed(res);

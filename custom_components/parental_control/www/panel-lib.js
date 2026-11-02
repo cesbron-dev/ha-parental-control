@@ -60,6 +60,18 @@ export function setPath(obj, path, value) {
   node[last] = value === "" ? null : value;
 }
 
+// Brouillon d'une nouvelle installation (aucune config enregistrée) : au format v2, celui que
+// produisent `addResource`/`addIntegration`.
+export function emptyConfig() {
+  return { version: 2, default_leisure: [], calendar_map: {}, notify: [], kids: [], resources: [] };
+}
+
+// Ressource au format v2 (appareils physiques) ? Une ressource v1 collée dans l'onglet JSON n'en
+// a pas : le moteur la convertit à l'enregistrement.
+export function hasDevices(resource) {
+  return Array.isArray(resource?.devices);
+}
+
 export function addKid(cfg, name) {
   const id = uniqueId(slugify(name), cfg.kids.map((k) => k.id));
   const profiles = cfg.kids.length

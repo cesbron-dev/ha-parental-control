@@ -5,7 +5,7 @@ const {
   slugify, uniqueId, setPath, addKid, removeKid, addResource, removeResource,
   addDevice, removeDevice, addIntegration, removeIntegration, integrationKindsAllowed, moveDevice, moveTargets,
   addSegment, removeSegment, setMode, toggleOwner, toggleProfile, toggleListValue,
-  profileGeometry, isDirty,
+  profileGeometry, isDirty, emptyConfig, hasDevices,
 } = await import("../../custom_components/parental_control/www/panel-lib.js");
 
 const draft = () => ({
@@ -223,4 +223,21 @@ test("isDirty", () => {
   assert.equal(isDirty(a, b), false);
   b.kids[0].name = "X";
   assert.equal(isDirty(a, b), true);
+});
+
+test("emptyConfig : brouillon v2 d'une nouvelle installation, prêt à recevoir un appareil", () => {
+  const cfg = emptyConfig();
+  assert.deepEqual(cfg, { version: 2, default_leisure: [], calendar_map: {}, notify: [], kids: [], resources: [] });
+  const res = addResource(cfg, "Télé");
+  addIntegration(res.devices[0], "media_player");
+  assert.equal(cfg.version, 2);
+  assert.deepEqual(cfg.resources, [{ id: "tele", name: "Télé", owners: [], quota_minutes: {},
+    devices: [{ name: "Télé", integrations: [{ kind: "media_player", entity_id: "" }] }] }]);
+  assert.notEqual(emptyConfig(), emptyConfig()); // une copie neuve à chaque appel
+});
+
+test("hasDevices : une ressource v1 collée en JSON n'a pas d'arbre", () => {
+  assert.equal(hasDevices(draft().resources[0]), true);
+  assert.equal(hasDevices({ id: "tv", kind: "media_player", entity_id: "media_player.tv" }), false);
+  assert.equal(hasDevices({ id: "tv", devices: null }), false);
 });

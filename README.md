@@ -171,7 +171,7 @@ accepte pas).
 | `bloque` | Tout est bloqué. |
 | `libre` | Tout est autorisé. |
 | `apres_devoirs` | Autorisé seulement après `devoirs_termines` du jour ; sinon statut « en attente des devoirs ». |
-| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seule une appareil avec un lecteur multimédia (`media_player`) a son propre budget, décompté par l'usage réel (voir [Appareils logiques](#appareils-logiques)). Sans quota défini : illimité. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
+| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seul un appareil avec un lecteur multimédia (`media_player`) a son propre budget, décompté par l'usage réel : son `quota_minutes` pour le type de journée, ou à défaut le quota de temps d'écran le plus généreux des enfants concernés (voir [Appareils logiques](#appareils-logiques)). Illimité seulement si ni l'appareil ni aucun de ces enfants n'a de quota ce jour-là. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
 | `sur_demande` | Bloqué jusqu'à ce qu'un parent ouvre (service `exception` avec `open: true`) ; statut « sur demande ». Pour la Switch, pas d'exception : `ajouter_bonus` avec `resource_id: switch`. |
 
 **Type de journée.** Le calendrier de l'enfant fixe le type via `calendar_map`. Priorité en
@@ -231,7 +231,7 @@ clients AdGuard, un en local et un par le VPN).
       "name": "Google TV",
       "integrations": [
         { "kind": "media_player", "entity_id": "media_player.google_tv" },
-        { "kind": "adguard_services", "device_id": "7c2a9e0b4d1f4e6a8b3c5d7e9f102132" },
+        { "kind": "adguard_services", "device_id": "5e3b8c1d9f7a4b2e6c0d8a1f3b5e7c92" },
         { "kind": "adguard_services", "device_id": "a4d8f6e2c0b14a39857e6d5c4b3a2918" }
       ]
     }
@@ -242,7 +242,9 @@ clients AdGuard, un en local et un par le VPN).
 **Les règles s'appliquent une fois, à l'appareil logique.** Fermée, la Télé éteint tous ses
 lecteurs et bloque les loisirs sur chaque client AdGuard ; « Autoriser » ouvre tout, « Arrêter »
 ferme tout. Une exception sur un service (YouTube) s'ouvre sur tous les clients AdGuard de
-l'appareil. Le mode par enfant (`resource_modes`) est unique par appareil logique et vaut pour
+l'appareil ; si l'appareil est fermé, ses lecteurs ne sont pas éteints (seul ce service
+passe) ; ils le sont de nouveau à la fin de l'exception. Le mode par enfant (`resource_modes`)
+est unique par appareil logique et vaut pour
 toutes ses intégrations.
 
 **Quota.** Pour un appareil qui contient un lecteur multimédia, le temps compte dès qu'un lecteur
@@ -264,8 +266,10 @@ ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
 **Anciennes configurations.** Une configuration en version 1 (ressources plates avec `kind`) est
 acceptée et convertie à la lecture : chaque ressource devient un appareil logique avec un seul
 appareil physique (même nom) et une seule intégration. Le stockage est réécrit en version 2 au
-premier enregistrement ; rien ne change dans le comportement tant qu'on ne regroupe pas. Le
-moteur ne devine pas que `tv_adguard` va avec `tv` : on les regroupe dans le panneau
+premier enregistrement. Le comportement ne change pas, sauf pour le quota de repli : une télé
+sans `quota_minutes` pour le type de journée, illimitée en version 1, prend maintenant le quota
+de temps d'écran le plus généreux des enfants concernés (voir **Quota** ci-dessus) ; donnez-lui
+un `quota_minutes` pour fixer sa propre limite. Le moteur ne devine pas que `tv_adguard` va avec `tv` : on les regroupe dans le panneau
 « Règles », onglet Appareils, avec **Déplacer vers…** sur l'appareil physique. La ressource
 ainsi vidée est supprimée à l'enregistrement, avec ses autorisations en cours et le temps du jour
 qui lui étaient rattachés ; les modes qui la citent sont retirés.
