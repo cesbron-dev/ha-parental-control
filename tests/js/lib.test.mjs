@@ -86,6 +86,23 @@ test("resourceView unknown resource", () => {
   assert.equal(v.status, "unknown");
 });
 
+test("resourceView exposes kinds and icon (mixed device)", () => {
+  const st = state();
+  st.resources.tv = { ...st.resources.tv, kinds: ["adguard_services", "media_player"], icon: "mdi:television" };
+  const v = resourceView(st, "tv");
+  assert.deepEqual(v.kinds, ["adguard_services", "media_player"]);
+  assert.equal(v.icon, "mdi:television");
+  assert.deepEqual(resourceView(state(), "tv").kinds, ["media_player"]);
+  assert.equal(resourceView(state(), "tv").icon, null);
+});
+
+test("exceptionsForResource: service exception follows kinds, not kind", () => {
+  const st = state([exc("e1", { resource_id: "tv", service: "youtube" })]);
+  assert.equal(exceptionsForResource(st, "tv").length, 0);
+  st.resources.tv.kinds = ["adguard_services", "media_player"];
+  assert.equal(exceptionsForResource(st, "tv").length, 1);
+});
+
 test("resourceView ok", () => {
   const v = resourceView({ ...state(), paused: true }, "tv");
   assert.equal(v.status, "ok");

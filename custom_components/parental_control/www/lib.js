@@ -68,8 +68,8 @@ export function exceptionsForResource(state, resourceId) {
         ? (resource.owners ?? []).includes(t.kid_id)
         : true;
     if (!touches) continue;
-    // Une exception de service ne concerne que les ressources AdGuard.
-    if (t.service && resource.kind !== "adguard_services") continue;
+    // Une exception de service ne concerne que les appareils qui ont une intégration AdGuard.
+    if (t.service && !(resource.kinds ?? [resource.kind]).includes("adguard_services")) continue;
     const scope = scopeOf(t);
     out.push({
       id: e.id,
@@ -125,7 +125,7 @@ export function formatPill(exc, now) {
 export function resourceView(state, resourceId) {
   const resources = state?.resources ?? {};
   const base = {
-    status: "ok", name: null, kind: null, owners: [], open: false, reason: "", until: null,
+    status: "ok", name: null, kind: null, kinds: [], icon: null, owners: [], open: false, reason: "", until: null,
     used: null, remaining: null, leisure: [], nintendo: null, paused: !!state?.paused, resumesAt: null,
   };
   if (Object.keys(resources).length === 0) return { ...base, status: "unavailable" };
@@ -135,6 +135,8 @@ export function resourceView(state, resourceId) {
     ...base,
     name: r.name,
     kind: r.kind,
+    kinds: r.kinds ?? [r.kind],
+    icon: r.icon ?? null,
     owners: r.owners ?? [],
     open: !!r.open,
     reason: r.reason ?? "",

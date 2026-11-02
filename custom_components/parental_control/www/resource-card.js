@@ -113,7 +113,7 @@ class ParentalResourceCard extends StateCard {
     const kids = this._state.kids ?? {};
     const owners = v.owners.map((k) => kids[k]?.name ?? k).join(" · ");
     const badge = stateBadge(v);
-    const icon = this._config.icon || KIND_ICONS[v.kind] || "mdi:shield-account";
+    const icon = this._config.icon || v.icon || KIND_ICONS[v.kind] || "mdi:shield-account";
     const name = this._config.name || v.name || id;
     const reason = reasonLine(v);
     const quota = quotaBar(v);
@@ -175,7 +175,7 @@ class ParentalResourceCard extends StateCard {
     const v = this._view();
     const resource_id = this._config.resource;
     const choices = [{ value: null, label: "Tout l'appareil" }];
-    if (v.kind === "adguard_services") {
+    if (v.kinds.includes("adguard_services")) {
       for (const s of v.leisure) choices.push({ value: s, label: serviceLabel(s) });
     }
     openActionDialog(this.shadowRoot, {

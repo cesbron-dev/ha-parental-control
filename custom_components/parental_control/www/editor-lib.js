@@ -28,10 +28,17 @@ function withCurrent(options, current) {
   return [...options, ...missing.map((v) => ({ value: v, label: `${v} (introuvable)` }))];
 }
 
+// Nom seul ; le type entre parenthèses seulement pour un appareil à un seul type (pas pour un mixte).
+function resourceLabel(r, id) {
+  const name = r.name || id;
+  const kinds = r.kinds ?? [r.kind];
+  return kinds.length === 1 ? `${name} (${KIND_LABELS[kinds[0]] ?? kinds[0]})` : name;
+}
+
 function resourceField(state, current, kind) {
   const options = Object.entries(state?.resources ?? {})
     .filter(([, r]) => !kind || r.kind === kind)
-    .map(([id, r]) => ({ value: id, label: kind ? r.name || id : `${r.name || id} (${KIND_LABELS[r.kind] ?? r.kind})` }));
+    .map(([id, r]) => ({ value: id, label: kind ? r.name || id : resourceLabel(r, id) }));
   const field = { name: "resource", label: "Appareil", required: true };
   // Sans état du moteur (indisponible), l'id se saisit à la main.
   if (Object.keys(state?.resources ?? {}).length === 0) return { ...field, selector: { text: {} } };
