@@ -80,13 +80,57 @@ export function removeKid(cfg, index) {
   for (const r of cfg.resources) r.owners = r.owners.filter((o) => o !== kid.id);
 }
 
-export function addResource(cfg, kind, name) {
+// Nouvelle ressource : un appareil physique vide, à compléter par des intégrations.
+export function addResource(cfg, name) {
   const id = uniqueId(slugify(name), cfg.resources.map((r) => r.id));
-  const spec = KINDS.find((k) => k.value === kind) ?? KINDS[0];
-  const res = { id, name: name || id, kind: spec.value, owners: [], quota_minutes: {} };
-  for (const opt of spec.options) res[opt] = "";
+  const res = { id, name: name || id, owners: [], quota_minutes: {}, devices: [{ name: name || id, integrations: [] }] };
   cfg.resources.push(res);
   return res;
+}
+
+export function addDevice(resource, name) {
+  const device = { name, integrations: [] };
+  resource.devices.push(device);
+  return device;
+}
+
+export function removeDevice(resource, index) {
+  resource.devices.splice(index, 1);
+}
+
+// Intégration aux options vides, selon le type.
+export function addIntegration(device, kind) {
+  const spec = KINDS.find((k) => k.value === kind) ?? KINDS[0];
+  const integration = { kind: spec.value };
+  for (const opt of spec.options) integration[opt] = "";
+  device.integrations.push(integration);
+  return integration;
+}
+
+export function removeIntegration(device, index) {
+  device.integrations.splice(index, 1);
+}
+
+// Types ajoutables à la ressource : une Nintendo doit rester seule dans sa ressource.
+export function integrationKindsAllowed(resource) {
+  const kinds = resource.devices.flatMap((d) => d.integrations.map((i) => i.kind));
+  if (kinds.includes("nintendo")) return [];
+  const all = KINDS.map((k) => k.value);
+  return kinds.length ? all.filter((k) => k !== "nintendo") : all;
+}
+
+// Déplace un appareil physique vers une autre ressource (ajouté à la fin). Si la source se vide,
+// elle est retirée (modes compris) et son id est renvoyé.
+export function moveDevice(cfg, fromIndex, deviceIndex, toIndex) {
+  const source = cfg.resources[fromIndex];
+  const target = cfg.resources[toIndex];
+  if (!source || !target || fromIndex === toIndex) return null;
+  const [device] = source.devices.splice(deviceIndex, 1);
+  if (!device) return null;
+  target.devices.push(device);
+  if (source.devices.length) return null;
+  removeResource(cfg, fromIndex);
+  return source.id;
 }
 
 // Retire l'appareil et les modes qui le citent (sinon le moteur refuse la config).

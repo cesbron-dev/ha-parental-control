@@ -252,7 +252,8 @@ class ParentalControlPanel extends HTMLElement {
         const name = this._input("new-res");
         if (!name) return;
         const kind = this.shadowRoot.querySelector('[data-input="new-res-kind"]').value;
-        const r = L.addResource(d, kind, name);
+        const r = L.addResource(d, name);
+        L.addIntegration(r.devices[0], kind);
         this._newIds.add(`res:${r.id}`);
         this._res = d.resources.length - 1;
         break;
@@ -493,7 +494,9 @@ class ParentalControlPanel extends HTMLElement {
     </div>`;
     if (!res) return `<div class="layout">${list}<div class="card muted">Aucun appareil : ajoutez-en un.</div></div>`;
     const p = `resources.${this._res}`;
-    const kind = L.KINDS.find((k) => k.value === res.kind);
+    // Édition minimale : première intégration du premier appareil physique (arbre complet : tâche suivante).
+    const integ = res.devices?.[0]?.integrations?.[0] ?? {};
+    const kind = L.KINDS.find((k) => k.value === integ.kind);
     const owners = `<div class="chips">${d.kids.map((k) => this._btn("toggle-owner", k.name, { arg: k.id, cls: res.owners.includes(k.id) ? "sel" : "chip-off" })).join("")}</div>`;
     const quotas = `<div class="grid">${L.DAY_TYPES.map((day) => `<label class="f">${esc(day.label)} (min)
       <input type="number" min="0" data-type="int" data-path="${p}.quota_minutes.${day.value}" value="${esc(res.quota_minutes?.[day.value] ?? "")}" placeholder="aucun"></label>`).join("")}</div>`;
@@ -502,10 +505,10 @@ class ParentalControlPanel extends HTMLElement {
         <div class="grid">
           <label class="f">Nom<input data-path="${p}.name" value="${esc(res.name)}"></label>
           ${this._idField("res", res.id)}
-          <label class="f">Type<input value="${esc(kind?.label ?? res.kind)}" readonly></label>
+          <label class="f">Type<input value="${esc(kind?.label ?? integ.kind ?? '')}" readonly></label>
         </div>
         <h3>Enfants concernés</h3>${owners}
-        <h3>Appareil Home Assistant</h3>${this._kindOptions(res, p)}
+        <h3>Appareil Home Assistant</h3>${this._kindOptions(integ, `${p}.devices.0.integrations.0`)}
       </div>
       <div class="card"><h2>Quota par type de jour</h2>${quotas}
         <div class="muted">Vide : pas de quota propre à l'appareil.</div></div>
@@ -523,20 +526,21 @@ class ParentalControlPanel extends HTMLElement {
     </select>`;
   }
 
-  _kindOptions(res, p) {
-    if (res.kind === "media_player") {
-      return `<label class="f">Entité télé<input data-path="${p}.entity_id" value="${esc(res.entity_id ?? "")}" list="mps" placeholder="media_player.tv_salon"></label>
+  _kindOptions(integ, p) {
+    if (!integ.kind) return `<div class="muted">Aucune intégration.</div>`;
+    if (integ.kind === "media_player") {
+      return `<label class="f">Entité télé<input data-path="${p}.entity_id" value="${esc(integ.entity_id ?? "")}" list="mps" placeholder="media_player.tv_salon"></label>
         ${this._datalist("mps", this._entities("media_player."))}`;
     }
-    if (res.kind === "adguard_services") {
-      return `<label class="f">Client AdGuard${this._deviceSelect(`${p}.device_id`, ADGUARD_DOMAIN, res.device_id)}</label>`;
+    if (integ.kind === "adguard_services") {
+      return `<label class="f">Client AdGuard${this._deviceSelect(`${p}.device_id`, ADGUARD_DOMAIN, integ.device_id)}</label>`;
     }
-    const ents = this._entities("", res.device_id || null);
+    const ents = this._entities("", integ.device_id || null);
     return `<div class="grid">
-      <label class="f">Console Nintendo${this._deviceSelect(`${p}.device_id`, NINTENDO_DOMAIN, res.device_id)}</label>
-      <label class="f">Limite du jour<input data-path="${p}.limit_entity" value="${esc(res.limit_entity ?? "")}" list="nent" placeholder="number.…"></label>
-      <label class="f">Temps restant<input data-path="${p}.remaining_entity" value="${esc(res.remaining_entity ?? "")}" list="nent" placeholder="sensor.…"></label>
-      <label class="f">Temps utilisé<input data-path="${p}.used_entity" value="${esc(res.used_entity ?? "")}" list="nent" placeholder="sensor.…"></label>
+      <label class="f">Console Nintendo${this._deviceSelect(`${p}.device_id`, NINTENDO_DOMAIN, integ.device_id)}</label>
+      <label class="f">Limite du jour<input data-path="${p}.limit_entity" value="${esc(integ.limit_entity ?? "")}" list="nent" placeholder="number.…"></label>
+      <label class="f">Temps restant<input data-path="${p}.remaining_entity" value="${esc(integ.remaining_entity ?? "")}" list="nent" placeholder="sensor.…"></label>
+      <label class="f">Temps utilisé<input data-path="${p}.used_entity" value="${esc(integ.used_entity ?? "")}" list="nent" placeholder="sensor.…"></label>
     </div>${this._datalist("nent", ents)}`;
   }
 
