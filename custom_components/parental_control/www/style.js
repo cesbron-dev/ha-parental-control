@@ -16,6 +16,11 @@ export const BASE_CSS = `
     font-family: var(--ha-font-family-body, Roboto, sans-serif);
   }
   .title { font-size: 1.15rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 4px; }
+  .sim {
+    display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 8px; border-radius: 6px;
+    font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: none;
+    color: #ffb347; background: rgba(255,170,60,.16); border: 1px solid rgba(255,170,60,.55);
+  }
   .muted { color: rgba(232,237,245,.62); }
   .ok { color: #3ddc84; } .warn { color: #ffb347; } .bad { color: #ff6b6b; }
   .badge { font-weight: 600; font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; }

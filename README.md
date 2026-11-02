@@ -305,6 +305,25 @@ Nintendo) et leurs quotas, loisirs par défaut, mots du calendrier scolaire et n
 modifications restent en brouillon jusqu'à « Enregistrer » ; le moteur valide et, en cas d'erreur,
 indique le champ fautif. Un onglet JSON garde l'accès à la configuration brute.
 
+## Mode simulation
+
+Le mode simulation fait tourner tout le moteur (états, frises, exceptions, avertissements) sans
+piloter aucun appareil : rien n'est bloqué, éteint ni limité. Il sert à valider les règles avant de
+les laisser agir.
+
+- **Interrupteur** `switch` « Simulation », à côté de « Pause ». Les cartes affichent une pastille
+  « SIMULATION » dans leur en-tête et le panneau « Règles » un bandeau en tête.
+- **Journal de bord.** Chaque action que le moteur aurait faite (fermer une ressource, rebloquer un
+  service, remettre la limite Nintendo à 0…) y est inscrite à la place de l'appel réel.
+- **Installations.** Une nouvelle installation démarre en simulation ; une installation existante
+  reste en mode réel.
+- **Code parent.** **Activer** la simulation relâche tous les appareils : un compte non
+  administrateur doit donc fournir le code parent. Un interrupteur ne transmet pas de code : il est
+  refusé à un non-administrateur, comme pour l'arrêt de la pause. La désactiver n'en demande pas.
+- **Notifications.** Les notifications aux parents partent toujours, préfixées « [Simulation] ».
+- **Sortie de simulation.** En la quittant, le moteur réapplique tout de suite l'état voulu à
+  chaque appareil.
+
 ## Tablette murale
 
 1. Créer un **utilisateur Home Assistant dédié, non administrateur**, pour la tablette.

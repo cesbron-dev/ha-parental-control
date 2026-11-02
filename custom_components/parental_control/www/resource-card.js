@@ -2,7 +2,7 @@
 // « Autoriser… », « Arrêter » ou, pour une Switch, pilules bonus.
 import {
   esc, needsCode, resourceView, exceptionsForResource, formatPill, serviceLabel,
-  reasonLine, stateBadge, quotaBar, bonusMinutes,
+  reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge,
 } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
@@ -136,7 +136,7 @@ class ParentalResourceCard extends StateCard {
     return `
       <div class="row">
         <div class="ico"><ha-icon icon="${esc(icon)}"></ha-icon></div>
-        <div class="grow"><div class="title">${esc(name)}</div><div class="muted">${esc(owners)}</div></div>
+        <div class="grow"><div class="title">${esc(name)}${simulationBadge(this._state)}</div><div class="muted">${esc(owners)}</div></div>
         <span class="badge ${badge.cls}">${badge.label}</span>
       </div>
       ${reason ? `<div class="muted reason">${esc(reason)}</div>` : ""}

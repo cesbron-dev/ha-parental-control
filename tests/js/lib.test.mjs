@@ -18,6 +18,7 @@ const {
   reasonLine,
   stateBadge,
   bonusLabel,
+  simulationBadge,
   quotaBar,
   keypadInput,
   dayTypeLabel,
@@ -344,4 +345,12 @@ test("keypadInput: digits up to 8, backspace, clear", () => {
   assert.equal(keypadInput("", "back"), "");
   assert.equal(keypadInput("123", "clear"), "");
   assert.equal(keypadInput("12", "x"), "12"); // touche inconnue : rien
+});
+
+test("simulationBadge : pastille seulement en simulation", () => {
+  assert.equal(simulationBadge({ simulation: true }), '<span class="sim">SIMULATION</span>');
+  assert.equal(simulationBadge({ simulation: false }), "");
+  assert.equal(simulationBadge({}), "");
+  assert.equal(simulationBadge(null), "");
+  assert.equal(simulationBadge(undefined), "");
 });

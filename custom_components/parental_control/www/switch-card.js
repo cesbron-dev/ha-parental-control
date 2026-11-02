@@ -1,6 +1,6 @@
 // Carte Switch `parental-switch-card` : temps de jeu de la console Nintendo (jauge en arc), état de
 // la règle du moteur et pilules bonus. Complète l'intégration Nintendo officielle.
-import { esc, resourceView, reasonLine, stateBadge, fmtDuration, bonusMinutes, switchGauge } from "./lib.js";
+import { esc, simulationBadge, resourceView, reasonLine, stateBadge, fmtDuration, bonusMinutes, switchGauge } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
 import { BASE_CSS, ConfirmState, ErrorNotice, bonusPills } from "./style.js";
@@ -114,7 +114,7 @@ class ParentalSwitchCard extends StateCard {
 
     return `
       <div class="logo"><ha-icon icon="mdi:nintendo-switch"></ha-icon></div>
-      <div class="title">${esc(title)}</div>
+      <div class="title">${esc(title)}${simulationBadge(this._state)}</div>
       <div class="rule muted"><span class="badge ${badge.cls}">${badge.label}</span>${reason ? ` · ${esc(reason)}` : ""}</div>
       <div class="main">
         <div class="gauge">
