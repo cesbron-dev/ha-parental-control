@@ -27,7 +27,8 @@ TV_LABEL = f"Télé salon ({TV_ENTITY})"
 LEISURE = frozenset({"youtube", "roblox"})
 
 
-def state(open_: bool, blocked: frozenset[str] = frozenset()) -> ResourceState:
+def state(open_: bool, blocked: frozenset[str] = frozenset(),
+          opened: frozenset[str] = frozenset()) -> ResourceState:
     return ResourceState(
         open=open_,
         reason="test",
@@ -35,6 +36,7 @@ def state(open_: bool, blocked: frozenset[str] = frozenset()) -> ResourceState:
         used_minutes=None,
         remaining_minutes=None,
         blocked_services=blocked,
+        opened_services=opened,
     )
 
 
@@ -784,14 +786,26 @@ async def test_member_error_does_not_stop_siblings(
 async def test_service_exception_opens_every_adguard_client(
     hass: HomeAssistant, mixed
 ) -> None:
-    """Exception « youtube ouvert » sur la Télé : chaque client AdGuard le débloque."""
+    """Exception « youtube ouvert » sur la Télé fermée : chaque client AdGuard le
+    débloque et les lecteurs restent allumés (R6)."""
+    hass.states.async_set(SAMSUNG, "on")
+    hass.states.async_set(GOOGLE_TV, "playing")
     for fake in mixed.fakes:
         fake.set_blocked(["roblox", "youtube"])
+    desired = state(False, frozenset({"roblox"}), opened=frozenset({"youtube"}))
 
-    await mixed.adapter.apply(state(False, frozenset({"roblox"})))
+    assert not mixed.adapter.drifted(desired)
+    assert mixed.adapter.describe(desired) == [
+        "débloquerait youtube sur Samsung",
+        "débloquerait youtube sur Google TV",
+        "débloquerait youtube sur Chromecast (VPN)",
+    ]
+    await mixed.adapter.apply(desired)
 
     assert [c.data["unblock"] for c in mixed.adguard_writes()] == [["youtube"]] * 3
     assert all(fake.blocked == ["roblox"] for fake in mixed.fakes)
+    assert mixed.turn_offs() == []
+    assert not mixed.adapter.drifted(desired)
 
 
 async def test_mixed_tv_force_close_pauses_every_member(
@@ -872,3 +886,16 @@ async def test_simulated_composite_dedups_identical_lines(hass: HomeAssistant) -
     )
     await sim.apply(state(False, LEISURE))
     assert logged == ["bloquerait roblox, youtube sur Google TV"]
+
+
+async def test_composite_warn_failure_logged_as_warning(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Un avertissement impossible est un avertissement, pas une erreur."""
+    adapter = build_adapter(hass, tv_resource("notify.tv_absent"), LEISURE)
+    with caplog.at_level(logging.WARNING):
+        await adapter.warn("bientôt")
+    records = [r for r in caplog.records if "avertissement" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.WARNING
+    assert TV_LABEL in records[0].getMessage()

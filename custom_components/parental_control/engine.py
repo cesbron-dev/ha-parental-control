@@ -126,7 +126,7 @@ class ParentalEngine:
         self._closures: dict[str, datetime] = {}
         self._adapters: dict[str, SimulatedAdapter] = {}
         # Dernier état appliqué par ressource : (ouvert, services bloqués).
-        self._applied: dict[str, tuple[bool, frozenset[str]]] = {}
+        self._applied: dict[str, tuple[bool, frozenset[str], frozenset[str]]] = {}
         # Entité pilotée -> ressources qui l'utilisent.
         self._entity_owners: dict[str, set[str]] = {}
         self._warned: set[tuple[str, datetime]] = set()
@@ -383,7 +383,7 @@ class ParentalEngine:
             desired = snap.resources.get(resource_id)
             if desired is None:
                 continue
-            key = (desired.open, desired.blocked_services)
+            key = (desired.open, desired.blocked_services, desired.opened_services)
             try:
                 drifted = adapter.drifted(desired)
                 if self._applied.get(resource_id) == key:

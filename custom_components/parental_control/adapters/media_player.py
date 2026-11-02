@@ -40,10 +40,12 @@ class MediaPlayerAdapter:
         return state is not None and state.state in IN_USE_STATES
 
     def drifted(self, desired: ResourceState) -> bool:
-        return not desired.open and self.in_use()
+        return self._must_turn_off(desired)
 
     def _must_turn_off(self, desired: ResourceState) -> bool:
-        return not desired.open and self.in_use()
+        # Fermée mais un service y est ouvert par exception (R6) : le lecteur reste
+        # allumé, AdGuard ne laisse passer que ce service.
+        return not desired.open and not desired.opened_services and self.in_use()
 
     def describe(self, desired: ResourceState) -> list[str]:
         if not self._must_turn_off(desired):

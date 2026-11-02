@@ -69,6 +69,9 @@ class ResourceState:
     used_minutes: float | None
     remaining_minutes: float | None
     blocked_services: frozenset[str]
+    # Services ouverts par une exception de service sur cette ressource (AdGuard). Fermée,
+    # elle garde alors ses lecteurs allumés : le service ouvert doit rester utilisable.
+    opened_services: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -468,6 +471,7 @@ def _apply_exceptions(
             used_minutes=state.used_minutes,
             remaining_minutes=state.remaining_minutes,
             blocked_services=frozenset(blocked),
+            opened_services=frozenset(s for s, open_ in overrides.items() if open_),
         )
     return result
 

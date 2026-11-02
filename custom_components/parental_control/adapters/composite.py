@@ -12,6 +12,8 @@ from .nintendo import NintendoAdapter
 
 _LOGGER = logging.getLogger(__name__)
 
+_WARN = "l'avertissement"
+
 
 class CompositeAdapter:
     """Le moteur ne voit que lui. Chaque écriture passe à tous les membres, isolément :
@@ -64,13 +66,15 @@ class CompositeAdapter:
             try:
                 await call(member)
             except Exception as err:  # noqa: BLE001 - un membre n'arrête pas les autres
-                _LOGGER.error("%s : échec de %s : %s", member.label, action, err)
+                # un avertissement manqué n'est pas une panne (comme avant le composite)
+                level = logging.WARNING if action == _WARN else logging.ERROR
+                _LOGGER.log(level, "%s : échec de %s : %s", member.label, action, err)
 
     async def apply(self, desired: ResourceState) -> None:
         await self._each("l'application", lambda m: m.apply(desired))
 
     async def warn(self, message: str) -> None:
-        await self._each("l'avertissement", lambda m: m.warn(message))
+        await self._each(_WARN, lambda m: m.warn(message))
 
     async def force_close(self) -> None:
         await self._each("la pause", lambda m: m.force_close())

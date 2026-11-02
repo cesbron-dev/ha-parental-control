@@ -15,7 +15,8 @@ class SimulatedAdapter:
     `record(nom, ligne)`, une ligne par intégration.
 
     Une ligne déjà enregistrée par l'appel précédent n'est pas répétée (une dérive
-    persistante ne remplit pas le journal) ; `reset()` oublie cette mémoire. La mémoire
+    persistante ne remplit pas le journal) ; `reset()` oublie cette mémoire. Les bonus
+    (`grant`) y échappent : deux bonus identiques sont deux entrées. La mémoire
     couvre tous les membres : les lignes portent le label de leur intégration.
     """
 
@@ -37,7 +38,13 @@ class SimulatedAdapter:
     def reset(self) -> None:
         self._last = set()
 
-    def _log(self, lines: list[str]) -> None:
+    def _log(self, lines: list[str], *, dedup: bool = True) -> None:
+        if not dedup:
+            # Une décision ponctuelle (bonus) : chaque appel est journalisé, et la mémoire
+            # des actions d'état n'est pas touchée.
+            for line in dict.fromkeys(lines):
+                self._record(self.resource.name, line)
+            return
         if not lines:
             # Rien à faire (rouvert, plus de dérive) : la prochaine action sera journalisée.
             self._last = set()
@@ -86,7 +93,7 @@ class SimulatedAdapter:
         if not self._active():
             await self.inner.grant(minutes)
             return
-        self._log(self.inner.describe_grant(minutes))
+        self._log(self.inner.describe_grant(minutes), dedup=False)
 
     async def warn(self, message: str) -> None:
         if not self._active():
