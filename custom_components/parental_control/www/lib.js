@@ -304,3 +304,8 @@ export function keypadInput(value, key) {
   if (/^\d$/.test(key) && value.length < CODE_MAX) return value + key;
   return value;
 }
+
+// Pastille d'en-tête des cartes : rappelle que le moteur simule sans rien piloter.
+export function simulationBadge(state) {
+  return state?.simulation ? '<span class="sim">SIMULATION</span>' : "";
+}

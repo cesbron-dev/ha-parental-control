@@ -1,6 +1,7 @@
 // Panneau « Règles » (barre latérale, admins) : édite la configuration du moteur en brouillon,
 // l'écrit avec `parental_control/config/set` ; le moteur valide et cite le chemin fautif.
 import { esc } from "./lib.js";
+import { subscribeState } from "./connection.js";
 import * as L from "./panel-lib.js";
 
 const CONFIRM_MS = 3000;
@@ -20,6 +21,8 @@ const CSS = `
   .wrap { max-width: 1100px; margin: 0 auto; padding: 16px; box-sizing: border-box; }
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-bottom: 14px; }
   header h1 { font-size: 1.3rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; margin: 0; flex: 1; }
+  .sim-banner { margin-bottom: 14px; padding: 10px 14px; border-radius: 12px; font-weight: 600; color: #ffb347;
+    background: rgba(255,170,60,.16); border: 1px solid rgba(255,170,60,.55); }
   .dirty { color: #ffb347; font-size: .9rem; }
   .ok { color: #3ddc84; font-size: .9rem; }
   .card { border-radius: 18px; padding: 16px 18px; margin-bottom: 14px; box-sizing: border-box;
@@ -80,6 +83,9 @@ class ParentalControlPanel extends HTMLElement {
     this._devices = [];
     this._message = null; // {kind: "error" | "ok", text}
     this._saving = false;
+    this._simulation = false;
+    this._unsub = null;
+    this._subConn = null;
     this._armed = null;
     this._armTimer = null;
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
@@ -98,15 +104,53 @@ class ParentalControlPanel extends HTMLElement {
       this._started = true;
       this._load();
     }
+    this._subscribe();
   }
 
   connectedCallback() {
     window.addEventListener("beforeunload", this._beforeUnload);
+    if (this._hass) this._subscribe();
   }
 
   disconnectedCallback() {
     window.removeEventListener("beforeunload", this._beforeUnload);
     clearTimeout(this._armTimer);
+    this._unsubscribe();
+  }
+
+  // Suit seulement `simulation` ; le bandeau est mis à jour sur place pour ne pas effacer une saisie en cours.
+  _subscribe() {
+    const conn = this._hass?.connection;
+    if (!this.isConnected || !conn || this._subConn === conn) return;
+    this._unsubscribe();
+    this._subConn = conn;
+    const token = {};
+    this._subToken = token;
+    subscribeState(this._hass, (msg) => {
+      if (this._subToken !== token) return;
+      const sim = !!msg?.simulation;
+      if (sim === this._simulation) return;
+      this._simulation = sim;
+      const el = this.shadowRoot.querySelector(".sim-slot");
+      if (el) el.innerHTML = this._simBanner();
+    }).then(
+      (unsub) => {
+        if (this._subToken !== token) unsub();
+        else this._unsub = unsub;
+      },
+      () => {}, // état indisponible : pas de bandeau, le panneau reste utilisable
+    );
+  }
+
+  _unsubscribe() {
+    this._subToken = null;
+    this._subConn = null;
+    this._unsub?.();
+    this._unsub = null;
+  }
+
+  _simBanner() {
+    return this._simulation ? `<div class="sim-banner">Simulation — aucun appareil n'est piloté</div>` : "";
   }
 
   _dirty() {
@@ -326,6 +370,7 @@ class ParentalControlPanel extends HTMLElement {
     const msg = this._message;
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
       <div class="wrap">
+        <div class="sim-slot">${this._simBanner()}</div>
         <header>${this._header()}</header>
         ${msg?.kind === "error" ? `<div class="error">${esc(msg.text)}</div>` : ""}
         ${d ? `<div class="tabs">${TABS.map((t) => this._btn("tab", t.label, { arg: t.id, icon: t.icon, cls: t.id === this._tab ? "sel" : "" })).join("")}</div>

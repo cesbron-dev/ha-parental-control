@@ -1,7 +1,7 @@
 // Carte `parental-timeline-card` : frise de la journée de chaque enfant (segments du moteur,
 // trait « maintenant », exceptions ouvertes en hachuré bleu).
 import {
-  esc, shouldSubscribe, timelineGeometry, exceptionsForKid, exceptionSpans, dayTypeLabel, segmentClass, statusClass, nextStepLabel,
+  esc, shouldSubscribe, timelineGeometry, exceptionsForKid, exceptionSpans, dayTypeLabel, segmentClass, statusClass, nextStepLabel, simulationBadge,
 } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import { BASE_CSS } from "./style.js";
@@ -171,7 +171,7 @@ class ParentalTimelineCard extends HTMLElement {
       + '<i class="exc"></i>exception';
 
     return `
-      <div class="head"><div class="title">Aujourd'hui</div>
+      <div class="head"><div class="title">Aujourd'hui${simulationBadge(this._state)}</div>
         <div class="muted">${[dayType, hh].filter(Boolean).map(esc).join(" · ")}</div></div>
       ${rows}
       <div class="hours">${hours}</div>
