@@ -9,9 +9,13 @@ Déroulé de `evaluate` :
 4. application des exceptions manuelles restantes (`_apply_exceptions`) ;
 la pause l'emporte sur tout (`_paused_resource_state`).
 
-Segment QUOTA (`_quota_access`) : une ressource mesurable (TV) puise dans son propre
-budget ; les autres (AdGuard, Nintendo) ne s'ouvrent que pendant un minuteur de l'enfant,
-qui puise dans le budget de l'enfant.
+Les règles dépendent des capacités de l'appareil logique (`Resource.has`), pas de son type :
+un appareil mixte (lecteur + AdGuard) est mesuré comme un lecteur et bloque ses loisirs.
+
+Segment QUOTA (`_quota_access`) : un appareil avec lecteur puise dans son propre budget
+(à défaut de quota d'appareil pour le jour, celui de l'enfant : `_device_budget`) ; les
+autres (AdGuard, Nintendo) ne s'ouvrent que pendant un minuteur de l'enfant, qui puise
+dans le budget de l'enfant.
 
 `upcoming_closures` réévalue aux instants candidats en projetant l'usage en cours.
 """
@@ -152,7 +156,7 @@ def _effective_type(seg_type: SegmentType, mode: ResourceMode) -> SegmentType:
 class _Meter:
     """Comment se décompte un segment QUOTA pour une règle.
 
-    - `resource_id` renseigné : ressource mesurable (TV), budget de la ressource ;
+    - `resource_id` renseigné : appareil avec lecteur, compteur commun de l'appareil ;
     - `resource_id=None` : minuteur de l'enfant, budget de l'enfant.
     `budget` = quota + bonus du jour ; None = pas de quota (illimité).
     """
@@ -193,6 +197,22 @@ def _resource_budget(resource: Resource, day_type: DayType, dec: Decisions,
     if quota is None:
         return None
     return quota + dec.bonus_minutes(today, resource_id=resource.id)
+
+
+def _device_budget(resource: Resource, kid: Kid, day_type: DayType, dec: Decisions,
+                   today: date) -> float | None:
+    """Budget d'un propriétaire sur un appareil avec lecteur.
+
+    Sans quota d'appareil pour le type de jour (décision de Marc) : quota de temps d'écran
+    de l'enfant (bonus de l'enfant compris) plus le bonus de l'appareil ; None si l'enfant
+    n'a pas de quota. L'usage reste le compteur commun de l'appareil.
+    """
+    if _resource_quota(resource, day_type) is not None:
+        return _resource_budget(resource, day_type, dec, today)
+    budget = _kid_budget(kid, day_type, dec, today)
+    if budget is None:
+        return None
+    return budget + dec.bonus_minutes(today, resource_id=resource.id)
 
 
 def _quota_access(moment: datetime, kid: Kid, dec: Decisions, meter: _Meter,
@@ -309,7 +329,7 @@ def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
 def _resource_state(cfg: Config, resource: Resource, *, open_: bool, reason: str,
                     until: datetime | None) -> ResourceState:
     blocked: frozenset[str] = frozenset()
-    if resource.kind is ResourceKind.ADGUARD and not open_:
+    if resource.has(ResourceKind.ADGUARD) and not open_:
         blocked = cfg.leisure_for_resource(resource.id)
     return ResourceState(
         open=open_,
@@ -387,7 +407,7 @@ def _is_resource_exception(e: ManualException) -> bool:
 
 def _service_exception_applies(e: ManualException, resource: Resource) -> bool:
     target = e.target
-    if target.service is None or resource.kind is not ResourceKind.ADGUARD:
+    if target.service is None or not resource.has(ResourceKind.ADGUARD):
         return False
     if target.resource_id is not None:
         return target.resource_id == resource.id
@@ -472,7 +492,7 @@ def rule_signature(target: Target, snap: Snapshot, cfg: Config) -> tuple:
         state = snap.resources[resource.id]
         if target.service is None:
             items.append((resource.id, None, state.open))
-        elif resource.kind is ResourceKind.ADGUARD:
+        elif resource.has(ResourceKind.ADGUARD):
             items.append((resource.id, target.service,
                           target.service not in state.blocked_services))
     return tuple(items)
@@ -499,7 +519,7 @@ def _paused_resource_state(now: datetime, cfg: Config, dec: Decisions, resource:
                            apply_exceptions: bool) -> ResourceState:
     """Pause : tout fermé ; les services fermés par exception restent bloqués en plus."""
     state = _resource_state(cfg, resource, open_=False, reason="Écrans en pause", until=None)
-    if not apply_exceptions or resource.kind is not ResourceKind.ADGUARD:
+    if not apply_exceptions or not resource.has(ResourceKind.ADGUARD):
         return state
     closed = {s for s, open_ in _service_overrides(
         _active_exceptions(now, dec), resource).items() if not open_}
@@ -552,10 +572,11 @@ def evaluate(
     resources: dict[str, ResourceState] = {}
     for resource in cfg.resources:
         # Budget par propriétaire (son type de jour) ; l'usage reste un compteur commun.
+        measured = resource.has(ResourceKind.MEDIA_PLAYER)
         meters = {
-            kid_id: (_Meter(resource.id, _resource_budget(resource, kids[kid_id].day_type,
-                                                          dec, today))
-                     if resource.kind is ResourceKind.MEDIA_PLAYER
+            kid_id: (_Meter(resource.id, _device_budget(resource, cfg.kid(kid_id),
+                                                        kids[kid_id].day_type, dec, today))
+                     if measured
                      else _Meter(budget=_kid_budget(cfg.kid(kid_id), kids[kid_id].day_type,
                                                     dec, today)))
             for kid_id in resource.owners
@@ -572,7 +593,7 @@ def evaluate(
             return result
 
         state = _rule_resource_state(cfg, resource, now, access_at, midnight)
-        if resource.kind is ResourceKind.MEDIA_PLAYER:
+        if measured:
             used = dec.usage(resource.id, today)
             budgets = [meters[k].budget for k in resource.owners
                        if meters[k].budget is not None
@@ -626,7 +647,7 @@ def _service_keys(cfg: Config, dec: Decisions, snap: Snapshot) -> set[str]:
     (loisirs et services visés par une exception)."""
     keys = set()
     for resource in cfg.resources:
-        if resource.kind is not ResourceKind.ADGUARD:
+        if not resource.has(ResourceKind.ADGUARD):
             continue
         services = set(cfg.leisure_for_resource(resource.id))
         services |= {e.target.service for e in dec.exceptions  # type: ignore[misc]

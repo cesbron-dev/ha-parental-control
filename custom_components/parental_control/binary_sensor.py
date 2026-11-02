@@ -21,9 +21,7 @@ async def async_setup_entry(
     def build(cfg: Config) -> EntityFactories:
         return {
             f"{entry.entry_id}_resource_{res.id}_allowed": (
-                lambda res=res: AllowedBinarySensor(
-                    entry, res.id, res.name, res.kind is ResourceKind.ADGUARD
-                )
+                lambda res=res: AllowedBinarySensor(entry, res.id, res.name)
             )
             for res in cfg.resources
         }
@@ -32,12 +30,18 @@ async def async_setup_entry(
 
 
 class AllowedBinarySensor(ResourceEntity, BinarySensorEntity):
-    """Ouverte selon la règle ; pour AdGuard, services bloqués en attribut."""
+    """Ouverte selon la règle ; avec un client AdGuard, services bloqués en attribut."""
 
-    def __init__(self, entry: ParentalConfigEntry, resource_id: str, name: str,
-                 adguard: bool) -> None:
+    def __init__(self, entry: ParentalConfigEntry, resource_id: str, name: str) -> None:
         super().__init__(entry, resource_id, name, "allowed")
-        self._adguard = adguard
+
+    def _has_adguard(self) -> bool:
+        # Lu dans la config courante : l'entité survit à l'ajout d'un client AdGuard.
+        cfg = self.engine.config
+        try:
+            return cfg is not None and cfg.resource(self.resource_id).has(ResourceKind.ADGUARD)
+        except KeyError:
+            return False
 
     def _state(self):
         snap = self.engine.snapshot
@@ -51,6 +55,6 @@ class AllowedBinarySensor(ResourceEntity, BinarySensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         state = self._state()
-        if not self._adguard or state is None:
+        if state is None or not self._has_adguard():
             return None
         return {"blocked_services": sorted(state.blocked_services)}
