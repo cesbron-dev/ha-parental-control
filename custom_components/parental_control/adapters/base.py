@@ -37,6 +37,10 @@ class Adapter(Protocol):
         """Ce que `grant(minutes)` ferait (Nintendo seulement) ; [] sinon."""
         ...
 
+    def pause_state(self) -> ResourceState:
+        """État fermé appliqué par `force_close` (la pause)."""
+        ...
+
     async def warn(self, message: str) -> None:
         """Avertit sur l'appareil lui-même, si possible."""
         ...

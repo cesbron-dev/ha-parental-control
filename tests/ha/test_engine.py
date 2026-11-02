@@ -854,3 +854,83 @@ async def test_existing_install_not_in_simulation(hass) -> None:
     await store.save_config(parse_config(EX))
     _, dec = await store.load()
     assert dec.simulation is False
+
+
+# --- simulation ------------------------------------------------------------------
+
+
+def logbook_messages(entries) -> list[str]:
+    return [e.data["message"] for e in entries]
+
+
+async def test_simulation_does_not_touch_devices(hass, freezer, services) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    hass.states.async_set(TV, "on")
+    set_nintendo(hass)
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 59))
+    await engine.set_simulation(True)
+    assert engine.simulation
+    await tick(hass, freezer, 2)  # 16:01
+    assert [c for c in services.calls if c.domain != "notify"] == []
+    assert not engine.snapshot.resources["tv"].open
+    assert "Simulation : éteindrait Télé salon (media_player.tv_salon)" in logbook_messages(
+        entries
+    )
+    assert all(e.data["domain"] == DOMAIN for e in entries)
+
+
+async def test_simulation_logs_each_action_once(hass, freezer, services) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    hass.states.async_set(TV, "on")
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 59))
+    await engine.set_simulation(True)
+    for _ in range(3):
+        await tick(hass, freezer)
+        hass.states.async_set(TV, "off")
+        hass.states.async_set(TV, "on")  # rallumée aussitôt
+    await tick(hass, freezer, 3)
+    turn_offs = [m for m in logbook_messages(entries) if "éteindrait" in m]
+    assert len(turn_offs) == 1
+
+
+async def test_leaving_simulation_resyncs(hass, freezer, services) -> None:
+    hass.states.async_set(TV, "on")
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 59))
+    await engine.set_simulation(True)
+    await tick(hass, freezer, 2)  # 16:01 : TV allumée en plage fermée
+    assert services.of("media_player", "turn_off") == []
+    await engine.set_simulation(False)
+    assert not engine.simulation
+    assert services.entities("media_player", "turn_off") == [TV]
+
+
+async def test_simulation_prefixes_parent_notifications(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 50))
+    await engine.set_simulation(True)
+    await tick(hass, freezer, 5)  # 15:55 : avertissement de fin des écrans
+    messages = [c.data["message"] for c in services.of("notify", NOTIFY)]
+    assert messages == ["[Simulation] Hugo : fin des écrans dans 5 min"]
+
+
+async def test_simulation_nintendo_bonus_not_granted(hass, freezer, services) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    set_nintendo(hass)
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    await engine.set_simulation(True)
+    await engine.add_bonus(15, resource_id="switch")
+    assert services.of("nintendo_parental_controls", "add_bonus_time") == []
+    assert "Simulation : accorderait 15 min sur Switch" in logbook_messages(entries)
+    # Les capteurs de la Switch restent lus malgré l'enveloppe.
+    assert engine.snapshot.resources["switch"].used_minutes == 42
+
+
+async def test_simulation_pause_describes_without_closing(hass, freezer, services) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    hass.states.async_set(TV, "on")
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    await engine.set_simulation(True)
+    await engine.set_pause(True)
+    assert services.of("media_player", "turn_off") == []
+    assert "Simulation : éteindrait Télé salon (media_player.tv_salon)" in logbook_messages(
+        entries
+    )

@@ -160,14 +160,16 @@ class AdGuardAdapter:
     async def grant(self, minutes: int) -> None:
         raise NotImplementedError
 
-    async def force_close(self) -> None:
-        await self.apply(
-            ResourceState(
-                open=False,
-                reason="pause",
-                until=None,
-                used_minutes=None,
-                remaining_minutes=None,
-                blocked_services=self._leisure,
-            )
+    def pause_state(self) -> ResourceState:
+        """État fermé de la pause (aussi décrit en simulation)."""
+        return ResourceState(
+            open=False,
+            reason="pause",
+            until=None,
+            used_minutes=None,
+            remaining_minutes=None,
+            blocked_services=self._leisure,
         )
+
+    async def force_close(self) -> None:
+        await self.apply(self.pause_state())
