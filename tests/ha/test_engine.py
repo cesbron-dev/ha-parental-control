@@ -934,3 +934,26 @@ async def test_simulation_pause_describes_without_closing(hass, freezer, service
     assert "Simulation : éteindrait Télé salon (media_player.tv_salon)" in logbook_messages(
         entries
     )
+
+
+async def test_simulation_logs_again_after_reopen(hass, freezer, services) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    hass.states.async_set(TV, "on")
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 59))
+    await engine.set_simulation(True)
+    await tick(hass, freezer, 2)  # 16:01 : fermée, TV allumée -> « éteindrait »
+    await engine.add_exception(Target(resource_id="tv"), True, 30)  # rouverte
+    hass.states.async_set(TV, "on")
+    await tick(hass, freezer)
+    await engine.cancel_exception(engine.decisions.exceptions[0].id)  # refermée
+    await tick(hass, freezer)
+    turn_offs = [m for m in logbook_messages(entries) if "éteindrait" in m]
+    assert len(turn_offs) == 2
+
+
+async def test_simulation_warns_only_when_device_can_warn(hass, freezer, services) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 54))
+    await engine.set_simulation(True)
+    await tick(hass, freezer)  # 15:55 : avertissements (TV sans notify_service)
+    assert [m for m in logbook_messages(entries) if "afficherait" in m] == []

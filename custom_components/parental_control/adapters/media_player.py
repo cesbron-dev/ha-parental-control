@@ -71,6 +71,11 @@ class MediaPlayerAdapter:
                 err,
             )
 
+    def describe_warn(self, message: str) -> list[str]:
+        if not self._notify_service:
+            return []
+        return [f"afficherait « {message} » sur {self.resource.name}"]
+
     async def warn(self, message: str) -> None:
         if not self._notify_service:
             return

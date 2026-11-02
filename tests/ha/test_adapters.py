@@ -598,3 +598,15 @@ async def test_nintendo_describe_no_drift(hass: HomeAssistant) -> None:
     hass.states.async_set(LIMIT, "0")
     assert adapter.describe(CLOSED) == []
     assert not calls
+
+
+async def test_describe_warn_only_where_warn_does_something(
+    hass: HomeAssistant, fake
+) -> None:
+    with_notify = build_adapter(hass, tv_resource("notify.tv_salon"), LEISURE)
+    assert with_notify.describe_warn("bientôt") == [
+        f"afficherait « bientôt » sur {with_notify.resource.name}"
+    ]
+    assert build_adapter(hass, tv_resource(None), LEISURE).describe_warn("x") == []
+    assert adguard(hass, fake).describe_warn("x") == []
+    assert nintendo(hass).describe_warn("x") == []

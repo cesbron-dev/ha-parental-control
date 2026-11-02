@@ -461,12 +461,12 @@ class ParentalEngine:
 
     def _notify(self, cfg: Config, message: str) -> None:
         """Notifie les parents sans attendre l'exécution (`blocking=False`)."""
+        if self._decisions.simulation:
+            message = SIMULATION_PREFIX + message
         for target in cfg.notify:
             self._schedule(self._send_notify(target, message))
 
     async def _send_notify(self, target: str, message: str) -> None:
-        if self._decisions.simulation:
-            message = SIMULATION_PREFIX + message
         domain, _, service = target.partition(".")
         try:
             await self._hass.services.async_call(

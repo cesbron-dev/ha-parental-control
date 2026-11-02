@@ -37,6 +37,10 @@ class Adapter(Protocol):
         """Ce que `grant(minutes)` ferait (Nintendo seulement) ; [] sinon."""
         ...
 
+    def describe_warn(self, message: str) -> list[str]:
+        """Ce que `warn(message)` ferait ; [] si l'appareil ne sait pas avertir."""
+        ...
+
     def pause_state(self) -> ResourceState:
         """État fermé appliqué par `force_close` (la pause)."""
         ...
