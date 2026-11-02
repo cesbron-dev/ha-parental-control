@@ -500,7 +500,7 @@ class ParentalEngine:
             self._check_kid(cfg, target.kid_id)
         if target.resource_id is not None:
             resource = self._check_resource(cfg, target.resource_id)
-            if resource.kind is ResourceKind.NINTENDO:
+            if resource.has(ResourceKind.NINTENDO):
                 # La Switch ne se pilote que par bonus (`ajouter_bonus`).
                 raise _invalid("nintendo_use_bonus")
         if target.service is None:
@@ -515,7 +515,7 @@ class ParentalEngine:
             scope = [r for r in cfg.resources if target.kid_id in r.owners]
         else:
             scope = list(cfg.resources)
-        if not any(r.kind is ResourceKind.ADGUARD for r in scope):
+        if not any(r.has(ResourceKind.ADGUARD) for r in scope):
             raise _invalid("invalid_target")
 
     # ------------------------------------------------------------------ actions
@@ -543,7 +543,7 @@ class ParentalEngine:
             if adapter is not None and adapter.inner.nintendo is not None:
                 # Via l'enveloppe : en simulation, rien n'est accordé.
                 await adapter.grant(minutes)
-            elif resource.kind is ResourceKind.MEDIA_PLAYER:
+            elif resource.has(ResourceKind.MEDIA_PLAYER):
                 self._decisions.bonuses.append(
                     Bonus(today, minutes, resource_id=resource_id)
                 )

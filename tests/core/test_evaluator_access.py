@@ -7,7 +7,7 @@ from custom_components.parental_control.core.decisions import (
 )
 from custom_components.parental_control.core.evaluator import KidStatus, evaluate
 from custom_components.parental_control.core.model import DayType, SegmentType
-from tests.core.conftest import TZ
+from tests.core.conftest import TZ, mixed_tv
 
 TUESDAY = date(2026, 10, 27)
 ECOLE = {"gabin": DayType.ECOLE, "leo": DayType.ECOLE, "mael": DayType.ECOLE}
@@ -175,6 +175,19 @@ def test_adguard_blocked_services_are_leisure_only(cfg):
     assert snap.resources["tv"].blocked_services == frozenset()
     assert evaluate(at(15, 40), cfg, Decisions(), ECOLE).resources[
         "iphone_gabin"].blocked_services == frozenset()
+
+
+def test_mixed_device_blocks_leisure_when_closed(make_cfg):
+    cfg = make_cfg(mixed_tv)
+    tv = evaluate(at(20, 0), cfg, Decisions(), ECOLE).resources["tv"]
+    assert tv.open is False
+    assert tv.blocked_services == cfg.leisure_for_resource("tv") != frozenset()
+    assert evaluate(at(15, 40), cfg, Decisions(), ECOLE).resources[
+        "tv"].blocked_services == frozenset()
+    # Les exceptions de service s'appliquent aussi à l'appareil mixte.
+    dec = Decisions(exceptions=[exc(Target(resource_id="tv", service="youtube"), True)])
+    blocked = evaluate(at(20, 0), cfg, dec, ECOLE).resources["tv"].blocked_services
+    assert "youtube" not in blocked and "roblox" in blocked
 
 
 def test_service_exception_opens_one_service(cfg):

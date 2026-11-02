@@ -15,7 +15,7 @@ from .core.model import Config, ResourceKind
 from .entity import EntityFactories, KidEntity, ResourceEntity, async_track_entities
 from .serialize import serialize_exception, serialize_snapshot
 
-# Ressources dont le temps est mesurable (les autres n'ont pas de capteur de durée).
+# Capacités dont le temps est mesurable (sans elles, pas de capteur de durée).
 MEASURABLE = (ResourceKind.MEDIA_PLAYER, ResourceKind.NINTENDO)
 DURATION_KEYS = {"used_time": "used_minutes", "remaining_time": "remaining_minutes"}
 
@@ -32,7 +32,7 @@ async def async_setup_entry(
                 lambda kid=kid: KidStatusSensor(entry, kid.id, kid.name)
             )
         for res in cfg.resources:
-            if res.kind not in MEASURABLE:
+            if not any(res.has(kind) for kind in MEASURABLE):
                 continue
             for key, field in DURATION_KEYS.items():
                 factories[f"{entry.entry_id}_resource_{res.id}_{key}"] = (

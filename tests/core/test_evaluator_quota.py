@@ -14,7 +14,7 @@ from custom_components.parental_control.core.evaluator import (
     upcoming_closures,
 )
 from custom_components.parental_control.core.model import DayType
-from tests.core.conftest import TZ, weekend_quota
+from tests.core.conftest import TZ, mixed_tv, weekend_quota
 
 SATURDAY = date(2026, 10, 31)
 TUESDAY = date(2026, 10, 27)
@@ -67,16 +67,92 @@ def test_kid_bonus_does_not_extend_tv_quota(weekend_cfg):
     assert evaluate(at(10), weekend_cfg, dec, WEEKEND).resources["tv"].open is False
 
 
-def test_tv_without_quota_for_day_type_open_until_segment_end(make_cfg):
+def _tv_without_device_quota(d, others_quota: int | None = 60) -> None:
+    """Fin de semaine en quota ; TV sans quota d'appareil ; Gabin 120 min, Léo et Maël
+    `others_quota`."""
+    weekend_quota(d)
+    d["resources"][0]["quota_minutes"] = {}
+    for kid in d["kids"][1:]:
+        kid["profiles"]["fin_de_semaine"]["quota_minutes"] = others_quota
+
+
+def test_tv_without_device_quota_uses_most_generous_kid_quota(make_cfg):
+    # Décision d'Olivier : sans quota d'appareil pour le jour, chaque enfant apporte son
+    # quota de temps d'écran ; la TV partagée retient le plus généreux (Gabin, 120 min).
+    cfg = make_cfg(_tv_without_device_quota)
+    tv = evaluate(at(10), cfg, with_usage(100), WEEKEND).resources["tv"]
+    assert tv.open is True
+    assert tv.used_minutes == 100
+    assert tv.remaining_minutes == 20
+
+    closures = upcoming_closures(at(10), cfg, with_usage(100), WEEKEND, {"tv": True})
+    assert closures["resource:tv"] == at(10, 20)
+
+    tv = evaluate(at(10), cfg, with_usage(120), WEEKEND).resources["tv"]
+    assert tv.open is False
+    assert tv.remaining_minutes == 0
+    assert tv.reason == "Quota épuisé"
+
+
+def test_tv_fallback_quota_adds_kid_and_device_bonus(make_cfg):
+    dec = with_usage(120)
+    dec.bonuses += [Bonus(SATURDAY, 15, kid_id="gabin"), Bonus(SATURDAY, 10, resource_id="tv")]
+    tv = evaluate(at(10), make_cfg(_tv_without_device_quota), dec, WEEKEND).resources["tv"]
+    assert tv.open is True
+    assert tv.remaining_minutes == 25
+
+
+def test_tv_fallback_counts_device_usage_not_kid_timer(make_cfg):
+    dec = Decisions(timers=[Timer("gabin", at(8), at(10))])  # quota de Gabin épuisé
+    tv = evaluate(at(10, 30), make_cfg(_tv_without_device_quota), dec, WEEKEND).resources["tv"]
+    assert tv.open is True
+    assert tv.remaining_minutes == 120
+
+
+def test_tv_without_any_quota_is_unlimited(make_cfg):
     def modify(d):
-        weekend_quota(d)
-        d["resources"][0]["quota_minutes"] = {}
+        _tv_without_device_quota(d, others_quota=None)
+        del d["kids"][0]["profiles"]["fin_de_semaine"]["quota_minutes"]
 
     tv = evaluate(at(10), make_cfg(modify), with_usage(500), WEEKEND).resources["tv"]
     assert tv.open is True
     assert tv.until == at(20)
     assert tv.remaining_minutes is None
     assert tv.used_minutes == 500
+
+
+def test_device_quota_still_wins(make_cfg):
+    cfg = make_cfg(lambda d: (_tv_without_device_quota(d),
+                              d["resources"][0].update(quota_minutes={"fin_de_semaine": 180})))
+    tv = evaluate(at(10), cfg, with_usage(150), WEEKEND).resources["tv"]
+    assert tv.open is True
+    assert tv.remaining_minutes == 30
+    assert evaluate(at(10), cfg, with_usage(180), WEEKEND).resources["tv"].open is False
+
+
+def test_mixed_device_counts_device_quota(make_cfg):
+    # Lecteur + client AdGuard : compteur et budget de l'appareil, pas de minuteur.
+    cfg = make_cfg(lambda d: (weekend_quota(d), mixed_tv(d)))
+    tv = evaluate(at(10), cfg, with_usage(170), WEEKEND).resources["tv"]
+    assert tv.open is True
+    assert tv.remaining_minutes == 10
+    assert tv.blocked_services == frozenset()
+    tv = evaluate(at(10), cfg, with_usage(180), WEEKEND).resources["tv"]
+    assert tv.open is False
+    assert tv.blocked_services == cfg.leisure_for_resource("tv")
+
+
+def test_adguard_only_device_unchanged(make_cfg):
+    # Sans lecteur : minuteur et budget de l'enfant, comme avant (l'usage TV ne compte pas).
+    cfg = make_cfg(lambda d: (_tv_without_device_quota(d), mixed_tv(d)))
+    phone = evaluate(at(10), cfg, with_usage(500), WEEKEND).resources["iphone_gabin"]
+    assert phone.open is False
+    assert phone.reason == "En attente du minuteur"
+    assert phone.remaining_minutes is None
+    dec = Decisions(timers=[Timer("gabin", at(8), at(9, 50)), Timer("gabin", at(10), at(10, 30))])
+    phone = evaluate(at(10), cfg, dec, WEEKEND).resources["iphone_gabin"]
+    assert phone.open is True
+    assert phone.until == at(10, 10)
 
 
 # --------------------------------------------------------------------------- minuteur

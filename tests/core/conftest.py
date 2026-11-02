@@ -87,3 +87,21 @@ def weekend_quota(d: dict) -> None:
 @pytest.fixture
 def weekend_cfg(make_cfg) -> Config:
     return make_cfg(weekend_quota)
+
+
+_V1_RESOURCE_KEYS = ("id", "name", "owners", "quota_minutes")
+
+
+def mixed_tv(d: dict) -> None:
+    """Passe la config en version 2 ; la TV devient un appareil logique mixte : son
+    lecteur plus un client AdGuard sur un second appareil physique."""
+    d["version"] = 2
+    resources = []
+    for flat in d["resources"]:
+        res = {k: flat[k] for k in _V1_RESOURCE_KEYS if k in flat}
+        integration = {k: v for k, v in flat.items() if k not in _V1_RESOURCE_KEYS}
+        res["devices"] = [{"name": flat["name"], "integrations": [integration]}]
+        resources.append(res)
+    resources[0]["devices"].append({"name": "Google TV", "integrations": [
+        {"kind": "adguard_services", "device_id": "adguard_google_tv"}]})
+    d["resources"] = resources

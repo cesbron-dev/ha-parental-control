@@ -18,6 +18,7 @@ from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.evaluator import KidStatus
 from custom_components.parental_control.serialize import serialize_snapshot
 from tests.fixtures import EX
+from tests.ha.fake_adguard import FakeAdGuard
 from tests.ha.test_engine import LEISURE, SATURDAY, TUESDAY, TV, at, set_nintendo
 from tests.ha.test_services import Env, make_env  # noqa: F401 - fixture
 
@@ -114,6 +115,26 @@ async def test_resource_binary_sensor_and_durations(make_env) -> None:  # noqa: 
 
     tv = device(env, "resource_tv")
     assert tv is not None and tv.name == "Télé salon"
+
+
+async def test_mixed_device_entities(make_env) -> None:  # noqa: F811
+    """Télé mixte (lecteur + client AdGuard) : durées mesurées et services bloqués."""
+    from custom_components.parental_control.core.config_io import dump_config
+
+    env = await make_env(at(TUESDAY, 20, 0))
+    tv_adguard = FakeAdGuard(env.hass, env.services.calls, name="TV")
+    tv_adguard.set_blocked([])
+    raw = dump_config(parse_config(EX))
+    raw["resources"][0]["devices"].append({"name": "TV", "integrations": [
+        {"kind": "adguard_services", "device_id": tv_adguard.device_id}]})
+    await env.engine.set_config(parse_config(raw))
+    await env.hass.async_block_till_done()
+
+    allowed = state(env, "binary_sensor", "resource_tv_allowed")
+    assert allowed.state == STATE_OFF
+    assert allowed.attributes["blocked_services"] == LEISURE
+    assert entity_id(env, "sensor", "resource_tv_used_time") is not None
+    assert entity_id(env, "sensor", "resource_tv_remaining_time") is not None
 
 
 async def test_duration_none_is_unknown(make_env) -> None:  # noqa: F811
