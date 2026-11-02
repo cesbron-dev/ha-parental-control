@@ -98,16 +98,41 @@ class AdGuardAdapter:
         current = self._blocked_now()
         return current is not None and not desired.blocked_services <= current
 
-    async def apply(self, desired: ResourceState) -> None:
+    def _plan(
+        self, desired: ResourceState
+    ) -> tuple[list[str], list[str], set[str]] | None:
+        """(à bloquer, à débloquer, à oublier) sans effet de bord ; None si illisible."""
         current = self._blocked_now()
         if current is None:
-            return
+            return None
         released = self._leisure | self._extra_blocked
         released -= desired.blocked_services
         block = sorted(desired.blocked_services - current)
         unblock = sorted(released & current)
         # déjà débloqué (à la main ou ailleurs) : plus à gérer
-        self._extra_blocked -= released - current
+        return block, unblock, released - current
+
+    def describe(self, desired: ResourceState) -> list[str]:
+        plan = self._plan(desired)
+        if plan is None:
+            return []
+        block, unblock, _ = plan
+        lines = []
+        if block:
+            lines.append(f"bloquerait {', '.join(block)} sur {self.resource.name}")
+        if unblock:
+            lines.append(f"débloquerait {', '.join(unblock)} sur {self.resource.name}")
+        return lines
+
+    def describe_grant(self, minutes: int) -> list[str]:
+        return []
+
+    async def apply(self, desired: ResourceState) -> None:
+        plan = self._plan(desired)
+        if plan is None:
+            return
+        block, unblock, forgotten = plan
+        self._extra_blocked -= forgotten
         if not block and not unblock:
             return
         try:
