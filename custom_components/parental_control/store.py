@@ -32,6 +32,9 @@ class ParentalStore:
         raw_cfg = await self._config_store.async_load()
         raw_state = await self._state_store.async_load()
         dec = Decisions.from_dict(raw_state) if raw_state is not None else Decisions()
+        if raw_cfg is None and raw_state is None:
+            # Nouvelle installation : on démarre en simulation, rien n'est touché d'office.
+            dec.simulation = True
         cfg = None
         if raw_cfg is not None:
             try:

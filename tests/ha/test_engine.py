@@ -842,3 +842,15 @@ async def test_invalid_stored_config_creates_persistent_notification(
 
     await entry.runtime_data.set_config(parse_config(EX))  # config corrigée
     assert persistent_notification._async_get_or_create_notifications(hass) == {}
+
+
+async def test_new_install_starts_in_simulation(hass) -> None:
+    _, dec = await ParentalStore(hass).load()
+    assert dec.simulation is True
+
+
+async def test_existing_install_not_in_simulation(hass) -> None:
+    store = ParentalStore(hass)
+    await store.save_config(parse_config(EX))
+    _, dec = await store.load()
+    assert dec.simulation is False

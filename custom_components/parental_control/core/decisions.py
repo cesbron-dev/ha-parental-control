@@ -58,6 +58,8 @@ class Decisions:
     exceptions: list[ManualException] = field(default_factory=list)
     timers: list[Timer] = field(default_factory=list)
     paused: bool = False
+    # Mode simulation : le moteur calcule mais ne touche à aucun appareil.
+    simulation: bool = False
     resource_usage: dict[tuple[str, date], float] = field(default_factory=dict)
 
     def homework_done_on(self, kid_id: str, day: date) -> bool:
@@ -145,6 +147,7 @@ class Decisions:
                 for t in self.timers
             ],
             "paused": self.paused,
+            "simulation": self.simulation,
             "resource_usage": [
                 {"resource_id": r, "day": d.isoformat(), "minutes": m}
                 for (r, d), m in self.resource_usage.items()
@@ -177,6 +180,7 @@ class Decisions:
                 for t in d.get("timers", [])
             ],
             paused=d.get("paused", False),
+            simulation=d.get("simulation", False),
             resource_usage={
                 (u["resource_id"], date.fromisoformat(u["day"])): u["minutes"]
                 for u in d.get("resource_usage", [])
