@@ -46,7 +46,7 @@ def serialize_exception(exc: ManualException) -> dict[str, Any]:
 
 
 def serialize_snapshot(engine: ParentalEngine, display: bool = False) -> dict[str, Any]:
-    """État courant : enfants (avec `closes_at`), ressources, fermetures, pause, exceptions.
+    """État courant : enfants (avec `closes_at`), ressources, fermetures, pause, simulation, exceptions.
 
     `display=True` (WebSocket, lisible sans être admin) ajoute les données d'affichage des cartes :
     identité, frise, propriétaires, loisirs, `ends_at` des exceptions et `now`. Seules des valeurs
@@ -67,6 +67,7 @@ def serialize_snapshot(engine: ParentalEngine, display: bool = False) -> dict[st
         "resources": resources,
         "closures": {key: _value(moment) for key, moment in closures.items()},
         "paused": engine.decisions.paused,
+        "simulation": engine.decisions.simulation,
         "exceptions": exceptions,
     }
     if display:

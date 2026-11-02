@@ -69,6 +69,9 @@
     "switch": {
       "pause": {
         "name": "Pause générale"
+      },
+      "simulation": {
+        "name": "Simulation"
       }
     }
   },

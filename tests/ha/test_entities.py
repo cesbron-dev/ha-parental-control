@@ -162,6 +162,28 @@ async def test_pause_switch_turn_off_non_admin_rejected(make_env) -> None:  # no
     assert env.hass.states.get(eid).state == STATE_OFF
 
 
+async def test_simulation_switch_turn_on_non_admin_rejected(make_env) -> None:  # noqa: F811
+    env = await make_env(at(TUESDAY, 16, 30))
+    eid = entity_id(env, "switch", "global_simulation")
+    assert eid is not None
+    assert env.hass.states.get(eid).state == STATE_OFF
+
+    # Activer la simulation cesse de piloter : code exigé d'un non-admin.
+    with pytest.raises(ServiceValidationError) as err:
+        await call(env, "switch", "turn_on", eid, env.kid_ctx)
+    assert err.value.translation_key == "code_required"
+    assert not env.engine.simulation
+
+    await call(env, "switch", "turn_on", eid, env.admin_ctx)
+    assert env.engine.simulation
+    assert env.hass.states.get(eid).state == STATE_ON
+
+    # La désactiver ne demande rien.
+    await call(env, "switch", "turn_off", eid, env.kid_ctx)
+    assert not env.engine.simulation
+    assert env.hass.states.get(eid).state == STATE_OFF
+
+
 async def test_entities_follow_config_change(make_env) -> None:  # noqa: F811
     env = await make_env(at(TUESDAY, 16, 30))
     tv_keys = [("binary_sensor", "resource_tv_allowed"),
@@ -200,7 +222,7 @@ async def test_serialize_snapshot_shape(make_env) -> None:  # noqa: F811
     await env.call("exception", {"open": True, "resource_id": "tv", "minutes": 10},
                    env.admin_ctx)
     data = serialize_snapshot(env.engine)
-    assert set(data) == {"kids", "resources", "closures", "paused", "exceptions"}
+    assert set(data) == {"kids", "resources", "closures", "paused", "simulation", "exceptions"}
     hugo = data["kids"]["hugo"]
     assert hugo["status"] == "attente_devoirs"
     assert hugo["segment_end"] == at(TUESDAY, 19, 0).isoformat()
@@ -210,6 +232,7 @@ async def test_serialize_snapshot_shape(make_env) -> None:  # noqa: F811
     assert tv["open"] is True
     assert data["closures"]["resource:tv"] == tv["until"]
     assert data["paused"] is False
+    assert data["simulation"] is False
     [exc] = data["exceptions"]
     assert exc["target"] == {"resource_id": "tv", "kid_id": None, "service": None}
     assert exc["open"] is True
