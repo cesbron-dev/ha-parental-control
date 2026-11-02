@@ -124,6 +124,36 @@ Les modes par enfant (onglet Enfants) listent les appareils logiques, comme aujo
   `blocked_services` du capteur « autorisé » si l'appareil a un client AdGuard. Identifiants
   inchangés (fondés sur l'id de ressource).
 
+## Mode simulation (dry-run)
+
+Demande d'Olivier : vérifier sur l'instance de test que tout est juste avant de configurer la
+prod. Le moteur décide comme d'habitude, mais **ne touche à aucun appareil** et dit ce qu'il
+aurait fait.
+
+- **Interrupteur** `switch.<…>_simulation` (« Simulation »), à côté de « Pause », état conservé
+  au redémarrage. *Mon choix* : une **nouvelle** installation démarre en simulation (on configure,
+  on observe, puis on coupe) ; une installation existante reste en mode réel à la mise à jour.
+- **Ce qui est simulé** : tout appel d'adaptateur — `apply` (extinction d'un lecteur, services
+  AdGuard), `warn` (message sur l'appareil), `grant` (bonus Nintendo), `force_close` (pause), et la
+  correction d'une dérive. Garde unique : un adaptateur « simulation » qui enveloppe le composite
+  et remplace chaque appel par une trace. Les décisions (exceptions, bonus de quota, devoirs,
+  compteur d'usage, frise) fonctionnent normalement : les cartes et capteurs montrent ce qui se
+  passerait.
+- **Ce qui ne l'est pas** (*mon choix*) : les notifications aux parents (`notify`) partent,
+  préfixées « [Simulation] », pour pouvoir vérifier les alertes.
+- **Où voir ce qu'il aurait fait** : une entrée de **journal de bord** HA par action, au nom de
+  l'appareil logique, ex. « Simulation : éteindrait Samsung (media_player.tv_salon) »,
+  « Simulation : bloquerait youtube, roblox sur Chromecast (VPN) » — seulement quand l'action
+  diffère de la précédente pour cette intégration (pas de répétition à chaque évaluation) ; plus
+  une ligne de log `info`.
+- **Visible partout** : bandeau « Simulation — aucun appareil n'est piloté » en tête du panneau
+  Règles ; petit badge « SIMULATION » sur les cartes ; `simulation: true` dans l'état WebSocket.
+- **Sortie de simulation** : le moteur réapplique immédiatement l'état voulu à toutes les
+  intégrations (resynchronisation), comme au démarrage.
+
+Indépendant du reste : peut être livré en premier, sur le modèle actuel, puis suivre les appareils
+logiques (une trace par intégration).
+
 ## Hors périmètre
 
 - Proposer automatiquement les intégrations d'un même appareil physique (adresse MAC commune) :
