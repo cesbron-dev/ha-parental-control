@@ -923,6 +923,18 @@ async def test_simulation_nintendo_bonus_not_granted(hass, freezer, services) ->
     assert engine.snapshot.resources["switch"].used_minutes == 42
 
 
+async def test_simulation_logs_every_grant(hass, freezer, services) -> None:
+    """Deux bonus identiques sont deux décisions : chacune est journalisée."""
+    entries = async_capture_events(hass, "logbook_entry")
+    set_nintendo(hass)
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    await engine.set_simulation(True)
+    await engine.add_bonus(15, resource_id="switch")
+    await engine.add_bonus(15, resource_id="switch")
+    grants = [m for m in logbook_messages(entries) if "accorderait 15 min" in m]
+    assert grants == ["Simulation : accorderait 15 min sur Switch"] * 2
+
+
 async def test_simulation_pause_describes_without_closing(hass, freezer, services) -> None:
     entries = async_capture_events(hass, "logbook_entry")
     hass.states.async_set(TV, "on")
@@ -970,12 +982,33 @@ async def test_v1_stored_config_upgrades_without_behavior_change(
     hass_storage["parental_control.config"] = {
         "version": 1, "minor_version": 1, "key": "parental_control.config", "data": v1,
     }
+    # État enregistré avant la mise à jour : une exception active et l'usage du jour.
+    hass_storage["parental_control.state"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.state",
+        "data": {
+            "exceptions": [{
+                "id": "e1", "target": {"resource_id": "iphone_hugo", "kid_id": None,
+                                       "service": "youtube"},
+                "open": False, "created": at(TUESDAY, 16, 0).isoformat(),
+                "until": at(TUESDAY, 20, 0).isoformat(), "signature": None,
+            }],
+            "resource_usage": [
+                {"resource_id": "tv", "day": TUESDAY.isoformat(), "minutes": 25},
+            ],
+        },
+    }
     services.adguard.set_blocked([])
     hass.states.async_set(TV, "on")
     freezer.move_to(at(TUESDAY, 16, 30))
     entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
     entry.add_to_hass(hass)
     _, engine = await setup(hass, freezer, entry=entry)
+
+    assert [e.id for e in engine.decisions.exceptions] == ["e1"]
+    assert engine.decisions.exceptions[0].target == Target(
+        resource_id="iphone_hugo", service="youtube")
+    assert engine.decisions.resource_usage[("tv", TUESDAY)] >= 25
+    assert not engine.simulation
 
     ids = ["tv", "iphone_hugo", "switch"]
     assert [r.id for r in engine.config.resources] == ids
@@ -1034,3 +1067,56 @@ async def test_simulation_pause_describes_every_integration(
     assert f"Simulation : éteindrait Samsung ({TV})" in messages
     assert f"Simulation : bloquerait {', '.join(LEISURE)} sur TV" in messages
     assert [c for c in services.calls if c.domain != "notify"] == []
+
+
+async def test_service_exception_keeps_closed_tv_on(hass, freezer, services) -> None:
+    """R6 : YouTube autorisé sur la Télé fermée l'ouvre sur ses clients AdGuard ;
+    la Samsung reste allumée, sans dérive, jusqu'à la fin de l'exception."""
+    hass.states.async_set(TV, "on")
+    freezer.move_to(at(TUESDAY, 16, 30))  # devoirs à faire : Télé fermée
+    tv_adguard, entry = await grouped_tv(hass, services)
+    _, engine = await setup(hass, freezer, entry=entry)
+    assert services.entities("media_player", "turn_off") == [TV]
+    assert tv_adguard.blocked == LEISURE
+
+    hass.states.async_set(TV, "on")  # rallumée pendant le délai anti-rafale
+    services.calls.clear()
+    await engine.add_exception(Target(resource_id="tv", service="youtube"), True, 30)
+    assert not engine.snapshot.resources["tv"].open
+    assert tv_adguard.unblocks() == ["youtube"]
+    assert "youtube" not in tv_adguard.blocked
+    for _ in range(5):  # ticks et dérive (TV allumée) : rien n'est éteint
+        freezer.tick(timedelta(seconds=31))
+        hass.states.async_set(TV, "playing")
+        await hass.async_block_till_done()
+        await tick(hass, freezer)
+    assert services.of("media_player", "turn_off") == []
+    assert engine.decisions.resource_usage[("tv", TUESDAY)] > 0  # le temps compte
+
+    await tick(hass, freezer, 30)  # fin de l'exception
+    assert services.entities("media_player", "turn_off") == [TV]
+    assert tv_adguard.blocked == LEISURE
+
+
+async def test_failing_member_retried_after_drift_cooldown(hass, freezer, services) -> None:
+    """Le lecteur d'un composite lève et reste allumé : nouvelle tentative après le
+    délai anti-rafale, pas avant."""
+    calls = []
+
+    @callback
+    def broken_off(call: ServiceCall) -> None:
+        calls.append(call)
+        raise RuntimeError("panne")
+
+    hass.services.async_register("media_player", "turn_off", broken_off)
+    hass.states.async_set(TV, "on")
+    await setup(hass, freezer, at(TUESDAY, 16, 30))
+    assert len(calls) == 1
+    freezer.tick(timedelta(seconds=10))
+    hass.states.async_set(TV, "on", {"volume": 1})
+    await hass.async_block_till_done()
+    assert len(calls) == 1  # dans le délai
+    freezer.tick(timedelta(seconds=25))  # 35 s après la commande
+    hass.states.async_set(TV, "on", {"volume": 2})
+    await hass.async_block_till_done()
+    assert len(calls) == 2
