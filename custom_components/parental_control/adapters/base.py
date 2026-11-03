@@ -29,7 +29,10 @@ class Adapter(Protocol):
         ...
 
     def describe(self, desired: ResourceState) -> list[str]:
-        """Ce que `apply(desired)` ferait maintenant, sans rien appeler ; [] si rien."""
+        """Ce que `apply(desired)` ferait maintenant, sans rien appeler ; [] si rien.
+
+        Appelé à la place d'`apply` (simulation), une fois par application : un adaptateur qui
+        retient le dernier état voulu (interrupteur) le met à jour ici aussi."""
         ...
 
     def describe_grant(self, minutes: int) -> list[str]:
