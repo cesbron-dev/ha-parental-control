@@ -11,6 +11,9 @@ export const KID_COLORS = [
   { value: "#FFD43B", label: "Jaune" }, { value: "#3BC9DB", label: "Turquoise" },
 ];
 
+// Lecture d'une table de correspondance sans remonter au prototype (« constructor », « toString »…).
+export const pick = (map, key, fallback) => (Object.hasOwn(map, key) ? map[key] : fallback);
+
 export const opt = (value, label, current) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(label)}</option>`;
 
 export const CSS = `
@@ -125,7 +128,7 @@ export const CSS = `
   /* Frise */
   .quota-row { margin-bottom: 8px; }
   .quota-row input { width: 78px; padding: 4px 8px; }
-  .tl { position: relative; height: 54px; margin: 6px 0 2px; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .tl { position: relative; height: 54px; margin: 6px 0 2px; user-select: none; -webkit-user-select: none; }
   .tl .blocks { position: absolute; inset: 0; border-radius: 10px; overflow: hidden; }
   .tl .b { position: absolute; top: 0; bottom: 0; display: flex; flex-direction: column; justify-content: center;
     padding: 0 10px; color: #fff; font-size: 12.5px; line-height: 1.2; overflow: hidden; border-right: 2px solid var(--pc-card); }
@@ -133,8 +136,8 @@ export const CSS = `
   .tl .b strong { font-weight: 500; overflow: hidden; }
   .tl .b small { opacity: .85; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tl .h { position: absolute; top: -4px; bottom: -4px; width: 4px; margin-left: -2px; border-radius: 2px; background: #fff;
-    cursor: ew-resize; box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
-  .tl .h::before { content: ""; position: absolute; inset: 0 -7px; }
+    cursor: ew-resize; box-shadow: 0 0 0 1px rgba(0,0,0,.25); touch-action: none; }
+  .tl .h::before { content: ""; position: absolute; inset: 0 -7px; touch-action: none; }
   .tl .h.fixed { cursor: default; opacity: .5; }
   .tl.dragging, .tl.dragging .h { cursor: ew-resize; }
   .ruler { position: relative; height: 16px; font-size: 11px; color: var(--pc-muted); }
@@ -250,7 +253,8 @@ export const CSS = `
   textarea { width: 100%; min-height: 420px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; margin: 10px 0; }
   .notice, .error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
   .notice { color: var(--pc-amber); background: color-mix(in srgb, var(--pc-amber) 12%, transparent); }
-  .error { color: #ffb4b4; background: color-mix(in srgb, var(--pc-red) 18%, transparent); white-space: pre-wrap; }
+  .error { color: var(--error-color, #ffb4b4); background: color-mix(in srgb, var(--error-color, #e0525a) 16%, transparent); white-space: pre-wrap; }
+  input[aria-invalid="true"] { border-color: var(--error-color, #e0525a); }
 
   @media (max-width: 1100px) {
     .tabs { margin-left: 0; }
