@@ -747,4 +747,6 @@ class ParentalControlPanel extends HTMLElement {
   }
 }
 
-customElements.define("parental-control-panel", ParentalControlPanel);
+if (!customElements.get("parental-control-panel")) {
+  customElements.define("parental-control-panel", ParentalControlPanel);
+}
