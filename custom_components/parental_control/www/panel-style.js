@@ -174,10 +174,12 @@ export const CSS = `
   .lz .pill.split { padding: 0 4px 0 12px; }
   .lz .pill.split button { padding: 6px 6px; color: var(--pc-muted); font-size: 12px; }
   .lz .pill.split button:hover { color: var(--pc-text); }
-  .lz input.pill-in { width: 130px; padding: 6px 12px; border-radius: 16px; font-size: 13px;
+  .lz .pill.unk { border-color: var(--pc-red); color: var(--pc-red); }
+  .lz select.pill-in { width: auto; max-width: 200px; cursor: pointer; color: var(--pc-pri); }
+  .lz .pill-in { width: 130px; padding: 6px 12px; border-radius: 16px; font-size: 13px;
     background: color-mix(in srgb, var(--pc-pri) 15%, transparent); border: 1px solid transparent; color: var(--pc-text); }
-  .lz input.pill-in::placeholder { color: var(--pc-pri); }
-  .lz input.pill-in:focus { border-color: var(--pc-pri); }
+  .lz .pill-in::placeholder { color: var(--pc-pri); }
+  .lz .pill-in:focus { border-color: var(--pc-pri); }
 
   /* Règle par appareil */
   .modes { display: flex; flex-direction: column; }

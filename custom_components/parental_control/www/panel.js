@@ -35,6 +35,7 @@ class ParentalControlPanel extends HTMLElement {
     this._draft = null;
     this._newIds = new Set(); // ids créés depuis le dernier enregistrement : encore modifiables
     this._devices = [];
+    this._catalog = {}; // services AdGuard (id → nom) ; vide : saisie libre
     this._message = null; // {kind: "error" | "ok", text}
     this._saving = false;
     this._simulation = false;
@@ -150,6 +151,11 @@ class ParentalControlPanel extends HTMLElement {
       this._devices = await this._hass.connection.sendMessagePromise({ type: "config/device_registry/list" });
     } catch {
       this._devices = [];
+    }
+    try {
+      ({ services: this._catalog } = await this._hass.connection.sendMessagePromise({ type: "parental_control/services/catalog" }));
+    } catch {
+      this._catalog = {};
     }
     this._render();
   }
@@ -601,10 +607,30 @@ class ParentalControlPanel extends HTMLElement {
 
   _commonChips(list) {
     const spec = COMMON_LISTS[list];
-    const chips = (this._draft[L.SERVICE_LISTS[list].common] ?? []).map((s) => `<span class="pill split">${esc(s)}
+    const chips = (this._draft[L.SERVICE_LISTS[list].common] ?? []).map((s) => `<span class="pill split ${this._svcClass(s)}" title="${esc(this._svcTitle(s))}">${esc(L.serviceLabel(this._catalog, s).name)}
         <button type="button" data-act="move-common" data-arg="${esc(s)}" title="Passer dans « ${spec.other} »">⇄</button>
-        <button type="button" data-act="del-common" data-list="${list}" data-arg="${esc(s)}" title="Retirer">✕</button></span>`).join("");
-    return `${chips}<input class="pill-in" data-input="common-${list}" data-enter="add-common" data-list="${list}" placeholder="+ Ajouter" title="Service AdGuard (ex. youtube)">`;
+        <button type="button" data-act="del-common" data-list="${list}" data-arg="${esc(s)}" title="Retirer de la liste">✕</button></span>`).join("");
+    return chips + this._serviceAdder(`common-${list}`, "add-common", list, L.commonServices(this._draft));
+  }
+
+  // « + Ajouter » d'une liste de services : menu des services AdGuard pas encore pris, ou saisie
+  // libre si le catalogue est inconnu (intégration AdGuard Clients absente ou pas chargée).
+  _serviceAdder(input, enter, list, taken) {
+    const attrs = `class="pill-in" data-input="${input}" data-enter="${enter}" data-list="${list}"`;
+    if (!Object.keys(this._catalog ?? {}).length) {
+      return `<input ${attrs} placeholder="+ Ajouter" title="Service AdGuard (ex. youtube)">`;
+    }
+    const options = L.serviceOptions(this._catalog, taken);
+    return `<select ${attrs} title="Ajouter un service AdGuard" ${options.length ? "" : "disabled"}>
+      <option value="">+ Ajouter…</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
+  }
+
+  _svcClass(service) {
+    return L.serviceLabel(this._catalog, service).known ? "" : "unk";
+  }
+
+  _svcTitle(service) {
+    return L.serviceLabel(this._catalog, service).known ? service : `${service} : inconnu d'AdGuard, à retirer`;
   }
 
   _notifyChips() {

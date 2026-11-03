@@ -510,3 +510,19 @@ test("isIconName : seules les icônes « jeu:nom » sont enregistrées", () => {
   assert.equal(lib.isIconName("MDI:TV"), false);
   assert.equal(lib.isIconName(null), false);
 });
+
+test("AdGuard catalogue: readable names, unknown services and menu choices", () => {
+  const catalog = { youtube: "YouTube", tiktok: "TikTok", discord: "Discord" };
+  assert.deepEqual(lib.serviceLabel(catalog, "youtube"), { name: "YouTube", known: true });
+  assert.deepEqual(lib.serviceLabel(catalog, "youtub"), { name: "youtub", known: false });
+  // Sans catalogue (intégration absente), rien n'est signalé inconnu.
+  assert.deepEqual(lib.serviceLabel({}, "youtub"), { name: "youtub", known: true });
+  assert.deepEqual(lib.serviceOptions(catalog, ["tiktok"]), [
+    { value: "discord", label: "Discord" },
+    { value: "youtube", label: "YouTube" },
+  ]);
+  assert.deepEqual(lib.serviceOptions(null, []), []);
+  const cfg = { default_leisure: ["tiktok"], default_on_demand: ["youtube"] };
+  assert.deepEqual(lib.commonServices(cfg), ["tiktok", "youtube"]);
+  assert.deepEqual(lib.commonServices({}), []);
+});

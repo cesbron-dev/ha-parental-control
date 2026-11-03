@@ -139,19 +139,22 @@ export const kidsView = {
         <div class="lz" data-chips="kid:${list}">${this._kidChips(kid, list)}</div></div>`;
     }).join("");
     return `<div class="card"><h2>Services</h2>${groups}
-      <div class="mut help">Barré : autorisé pour ${esc(kid.name)} malgré la liste commune. En bleu : ajouté pour ${esc(kid.name)} seulement.</div></div>`;
+      <div class="mut help">✕ sur un service commun : autorisé pour ${esc(kid.name)} (barré, ↺ pour rétablir). En bleu : ajouté pour ${esc(kid.name)} seulement. Les listes communes se modifient dans l'onglet Général.</div></div>`;
   },
 
   // Pastilles d'une liste pour l'enfant, puis le champ « + Ajouter » (redessinées sur place après un ajout).
   _kidChips(kid, list) {
     const chips = L.serviceChips(this._draft, kid, list).map((c) => {
+      const name = L.serviceLabel(this._catalog, c.service).name;
       const title = c.common
-        ? c.removed ? `Liste commune : rétablir pour ${kid.name}` : `Liste commune : autoriser pour ${kid.name}`
+        ? c.removed ? `Liste commune, autorisé pour ${kid.name} : rétablir` : `Liste commune : autoriser pour ${kid.name}`
         : `Propre à ${kid.name} : retirer`;
-      return `<button type="button" class="pill ${c.removed ? "off" : ""} ${c.common ? "" : "own"}" data-act="kid-svc" data-list="${list}" data-arg="${esc(c.service)}" title="${esc(title)}">
-        ${esc(c.service)}${c.common ? "" : `<span class="x">✕</span>`}</button>`;
+      const mark = c.removed ? "↺" : "✕";
+      return `<button type="button" class="pill ${c.removed ? "off" : ""} ${c.common ? "" : "own"} ${this._svcClass(c.service)}" data-act="kid-svc" data-list="${list}" data-arg="${esc(c.service)}" title="${esc(title)}" aria-label="${esc(`${name} : ${title}`)}">
+        ${esc(name)}<span class="x" aria-hidden="true">${mark}</span></button>`;
     }).join("");
-    return `${chips}<input class="pill-in" data-input="kid-svc-${list}" data-enter="add-kid-svc" data-list="${list}" placeholder="+ Ajouter" title="Service AdGuard (ex. fortnite)">`;
+    const taken = L.serviceChips(this._draft, kid, list).filter((c) => !c.removed).map((c) => c.service);
+    return chips + this._serviceAdder(`kid-svc-${list}`, "add-kid-svc", list, taken);
   },
 
   // Carte « Règle par appareil » : contrôle segmenté par appareil de l'enfant.
