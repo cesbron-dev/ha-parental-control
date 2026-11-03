@@ -1,7 +1,10 @@
 """Adaptateur interrupteur : `switch` coupé quand la ressource est fermée.
 
-Option `turn_on_when_allowed` : le rallumer une fois, au passage de fermé à autorisé. Le dernier
-état vu n'est qu'en mémoire : après un redémarrage, un interrupteur déjà autorisé n'est pas rallumé.
+Option `turn_on_when_allowed` : le rallumer une fois, au passage de fermé à autorisé (l'appareil
+lui-même, pas une exception de service). Le dernier état vu n'est qu'en mémoire : après un
+redémarrage ou un enregistrement de la configuration, un interrupteur déjà autorisé n'est pas
+rallumé. Le rallumage est aussi perdu si l'interrupteur est indisponible à ce moment ou si l'appel
+échoue (journalisé).
 """
 
 from __future__ import annotations
@@ -53,18 +56,21 @@ class SwitchAdapter:
 
     def _action(self, desired: ResourceState) -> str | None:
         """« turn_off », « turn_on » ou None ; retient l'état voulu pour le prochain passage."""
-        closed = self._closed(desired)
         was_closed = self._last_open is False
-        self._last_open = not closed
-        if closed:
+        self._last_open = desired.open
+        if self._closed(desired):
             return "turn_off" if self.in_use() else None
-        if self._turn_on_when_allowed and was_closed:
+        # Seul le passage de l'appareil à « autorisé » rallume : une exception de service sur un
+        # appareil fermé garde l'interrupteur allumé (R6) sans l'allumer.
+        if self._turn_on_when_allowed and was_closed and desired.open:
             state = self._state()
             if state is not None and state.state == "off":
                 return "turn_on"
         return None
 
     def describe(self, desired: ResourceState) -> list[str]:
+        # Retient l'état voulu comme `apply` : en simulation, l'enveloppe appelle `describe` à sa
+        # place, une fois par application.
         action = self._action(desired)
         if action == "turn_off":
             return [f"couperait {self.label}"]

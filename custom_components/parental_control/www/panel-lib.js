@@ -36,11 +36,16 @@ const PLATFORM_LABELS = {
 };
 
 // Entités d'un domaine (« media_player », « switch ») pour une liste de choix : libellé
-// « nom de l'appareil — intégration », trié ; l'appareil manque si l'entité n'en a pas.
+// « nom — intégration », trié. Sont exclues les entités du contrôle parental lui-même (sa pause)
+// et les entités de configuration ou de diagnostic (réglages d'AdGuard, etc.).
 export function entityChoices(hass, domain) {
   const prefix = `${domain}.`;
   return Object.keys(hass?.states ?? {})
     .filter((id) => id.startsWith(prefix))
+    .filter((id) => {
+      const entry = hass.entities?.[id];
+      return entry?.platform !== "parental_control" && !entry?.entity_category;
+    })
     .map((id) => {
       const entry = hass.entities?.[id];
       const device = entry?.device_id ? hass.devices?.[entry.device_id] : null;

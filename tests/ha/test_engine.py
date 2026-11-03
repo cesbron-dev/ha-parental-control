@@ -1128,16 +1128,20 @@ PC = "switch.prise_pc"
 
 
 async def switch_setup(hass, freezer, services, moment: datetime, *,
-                       turn_on: bool = False) -> ParentalEngine:
-    """Config v2 : un appareil « PC » (prise commandée) pour Hugo, en plus de l'exemple."""
+                       turn_on: bool = False, adguard: FakeAdGuard | None = None) -> ParentalEngine:
+    """Config v2 : un appareil « PC » (prise commandée, et son client AdGuard si `adguard`) pour
+    Hugo, en plus de l'exemple."""
     from custom_components.parental_control.core.config_io import dump_config
 
     cfg = dump_config(parse_config(config_for(services)))
     integration = {"kind": "switch", "entity_id": PC}
     if turn_on:
         integration["turn_on_when_allowed"] = True
+    integrations = [integration]
+    if adguard is not None:
+        integrations.append({"kind": "adguard_services", "device_id": adguard.device_id})
     cfg["resources"].append({"id": "pc", "name": "PC", "owners": ["hugo"], "quota_minutes": {},
-                             "devices": [{"name": "Prise", "integrations": [integration]}]})
+                             "devices": [{"name": "Prise", "integrations": integrations}]})
     await ParentalStore(hass).save_config(parse_config(cfg))
     entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
     entry.add_to_hass(hass)
@@ -1206,3 +1210,39 @@ async def test_simulation_describes_switch(hass, freezer, services) -> None:
     await tick(hass, freezer, 0)
     assert "Simulation : couperait Prise (switch.prise_pc)" in logbook_messages(entries)
     assert services.of("switch", "turn_off") == []
+
+
+async def test_switch_not_turned_on_by_service_exception(hass, freezer, services) -> None:
+    """Une exception de service sur l'appareil fermé garde l'interrupteur allumé sans l'allumer."""
+    pc_adguard = FakeAdGuard(hass, services.calls, name="PC")
+    pc_adguard.set_blocked([])
+    hass.states.async_set(PC, "off")
+    engine = await switch_setup(hass, freezer, services, at(TUESDAY, 16, 30), turn_on=True,
+                                adguard=pc_adguard)
+    await engine.add_exception(Target(resource_id="pc", service="youtube"), True, 30)
+    assert pc_adguard.unblocks() == ["youtube"]
+    assert services.of("switch", "turn_on") == []
+    hass.states.async_set(PC, "on")  # allumé à la main pendant l'exception : il le reste
+    await hass.async_block_till_done()
+    await tick(hass, freezer)
+    assert services.of("switch", "turn_off") == []
+
+
+async def test_switch_turned_back_on_after_pause(hass, freezer, services) -> None:
+    hass.states.async_set(PC, "on")
+    engine = await switch_setup(hass, freezer, services, at(TUESDAY, 15, 30), turn_on=True)
+    await engine.set_pause(True)
+    assert services.entities("switch", "turn_off") == [PC]
+    await engine.set_pause(False)
+    assert services.entities("switch", "turn_on") == [PC]
+
+
+async def test_leaving_simulation_cuts_switch_in_closed_period(hass, freezer, services) -> None:
+    hass.states.async_set(PC, "on")
+    engine = await switch_setup(hass, freezer, services, at(TUESDAY, 15, 30), turn_on=True)
+    await engine.set_simulation(True)
+    freezer.move_to(at(TUESDAY, 19, 0))
+    await tick(hass, freezer, 0)
+    assert services.of("switch", "turn_off") == []
+    await engine.set_simulation(False)
+    assert services.entities("switch", "turn_off") == [PC]

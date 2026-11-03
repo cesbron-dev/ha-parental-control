@@ -250,11 +250,15 @@ test("entityChoices lists one domain with device name and integration", async ()
       "media_player.chromecast_salon": { attributes: { friendly_name: "Chromecast salon" } },
       "media_player.inconnu": { attributes: {} },
       "switch.prise_pc": { attributes: { friendly_name: "Prise PC" } },
+      "switch.controle_parental_pause": { attributes: { friendly_name: "Pause générale" } },
+      "switch.chromecast_filtrage": { attributes: { friendly_name: "Chromecast Filtrage" } },
     },
     entities: {
       "media_player.google_tv_salon": { entity_id: "media_player.google_tv_salon", platform: "androidtv_remote", device_id: "d1" },
       "media_player.chromecast_salon": { entity_id: "media_player.chromecast_salon", platform: "cast" },
       "switch.prise_pc": { entity_id: "switch.prise_pc", platform: "un_truc" },
+      "switch.controle_parental_pause": { entity_id: "switch.controle_parental_pause", platform: "parental_control" },
+      "switch.chromecast_filtrage": { entity_id: "switch.chromecast_filtrage", platform: "adguard_clients", entity_category: "config" },
     },
     devices: { d1: { name: "Chambre principale", name_by_user: "Google TV salon" } },
   };

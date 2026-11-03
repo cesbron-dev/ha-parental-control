@@ -13,7 +13,7 @@ const TABS = [
   { id: "general", label: "Général", icon: "mdi:tune-variant" },
   { id: "json", label: "JSON", icon: "mdi:code-json" },
 ];
-// Icône déduite comme sur la carte appareil (Nintendo, sinon lecteur, sinon AdGuard).
+// Icône déduite comme sur la carte appareil (Nintendo, sinon lecteur, sinon interrupteur, sinon AdGuard).
 const KIND_ICONS = { nintendo: "mdi:nintendo-switch", media_player: "mdi:television", switch: "mdi:power-socket-eu", adguard_services: "mdi:cellphone" };
 const INTEGRATION_ICONS = { media_player: "mdi:play-box-outline", switch: "mdi:toggle-switch-outline", adguard_services: "mdi:shield-half-full", nintendo: "mdi:nintendo-switch" };
 // Types dont l'intégration est une entité (et non un appareil) : lecteur, interrupteur.
