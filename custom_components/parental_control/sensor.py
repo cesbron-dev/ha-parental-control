@@ -16,7 +16,7 @@ from .entity import EntityFactories, KidEntity, ResourceEntity, async_track_enti
 from .serialize import serialize_exception, serialize_snapshot
 
 # Capacités dont le temps est mesurable (sans elles, pas de capteur de durée).
-MEASURABLE = (ResourceKind.MEDIA_PLAYER, ResourceKind.NINTENDO)
+MEASURABLE = (ResourceKind.MEDIA_PLAYER, ResourceKind.SWITCH, ResourceKind.NINTENDO)
 DURATION_KEYS = {"used_time": "used_minutes", "remaining_time": "remaining_minutes"}
 
 

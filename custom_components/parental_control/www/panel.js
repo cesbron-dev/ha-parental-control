@@ -14,8 +14,10 @@ const TABS = [
   { id: "json", label: "JSON", icon: "mdi:code-json" },
 ];
 // Icône déduite comme sur la carte appareil (Nintendo, sinon lecteur, sinon AdGuard).
-const KIND_ICONS = { nintendo: "mdi:nintendo-switch", media_player: "mdi:television", adguard_services: "mdi:cellphone" };
-const INTEGRATION_ICONS = { media_player: "mdi:play-box-outline", adguard_services: "mdi:shield-half-full", nintendo: "mdi:nintendo-switch" };
+const KIND_ICONS = { nintendo: "mdi:nintendo-switch", media_player: "mdi:television", switch: "mdi:power-socket-eu", adguard_services: "mdi:cellphone" };
+const INTEGRATION_ICONS = { media_player: "mdi:play-box-outline", switch: "mdi:toggle-switch-outline", adguard_services: "mdi:shield-half-full", nintendo: "mdi:nintendo-switch" };
+// Types dont l'intégration est une entité (et non un appareil) : lecteur, interrupteur.
+const ENTITY_KINDS = ["media_player", "switch"];
 const SEGMENT_COLORS = { bloque: "#e05561", libre: "#3ddc84", apres_devoirs: "#ffb347", quota: "#4f8dff", sur_demande: "#9aa4b2" };
 
 const CSS = `
@@ -51,6 +53,7 @@ const CSS = `
   input[readonly] { opacity: .6; }
   select option { color: #111; }
   label.f { display: flex; flex-direction: column; gap: 4px; font-size: .8rem; color: rgba(232,237,245,.75); }
+  label.check { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: .85rem; color: rgba(232,237,245,.85); }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; }
   .layout { display: grid; grid-template-columns: 220px 1fr; gap: 14px; align-items: start; }
   .list { display: flex; flex-direction: column; gap: 6px; }
@@ -369,6 +372,7 @@ class ParentalControlPanel extends HTMLElement {
       const kind = el.dataset.type;
       let value = el.value;
       if (kind === "int") value = el.value === "" ? null : Math.max(0, Math.round(Number(el.value)));
+      if (kind === "bool") value = el.checked;
       L.setPath(this._draft, el.dataset.path, value);
       this._refreshDot(el.dataset.path);
     } else {
@@ -602,7 +606,7 @@ class ParentalControlPanel extends HTMLElement {
 
   _resIcon(res) {
     const kinds = L.hasDevices(res) ? res.devices.flatMap((dev) => dev.integrations.map((i) => i.kind)) : [res.kind];
-    const kind = ["nintendo", "media_player", "adguard_services"].find((k) => kinds.includes(k));
+    const kind = ["nintendo", "media_player", "switch", "adguard_services"].find((k) => kinds.includes(k));
     return KIND_ICONS[kind] ?? "mdi:shield-account";
   }
 
@@ -628,7 +632,6 @@ class ParentalControlPanel extends HTMLElement {
         <span class="tag">${count} intégration${count > 1 ? "s" : ""}</span>
       </div>
       <div class="tree">${devices}${addDevice}</div>
-      ${this._datalist("mps", this._entities("media_player."))}
     </div>`;
   }
 
@@ -672,7 +675,7 @@ class ParentalControlPanel extends HTMLElement {
 
   // Pastille : l'entité (lecteur) ou l'appareil (AdGuard, Nintendo) existe-t-il dans HA ?
   _dot(integ, p) {
-    const found = integ.kind === "media_player"
+    const found = ENTITY_KINDS.includes(integ.kind)
       ? !!integ.entity_id && integ.entity_id in (this._hass?.states ?? {})
       : !!integ.device_id && this._devices.some((dev) => dev.id === integ.device_id);
     return `<span class="tag ${found ? "found" : "missing"}" data-dot="${p}">● ${found ? "trouvé" : "introuvable"}</span>`;
@@ -688,9 +691,26 @@ class ParentalControlPanel extends HTMLElement {
     </select>`;
   }
 
+  // Liste des entités d'un domaine (nom de l'appareil — intégration) ; garde l'entité actuelle
+  // même si elle a disparu, pour la voir et la changer.
+  _entitySelect(path, domain, current) {
+    const choices = L.entityChoices(this._hass, domain);
+    const known = choices.some((c) => c.value === current);
+    return `<select data-path="${path}">
+      <option value="" ${current ? "" : "selected"}>— choisir —</option>
+      ${!known && current ? opt(current, `${current} (introuvable)`, current) : ""}
+      ${choices.map((c) => opt(c.value, c.label, current)).join("")}
+    </select>`;
+  }
+
   _kindOptions(integ, p, key) {
     if (integ.kind === "media_player") {
-      return `<label class="f">Entité télé<input data-path="${p}.entity_id" value="${esc(integ.entity_id ?? "")}" list="mps" placeholder="media_player.tv_salon"></label>`;
+      return `<label class="f">Lecteur${this._entitySelect(`${p}.entity_id`, "media_player", integ.entity_id)}</label>`;
+    }
+    if (integ.kind === "switch") {
+      return `<label class="f">Interrupteur${this._entitySelect(`${p}.entity_id`, "switch", integ.entity_id)}</label>
+        <label class="check"><input type="checkbox" data-type="bool" data-path="${p}.turn_on_when_allowed" ${integ.turn_on_when_allowed ? "checked" : ""}>
+          Rallumer quand l'appareil est autorisé</label>`;
     }
     if (integ.kind === "adguard_services") {
       return `<label class="f">Client AdGuard${this._deviceSelect(`${p}.device_id`, ADGUARD_DOMAIN, integ.device_id)}</label>`;

@@ -12,6 +12,7 @@ import { createEditor } from "./editor.js";
 
 const KIND_ICONS = {
   media_player: "mdi:television",
+  switch: "mdi:power-socket-eu",
   adguard_services: "mdi:cellphone",
   nintendo: "mdi:nintendo-switch",
 };

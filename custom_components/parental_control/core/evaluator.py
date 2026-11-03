@@ -576,7 +576,7 @@ def evaluate(
     resources: dict[str, ResourceState] = {}
     for resource in cfg.resources:
         # Budget par propriétaire (son type de jour) ; l'usage reste un compteur commun.
-        measured = resource.has(ResourceKind.MEDIA_PLAYER)
+        measured = resource.measured
         meters = {
             kid_id: (_Meter(resource.id, _device_budget(resource, cfg.kid(kid_id),
                                                         kids[kid_id].day_type, dec, today))

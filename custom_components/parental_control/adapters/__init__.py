@@ -10,6 +10,7 @@ from .base import Adapter
 from .composite import CompositeAdapter
 from .media_player import MediaPlayerAdapter
 from .nintendo import NintendoAdapter
+from .switch import SwitchAdapter
 
 __all__ = ["Adapter", "CompositeAdapter", "build_adapter"]
 
@@ -37,6 +38,8 @@ def _member(
     options = integration.options
     if integration.kind is ResourceKind.MEDIA_PLAYER:
         return MediaPlayerAdapter(hass, f"{device.name} ({options['entity_id']})", options)
+    if integration.kind is ResourceKind.SWITCH:
+        return SwitchAdapter(hass, f"{device.name} ({options['entity_id']})", options)
     if integration.kind is ResourceKind.ADGUARD:
         return AdGuardAdapter(hass, device.name, options, leisure)
     if integration.kind is ResourceKind.NINTENDO:

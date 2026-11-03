@@ -1120,3 +1120,89 @@ async def test_failing_member_retried_after_drift_cooldown(hass, freezer, servic
     hass.states.async_set(TV, "on", {"volume": 2})
     await hass.async_block_till_done()
     assert len(calls) == 2
+
+
+# --------------------------------------------------------------------------- interrupteur
+
+PC = "switch.prise_pc"
+
+
+async def switch_setup(hass, freezer, services, moment: datetime, *,
+                       turn_on: bool = False) -> ParentalEngine:
+    """Config v2 : un appareil « PC » (prise commandée) pour Hugo, en plus de l'exemple."""
+    from custom_components.parental_control.core.config_io import dump_config
+
+    cfg = dump_config(parse_config(config_for(services)))
+    integration = {"kind": "switch", "entity_id": PC}
+    if turn_on:
+        integration["turn_on_when_allowed"] = True
+    cfg["resources"].append({"id": "pc", "name": "PC", "owners": ["hugo"], "quota_minutes": {},
+                             "devices": [{"name": "Prise", "integrations": [integration]}]})
+    await ParentalStore(hass).save_config(parse_config(cfg))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    _, engine = await setup(hass, freezer, moment, entry=entry)
+    return engine
+
+
+async def test_switch_turned_off_when_closed_and_again_if_turned_on(
+    hass, freezer, services
+) -> None:
+    hass.states.async_set(PC, "on")
+    await switch_setup(hass, freezer, services, at(TUESDAY, 15, 0))
+    assert services.entities("switch", "turn_off") == [PC]
+    hass.states.async_set(PC, "on")  # rallumé à la main pendant la plage fermée
+    await hass.async_block_till_done()
+    await tick(hass, freezer)
+    assert services.entities("switch", "turn_off") == [PC, PC]
+    assert services.of("switch", "turn_on") == []
+
+
+async def test_switch_turned_back_on_once_when_allowed(hass, freezer, services) -> None:
+    hass.states.async_set(PC, "on")
+    await switch_setup(hass, freezer, services, at(TUESDAY, 15, 20), turn_on=True)
+    assert hass.states.get(PC).state == "off"
+    await tick(hass, freezer, 5)  # 15:25 : plage libre
+    assert services.entities("switch", "turn_on") == [PC]
+    hass.states.async_set(PC, "off")  # éteint à la main : il le reste
+    await hass.async_block_till_done()
+    for _ in range(3):
+        await tick(hass, freezer)
+    assert services.entities("switch", "turn_on") == [PC]
+
+
+async def test_switch_stays_off_when_allowed_without_option(hass, freezer, services) -> None:
+    hass.states.async_set(PC, "on")
+    await switch_setup(hass, freezer, services, at(TUESDAY, 15, 20))
+    await tick(hass, freezer, 5)
+    assert services.of("switch", "turn_on") == []
+
+
+async def test_switch_not_turned_on_at_startup_in_allowed_window(
+    hass, freezer, services
+) -> None:
+    hass.states.async_set(PC, "off")
+    await switch_setup(hass, freezer, services, at(TUESDAY, 15, 30), turn_on=True)
+    await tick(hass, freezer)
+    assert services.of("switch", "turn_on") == []
+
+
+async def test_switch_on_counts_device_usage(hass, freezer, services) -> None:
+    hass.states.async_set(PC, "on")
+    engine = await switch_setup(hass, freezer, services, at(TUESDAY, 15, 30))
+    for _ in range(5):
+        await tick(hass, freezer)
+    assert engine.decisions.usage("pc", TUESDAY) == pytest.approx(5)
+
+
+async def test_simulation_describes_switch(hass, freezer, services) -> None:
+    entries = async_capture_events(hass, "logbook_entry")
+    hass.states.async_set(PC, "off")
+    engine = await switch_setup(hass, freezer, services, at(TUESDAY, 15, 30), turn_on=True)
+    await engine.set_simulation(True)
+    hass.states.async_set(PC, "on")
+    await hass.async_block_till_done()
+    freezer.move_to(at(TUESDAY, 19, 0))  # plage bloquée
+    await tick(hass, freezer, 0)
+    assert "Simulation : couperait Prise (switch.prise_pc)" in logbook_messages(entries)
+    assert services.of("switch", "turn_off") == []

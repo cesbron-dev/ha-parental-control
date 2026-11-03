@@ -1,7 +1,7 @@
 // Logique pure des éditeurs visuels de cartes : schéma `ha-form` construit à partir de l'état du
 // moteur (appareils et enfants proposés en liste) et nettoyage de la config produite, sans DOM.
 
-const KIND_LABELS = { media_player: "Télé", adguard_services: "AdGuard", nintendo: "Nintendo" };
+const KIND_LABELS = { media_player: "Télé", switch: "Interrupteur", adguard_services: "AdGuard", nintendo: "Nintendo" };
 
 const text = (name, label, helper) => ({ name, label, helper, selector: { text: {} } });
 

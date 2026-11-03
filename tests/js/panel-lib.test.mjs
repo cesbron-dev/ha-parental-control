@@ -126,8 +126,8 @@ test("addIntegration / removeIntegration", () => {
 
 test("integrationKindsAllowed", () => {
   const d = draft();
-  assert.deepEqual(integrationKindsAllowed(addResource(d, "Vide")), ["media_player", "adguard_services", "nintendo"]);
-  assert.deepEqual(integrationKindsAllowed(d.resources[0]), ["media_player", "adguard_services"]);
+  assert.deepEqual(integrationKindsAllowed(addResource(d, "Vide")), ["media_player", "switch", "adguard_services", "nintendo"]);
+  assert.deepEqual(integrationKindsAllowed(d.resources[0]), ["media_player", "switch", "adguard_services"]);
   assert.deepEqual(integrationKindsAllowed(d.resources[2]), []);
 });
 
@@ -240,4 +240,36 @@ test("hasDevices : une ressource v1 collée en JSON n'a pas d'arbre", () => {
   assert.equal(hasDevices(draft().resources[0]), true);
   assert.equal(hasDevices({ id: "tv", kind: "media_player", entity_id: "media_player.tv" }), false);
   assert.equal(hasDevices({ id: "tv", devices: null }), false);
+});
+
+test("entityChoices lists one domain with device name and integration", async () => {
+  const { entityChoices } = await import("../../custom_components/parental_control/www/panel-lib.js");
+  const hass = {
+    states: {
+      "media_player.google_tv_salon": { attributes: { friendly_name: "Google TV salon" } },
+      "media_player.chromecast_salon": { attributes: { friendly_name: "Chromecast salon" } },
+      "media_player.inconnu": { attributes: {} },
+      "switch.prise_pc": { attributes: { friendly_name: "Prise PC" } },
+    },
+    entities: {
+      "media_player.google_tv_salon": { entity_id: "media_player.google_tv_salon", platform: "androidtv_remote", device_id: "d1" },
+      "media_player.chromecast_salon": { entity_id: "media_player.chromecast_salon", platform: "cast" },
+      "switch.prise_pc": { entity_id: "switch.prise_pc", platform: "un_truc" },
+    },
+    devices: { d1: { name: "Chambre principale", name_by_user: "Google TV salon" } },
+  };
+  assert.deepEqual(entityChoices(hass, "media_player"), [
+    { value: "media_player.chromecast_salon", label: "Chromecast salon — Google Cast" },
+    { value: "media_player.google_tv_salon", label: "Google TV salon — Android TV Remote" },
+    { value: "media_player.inconnu", label: "media_player.inconnu" },
+  ]);
+  assert.deepEqual(entityChoices(hass, "switch"), [{ value: "switch.prise_pc", label: "Prise PC — un_truc" }]);
+  assert.deepEqual(entityChoices(null, "switch"), []);
+});
+
+test("addIntegration builds a switch integration", async () => {
+  const { addIntegration } = await import("../../custom_components/parental_control/www/panel-lib.js");
+  const dev = { name: "Prise", integrations: [] };
+  addIntegration(dev, "switch");
+  assert.deepEqual(dev.integrations, [{ kind: "switch", entity_id: "" }]);
 });

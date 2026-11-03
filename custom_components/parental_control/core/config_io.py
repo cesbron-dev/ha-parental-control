@@ -21,10 +21,13 @@ from .model import (
 
 DEFAULT_LEISURE = ("youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch")
 CONFIG_VERSION = 2
+# Interrupteur : le rallumer quand l'appareil redevient autorisé (désactivé par défaut).
+TURN_ON_WHEN_ALLOWED = "turn_on_when_allowed"
 DEFAULT_WARN_MINUTES = 5
 
 _REQUIRED_OPTIONS = {
     ResourceKind.MEDIA_PLAYER: ("entity_id",),
+    ResourceKind.SWITCH: ("entity_id",),
     ResourceKind.ADGUARD: ("device_id",),
     ResourceKind.NINTENDO: ("device_id", "limit_entity", "remaining_entity", "used_entity"),
 }
@@ -155,6 +158,11 @@ def _parse_integration(kind_raw: Any, options: dict, kind_path: str, path: str) 
     kind = _enum(ResourceKind, kind_raw, kind_path)
     for key in _REQUIRED_OPTIONS[kind]:
         _str(options.get(key), f"{path}.{key}")
+    if kind is ResourceKind.SWITCH:
+        if not str(options["entity_id"]).startswith("switch."):
+            raise _fail(f"{path}.entity_id", "entité switch.* attendue")
+        if not isinstance(options.get(TURN_ON_WHEN_ALLOWED, False), bool):
+            raise _fail(f"{path}.{TURN_ON_WHEN_ALLOWED}", "booléen attendu")
     return Integration(kind, options)
 
 
