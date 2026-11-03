@@ -406,6 +406,27 @@ export function moveCommonService(cfg, service) {
   return to;
 }
 
+// Nom lisible d'un service d'après le catalogue AdGuard (id → nom) ; `known` faux s'il n'y est pas
+// (ancienne saisie, faute de frappe) alors que le catalogue est connu.
+export function serviceLabel(catalog, service) {
+  const name = catalog?.[service];
+  return { name: name ?? service, known: !!name || !Object.keys(catalog ?? {}).length };
+}
+
+// Choix du menu « + Ajouter » : services du catalogue pas encore pris, triés par nom.
+export function serviceOptions(catalog, taken) {
+  const skip = new Set(taken);
+  return Object.entries(catalog ?? {})
+    .filter(([id]) => !skip.has(id))
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base" }));
+}
+
+// Services déjà présents dans les deux listes communes (un service n'est que dans l'une des deux).
+export function commonServices(cfg) {
+  return Object.values(SERVICE_LISTS).flatMap((keys) => cfg[keys.common] ?? []);
+}
+
 // « École · Fin de semaine » : journées ayant un profil propre.
 export function dayLabels(kid) {
   const days = DAY_TYPES.filter((d) => kid?.profiles && d.value in kid.profiles).map((d) => d.short);

@@ -213,3 +213,30 @@ async def test_state_mixed_tv_exposes_kinds_and_icon(hass, freezer, hass_ws_clie
     assert res["tv"]["kinds"] == ["adguard_services", "media_player"]
     assert res["tv"]["icon"] == "mdi:television"
     assert res["iphone_hugo"]["icon"] is None
+
+
+async def test_services_catalog_merges_adguard_entries(hass, entry, hass_ws_client) -> None:
+    from types import SimpleNamespace
+
+    first = MockConfigEntry(domain="adguard_clients")
+    first.add_to_hass(hass)
+    first.runtime_data = SimpleNamespace(catalog={"youtube": "YouTube", "tiktok": "TikTok"})
+    second = MockConfigEntry(domain="adguard_clients")  # pas encore chargée : ignorée
+    second.add_to_hass(hass)
+    third = MockConfigEntry(domain="adguard_clients")
+    third.add_to_hass(hass)
+    third.runtime_data = SimpleNamespace(catalog={"discord": "Discord"})
+
+    client = await _client(hass, hass_ws_client, admin=True)
+    await client.send_json_auto_id({"type": "parental_control/services/catalog"})
+    services = (await client.receive_json())["result"]["services"]
+    assert list(services.items()) == [("discord", "Discord"), ("tiktok", "TikTok"), ("youtube", "YouTube")]
+
+
+async def test_services_catalog_empty_and_admin_only(hass, entry, hass_ws_client) -> None:
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
+    assert (await admin.receive_json())["result"] == {"services": {}}
+    user = await _client(hass, hass_ws_client, admin=False)
+    await user.send_json_auto_id({"type": "parental_control/services/catalog"})
+    assert not (await user.receive_json())["success"]

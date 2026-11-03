@@ -9,6 +9,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
+from .adapters.adguard import ADGUARD_DOMAIN
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_config
 from .engine import ParentalEngine
@@ -25,6 +26,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     hass.data[_REGISTERED] = True
     websocket_api.async_register_command(hass, ws_config_get)
     websocket_api.async_register_command(hass, ws_config_set)
+    websocket_api.async_register_command(hass, ws_services_catalog)
     websocket_api.async_register_command(hass, ws_state)
     websocket_api.async_register_command(hass, ws_state_subscribe)
 
@@ -68,6 +70,29 @@ async def ws_config_set(
         return
     await engine.set_config(cfg)
     connection.send_result(msg["id"], {"config": dump_config(cfg)})
+
+
+def services_catalog(hass: HomeAssistant) -> dict[str, str]:
+    """Services AdGuard connus (id → nom), réunis depuis les entrées `adguard_clients` chargées.
+
+    Lu dans le coordinateur de cette intégration (`runtime_data.catalog`) : vide si elle est
+    absente ou pas encore chargée ; le panneau garde alors la saisie libre.
+    """
+    catalog: dict[str, str] = {}
+    for entry in hass.config_entries.async_entries(ADGUARD_DOMAIN):
+        found = getattr(getattr(entry, "runtime_data", None), "catalog", None)
+        if isinstance(found, dict):
+            catalog.update({str(k): str(v) for k, v in found.items()})
+    return dict(sorted(catalog.items(), key=lambda kv: kv[1].casefold()))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/services/catalog"})
+@websocket_api.require_admin
+@callback
+def ws_services_catalog(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    connection.send_result(msg["id"], {"services": services_catalog(hass)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})
