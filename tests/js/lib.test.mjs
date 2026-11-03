@@ -371,3 +371,9 @@ test("simulationBadge : pastille seulement en simulation", () => {
   assert.equal(simulationBadge(null), "");
   assert.equal(simulationBadge(undefined), "");
 });
+
+test("resourceView exposes on-demand services", () => {
+  const s = { resources: { ipad: { name: "iPad", kind: "adguard_services", leisure: ["roblox", "youtube"], on_demand: ["youtube"] } } };
+  assert.deepEqual(resourceView(s, "ipad").onDemand, ["youtube"]);
+  assert.deepEqual(resourceView({ resources: { ipad: { name: "iPad" } } }, "ipad").onDemand, []);
+});

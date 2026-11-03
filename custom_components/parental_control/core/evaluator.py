@@ -332,8 +332,11 @@ def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
 def _resource_state(cfg: Config, resource: Resource, *, open_: bool, reason: str,
                     until: datetime | None) -> ResourceState:
     blocked: frozenset[str] = frozenset()
-    if resource.has(ResourceKind.ADGUARD) and not open_:
-        blocked = cfg.leisure_for_resource(resource.id)
+    if resource.has(ResourceKind.ADGUARD):
+        # Les services sur demande restent bloqués même ouverte ; seule une exception les ouvre.
+        blocked = cfg.on_demand_for_resource(resource.id)
+        if not open_:
+            blocked |= cfg.leisure_for_resource(resource.id)
     return ResourceState(
         open=open_,
         reason=reason,
@@ -497,8 +500,11 @@ def rule_signature(target: Target, snap: Snapshot, cfg: Config) -> tuple:
         if target.service is None:
             items.append((resource.id, None, state.open))
         elif resource.has(ResourceKind.ADGUARD):
-            items.append((resource.id, target.service,
-                          target.service not in state.blocked_services))
+            # Un service sur demande est toujours bloqué par la règle : « jusqu'au prochain
+            # changement » suit alors l'ouverture de l'appareil (changement de plage).
+            open_ = (state.open if target.service in cfg.on_demand_for_resource(resource.id)
+                     else target.service not in state.blocked_services)
+            items.append((resource.id, target.service, open_))
     return tuple(items)
 
 
@@ -653,7 +659,7 @@ def _service_keys(cfg: Config, dec: Decisions, snap: Snapshot) -> set[str]:
     for resource in cfg.resources:
         if not resource.has(ResourceKind.ADGUARD):
             continue
-        services = set(cfg.leisure_for_resource(resource.id))
+        services = set(cfg.managed_services_for_resource(resource.id))
         services |= {e.target.service for e in dec.exceptions  # type: ignore[misc]
                      if _service_exception_applies(e, resource)}
         blocked = snap.resources[resource.id].blocked_services

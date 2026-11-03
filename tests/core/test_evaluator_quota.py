@@ -431,3 +431,45 @@ def test_upcoming_closure_service_keys_absent_when_resource_closes(cfg):
     closures = upcoming_closures(tue(15, 40), cfg, Decisions(), ECOLE, {})
     assert closures["resource:iphone_gabin"] == tue(16)
     assert not any(k.startswith("service:") for k in closures)
+
+
+# ----------------------------------------------------- services sur demande
+
+
+def _on_demand(d: dict) -> None:
+    d["default_on_demand"] = ["youtube"]
+    d["kids"][1]["on_demand_remove"] = ["youtube"]  # Léo : YouTube suit les loisirs
+
+
+def test_on_demand_service_blocked_even_when_device_open(make_cfg):
+    cfg = make_cfg(_on_demand)
+    snap = evaluate(tue(15, 40), cfg, Decisions(), ECOLE)  # plage libre de Gabin
+    iphone = snap.resources["iphone_gabin"]
+    assert iphone.open is True
+    assert iphone.blocked_services == frozenset({"youtube"})
+    assert snap.resources["iphone_leo"].blocked_services == frozenset()  # retiré pour Léo
+    closed = evaluate(tue(20, 0), cfg, Decisions(), ECOLE).resources["iphone_gabin"]
+    assert closed.blocked_services == cfg.leisure_for_resource("iphone_gabin") | {"youtube"}
+
+
+def test_on_demand_service_opened_by_exception(make_cfg):
+    cfg = make_cfg(_on_demand)
+    e = ManualException(id="e1", target=Target(resource_id="iphone_gabin", service="youtube"),
+                        open=True, created=tue(15, 40), until=tue(16, 10), signature=None)
+    snap = evaluate(tue(15, 50), cfg, Decisions(exceptions=[e]), ECOLE)
+    assert "youtube" not in snap.resources["iphone_gabin"].blocked_services
+    later = evaluate(tue(16, 15), cfg, Decisions(exceptions=[e]), ECOLE)
+    assert "youtube" in later.resources["iphone_gabin"].blocked_services
+
+
+def test_on_demand_until_next_change_follows_device_schedule(make_cfg):
+    cfg = make_cfg(_on_demand)
+    target = Target(resource_id="iphone_gabin", service="youtube")
+    rule = evaluate(tue(15, 40), cfg, Decisions(), ECOLE, apply_exceptions=False)
+    e = ManualException(id="e1", target=target, open=True, created=tue(15, 40), until=None,
+                        signature=rule_signature(target, rule, cfg))
+    held = evaluate(tue(15, 55), cfg, Decisions(exceptions=[e]), ECOLE)
+    assert held.expired_exception_ids == frozenset()
+    assert "youtube" not in held.resources["iphone_gabin"].blocked_services
+    # 16:00 : la plage change (devoirs à faire), l'autorisation prend fin.
+    assert evaluate(tue(16, 5), cfg, Decisions(exceptions=[e]), ECOLE).expired_exception_ids == {"e1"}

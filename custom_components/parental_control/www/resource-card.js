@@ -177,7 +177,11 @@ class ParentalResourceCard extends StateCard {
     const resource_id = this._config.resource;
     const choices = [{ value: null, label: "Tout l'appareil" }];
     if (v.kinds.includes("adguard_services")) {
-      for (const s of v.leisure) choices.push({ value: s, label: serviceLabel(s) });
+      // Services sur demande en premier : ils ne s'ouvrent que par une autorisation.
+      for (const s of v.onDemand) choices.push({ value: s, label: `${serviceLabel(s)} (sur demande)` });
+      for (const s of v.leisure) {
+        if (!v.onDemand.includes(s)) choices.push({ value: s, label: serviceLabel(s) });
+      }
     }
     openActionDialog(this.shadowRoot, {
       title: `Autoriser · ${this._config.name || v.name || resource_id}`,

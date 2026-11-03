@@ -287,3 +287,15 @@ def test_switch_integration_validation() -> None:
     with pytest.raises(ConfigError, match=re.escape(f"{path}.turn_on_when_allowed : booléen attendu")):
         parse_config(_with_switch({"kind": "switch", "entity_id": "switch.x",
                                    "turn_on_when_allowed": "oui"}))
+
+
+def test_on_demand_services_roundtrip() -> None:
+    d = dump_config(parse_config(EX))
+    assert d["default_on_demand"] == []
+    d["default_on_demand"] = ["youtube"]
+    d["kids"][0]["on_demand_remove"] = ["youtube"]
+    cfg = parse_config(d)
+    assert cfg.on_demand_for("gabin") == frozenset()
+    assert parse_config(dump_config(cfg)) == cfg
+    with pytest.raises(ConfigError, match=re.escape("default_on_demand")):
+        parse_config({**d, "default_on_demand": "youtube"})

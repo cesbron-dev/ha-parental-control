@@ -151,6 +151,10 @@ def _parse_kid(raw: Any, path: str) -> Kid:
         leisure_remove=frozenset(
             _str_list(raw.get("leisure_remove", []), f"{path}.leisure_remove")
         ),
+        on_demand_add=frozenset(_str_list(raw.get("on_demand_add", []), f"{path}.on_demand_add")),
+        on_demand_remove=frozenset(
+            _str_list(raw.get("on_demand_remove", []), f"{path}.on_demand_remove")
+        ),
     )
 
 
@@ -264,6 +268,7 @@ def parse_config(data: dict) -> Config:
         ),
         calendar_map=calendar_map,
         notify=tuple(_str_list(data.get("notify", []), "notify")),
+        default_on_demand=tuple(_str_list(data.get("default_on_demand", []), "default_on_demand")),
     )
 
 
@@ -291,6 +296,8 @@ def _dump_kid(kid: Kid) -> dict:
         "calendar": kid.calendar,
         "leisure_add": sorted(kid.leisure_add),
         "leisure_remove": sorted(kid.leisure_remove),
+        "on_demand_add": sorted(kid.on_demand_add),
+        "on_demand_remove": sorted(kid.on_demand_remove),
         "resource_modes": {rid: mode.value for rid, mode in kid.resource_modes.items()},
         "profiles": {day.value: _dump_profile(p) for day, p in kid.profiles.items()},
     }
@@ -318,6 +325,7 @@ def dump_config(cfg: Config) -> dict:
     return {
         "version": CONFIG_VERSION,
         "default_leisure": list(cfg.default_leisure),
+        "default_on_demand": list(cfg.default_on_demand),
         "calendar_map": {word: day.value for word, day in cfg.calendar_map.items()},
         "notify": list(cfg.notify),
         "kids": [_dump_kid(k) for k in cfg.kids],
