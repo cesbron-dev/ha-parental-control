@@ -2,10 +2,10 @@
 // que `parental_control/config/get`), sans DOM. Le moteur reste seul juge de la validité (config/set).
 
 export const DAY_TYPES = [
-  { value: "ecole", label: "École", required: true },
-  { value: "fin_de_semaine", label: "Fin de semaine", required: true },
-  { value: "conge_peda", label: "Congé pédagogique", required: false },
-  { value: "vacances", label: "Vacances", required: false },
+  { value: "ecole", label: "École", short: "École", required: true },
+  { value: "fin_de_semaine", label: "Fin de semaine", short: "Fin de semaine", required: true },
+  { value: "conge_peda", label: "Congé pédagogique", short: "Congé péd.", required: false },
+  { value: "vacances", label: "Vacances", short: "Vacances", required: false },
 ];
 export const SEGMENT_TYPES = [
   { value: "bloque", label: "Bloqué" },
@@ -250,6 +250,189 @@ export function profileGeometry(segments) {
     const end = i + 1 < valid.length ? valid[i + 1].start : 24 * 60;
     return { left: (s.start / 1440) * 100, width: (Math.max(0, end - s.start) / 1440) * 100, type: s.type };
   });
+}
+
+// Plages de la frise pour le dessin : position, type et horaires écrits ; `index` renvoie au
+// segment d'origine (les heures invalides sont ignorées, comme dans `profileGeometry`).
+export function timelineBlocks(segments) {
+  const valid = (segments ?? [])
+    .map((s, index) => ({ index, start: toMinutes(s.start), type: s.type }))
+    .filter((s) => s.start !== null);
+  return valid.map((s, i) => {
+    const end = i + 1 < valid.length ? valid[i + 1].start : 24 * 60;
+    return {
+      index: s.index, left: (s.start / 1440) * 100, width: (Math.max(0, end - s.start) / 1440) * 100, type: s.type,
+      start: toHHMM(s.start), end: end === 24 * 60 ? "24:00" : toHHMM(end),
+    };
+  });
+}
+
+// Pas des poignées de la frise.
+export const SNAP_MINUTES = 5;
+const snapDown = (m) => Math.floor(m / SNAP_MINUTES) * SNAP_MINUTES;
+const snapUp = (m) => Math.ceil(m / SNAP_MINUTES) * SNAP_MINUTES;
+
+// Position sur la frise (0 = minuit, 1 = minuit suivant) -> minutes, au pas de 5 min.
+export function fractionToMinutes(fraction) {
+  const f = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0;
+  return Math.round((f * 1440) / SNAP_MINUTES) * SNAP_MINUTES;
+}
+
+// Bornes (minutes, sur la grille de 5 min) de la limite qui ouvre le segment `index` : strictement
+// après la précédente, strictement avant la suivante (ou 23:55). Null pour 00:00 (fixe), un index
+// hors frise, une voisine illisible ou faute de place sur la grille.
+export function segmentBounds(segments, index) {
+  if (!(index > 0 && index < (segments?.length ?? 0))) return null;
+  const prev = toMinutes(segments[index - 1].start);
+  const next = index + 1 < segments.length ? toMinutes(segments[index + 1].start) : 24 * 60;
+  if (prev === null || next === null) return null;
+  const min = snapUp(prev + 1);
+  const max = snapDown(next - 1);
+  return min <= max ? { min, max } : null;
+}
+
+// Déplace la limite du segment `index` vers `minutes` (arrondi à 5 min, borné par les voisines) ;
+// renvoie la nouvelle heure, ou null si cette limite ne bouge pas.
+export function setSegmentStart(segments, index, minutes) {
+  const bounds = segmentBounds(segments, index);
+  if (!bounds) return null;
+  const snapped = Math.round(minutes / SNAP_MINUTES) * SNAP_MINUTES;
+  const value = toHHMM(Math.min(bounds.max, Math.max(bounds.min, snapped)));
+  segments[index].start = value;
+  return value;
+}
+
+// Listes de services AdGuard : commune (config) et exceptions par enfant.
+export const SERVICE_LISTS = {
+  leisure: { common: "default_leisure", add: "leisure_add", remove: "leisure_remove" },
+  on_demand: { common: "default_on_demand", add: "on_demand_add", remove: "on_demand_remove" },
+};
+const otherList = (list) => (list === "leisure" ? "on_demand" : "leisure");
+// Une config ou un enfant d'avant « sur demande » n'a pas ces clés : listes vides créées au besoin.
+const listOf = (obj, key) => {
+  if (!Array.isArray(obj[key])) obj[key] = [];
+  return obj[key];
+};
+const serviceName = (value) => String(value ?? "").trim().toLowerCase() || null;
+
+// Pastilles d'une liste pour un enfant : services communs (barrés s'il en est retiré), puis les siens.
+export function serviceChips(cfg, kid, list) {
+  const keys = SERVICE_LISTS[list];
+  const removed = new Set(kid[keys.remove] ?? []);
+  const common = cfg[keys.common] ?? [];
+  return [
+    ...common.map((service) => ({ service, common: true, removed: removed.has(service) })),
+    ...(kid[keys.add] ?? []).filter((s) => !common.includes(s)).map((service) => ({ service, common: false, removed: false })),
+  ];
+}
+
+// Toucher une pastille : un service commun est retiré (ou rétabli) pour l'enfant, un ajout propre disparaît.
+export function toggleKidService(cfg, kid, list, service) {
+  const keys = SERVICE_LISTS[list];
+  if ((cfg[keys.common] ?? []).includes(service)) toggleListValue(listOf(kid, keys.remove), service);
+  else {
+    const add = listOf(kid, keys.add);
+    if (add.includes(service)) add.splice(add.indexOf(service), 1);
+  }
+}
+
+// Ajout pour un enfant : un service commun retiré est rétabli, sinon ajout propre (sans doublon).
+// Renvoie le nom retenu (minuscules), ou null s'il est vide.
+export function addKidService(cfg, kid, list, value) {
+  const service = serviceName(value);
+  if (!service) return null;
+  const keys = SERVICE_LISTS[list];
+  if ((cfg[keys.common] ?? []).includes(service)) {
+    const remove = listOf(kid, keys.remove);
+    if (remove.includes(service)) remove.splice(remove.indexOf(service), 1);
+  } else {
+    const add = listOf(kid, keys.add);
+    if (!add.includes(service)) add.push(service);
+  }
+  return service;
+}
+
+// Ajout à une liste commune ; un service n'est que dans une des deux (il quitte l'autre).
+export function addCommonService(cfg, list, value) {
+  const service = serviceName(value);
+  if (!service) return null;
+  const target = listOf(cfg, SERVICE_LISTS[list].common);
+  const other = listOf(cfg, SERVICE_LISTS[otherList(list)].common);
+  if (other.includes(service)) other.splice(other.indexOf(service), 1);
+  if (!target.includes(service)) target.push(service);
+  return service;
+}
+
+export function removeCommonService(cfg, list, service) {
+  const common = listOf(cfg, SERVICE_LISTS[list].common);
+  if (common.includes(service)) common.splice(common.indexOf(service), 1);
+}
+
+// Passe un service commun dans l'autre liste ; un enfant qui en était exempté le reste, et ses
+// ajouts devenus redondants disparaissent. Renvoie la liste d'arrivée (null si service inconnu).
+export function moveCommonService(cfg, service) {
+  const from = ["leisure", "on_demand"].find((l) => (cfg[SERVICE_LISTS[l].common] ?? []).includes(service));
+  if (!from) return null;
+  const to = otherList(from);
+  addCommonService(cfg, to, service);
+  for (const kid of cfg.kids ?? []) {
+    const oldRemove = listOf(kid, SERVICE_LISTS[from].remove);
+    if (oldRemove.includes(service)) {
+      oldRemove.splice(oldRemove.indexOf(service), 1);
+      const newRemove = listOf(kid, SERVICE_LISTS[to].remove);
+      if (!newRemove.includes(service)) newRemove.push(service);
+    }
+    const add = listOf(kid, SERVICE_LISTS[to].add);
+    if (add.includes(service)) add.splice(add.indexOf(service), 1);
+  }
+  return to;
+}
+
+// « École · Fin de semaine » : journées ayant un profil propre.
+export function dayLabels(kid) {
+  const days = DAY_TYPES.filter((d) => kid?.profiles && d.value in kid.profiles).map((d) => d.short);
+  return days.length ? days.join(" · ") : "Aucune journée";
+}
+
+const plural = (n, word) => `${n} ${word}${n > 1 ? "s" : ""}`;
+
+// Sous-titre d'un appareil dans la liste : « 2 appareils · 5 intégrations ».
+export function resourceSummary(resource) {
+  if (!hasDevices(resource)) return "Format ancien";
+  const kinds = kindsOf(resource);
+  if (kinds.includes("nintendo")) return "Console Nintendo";
+  if (!kinds.length) return "Aucune intégration";
+  const count = plural(kinds.length, "intégration");
+  return resource.devices.length > 1 ? `${plural(resource.devices.length, "appareil")} · ${count}` : count;
+}
+
+const ENTITY_KINDS = ["media_player", "switch"];
+const DEVICE_DETAILS = { adguard_services: "AdGuard Home", nintendo: "Nintendo" };
+
+// Ligne d'une intégration : ce qui est choisi (`title`, null tant que rien ne l'est), le détail
+// (intégration HA · entité · options) et si l'entité ou l'appareil existe dans HA.
+export function integrationSummary(hass, registry, integ) {
+  if (ENTITY_KINDS.includes(integ.kind)) {
+    const id = integ.entity_id || "";
+    const state = id ? hass?.states?.[id] : null;
+    const entry = id ? hass?.entities?.[id] : null;
+    const platform = entry?.platform ? PLATFORM_LABELS[entry.platform] ?? entry.platform : null;
+    const detail = [platform, id || null, integ.kind === "switch" && integ.turn_on_when_allowed ? "rallumée à l'autorisation" : null]
+      .filter(Boolean).join(" · ");
+    return { title: id ? state?.attributes?.friendly_name || id : null, detail, found: !!state };
+  }
+  const id = integ.device_id || "";
+  const device = id ? (registry ?? []).find((d) => d.id === id) : null;
+  return {
+    title: id ? device?.name_by_user || device?.name || id : null,
+    detail: DEVICE_DETAILS[integ.kind] ?? integ.kind,
+    found: !!device,
+  };
+}
+
+// Couleur d'un enfant utilisable dans un style : #rrggbb seulement.
+export function safeColor(value) {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 }
 
 export function isDirty(original, draft) {
