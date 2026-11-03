@@ -543,7 +543,7 @@ class ParentalEngine:
             if adapter is not None and adapter.inner.nintendo is not None:
                 # Via l'enveloppe : en simulation, rien n'est accordé.
                 await adapter.grant(minutes)
-            elif resource.has(ResourceKind.MEDIA_PLAYER):
+            elif resource.measured:
                 self._decisions.bonuses.append(
                     Bonus(today, minutes, resource_id=resource_id)
                 )

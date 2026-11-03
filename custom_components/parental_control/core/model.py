@@ -33,6 +33,7 @@ class ResourceMode(StrEnum):
 
 class ResourceKind(StrEnum):
     MEDIA_PLAYER = "media_player"
+    SWITCH = "switch"
     ADGUARD = "adguard_services"
     NINTENDO = "nintendo"
 
@@ -111,12 +112,16 @@ class Resource:
         return kind in self.kinds
 
     @property
+    def measured(self) -> bool:
+        """Temps d'usage mesuré par l'appareil lui-même : un lecteur ou un interrupteur allumé."""
+        return self.has(ResourceKind.MEDIA_PLAYER) or self.has(ResourceKind.SWITCH)
+
+    @property
     def kind(self) -> ResourceKind:
-        """Type déduit : Nintendo s'il y en a une, sinon lecteur s'il y en a un, sinon AdGuard."""
-        if self.has(ResourceKind.NINTENDO):
-            return ResourceKind.NINTENDO
-        if self.has(ResourceKind.MEDIA_PLAYER):
-            return ResourceKind.MEDIA_PLAYER
+        """Type déduit : Nintendo, sinon lecteur, sinon interrupteur, sinon AdGuard."""
+        for kind in (ResourceKind.NINTENDO, ResourceKind.MEDIA_PLAYER, ResourceKind.SWITCH):
+            if self.has(kind):
+                return kind
         return ResourceKind.ADGUARD
 
 

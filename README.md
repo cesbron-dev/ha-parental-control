@@ -171,7 +171,7 @@ accepte pas).
 | `bloque` | Tout est bloqué. |
 | `libre` | Tout est autorisé. |
 | `apres_devoirs` | Autorisé seulement après `devoirs_termines` du jour ; sinon statut « en attente des devoirs ». |
-| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seul un appareil avec un lecteur multimédia (`media_player`) a son propre budget, décompté par l'usage réel : son `quota_minutes` pour le type de journée, ou à défaut le quota de temps d'écran le plus généreux des enfants concernés (voir [Appareils logiques](#appareils-logiques)). Illimité seulement si ni l'appareil ni aucun de ces enfants n'a de quota ce jour-là. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
+| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seul un appareil avec un lecteur multimédia (`media_player`) ou un interrupteur (`switch`) a son propre budget, décompté par l'usage réel : son `quota_minutes` pour le type de journée, ou à défaut le quota de temps d'écran le plus généreux des enfants concernés (voir [Appareils logiques](#appareils-logiques)). Illimité seulement si ni l'appareil ni aucun de ces enfants n'a de quota ce jour-là. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
 | `sur_demande` | Bloqué jusqu'à ce qu'un parent ouvre (service `exception` avec `open: true`) ; statut « sur demande ». Pour la Switch, pas d'exception : `ajouter_bonus` avec `resource_id: switch`. |
 
 **Type de journée.** Le calendrier de l'enfant fixe le type via `calendar_map`. Priorité en
@@ -194,7 +194,8 @@ Chaque intégration porte un `kind` :
 
 | `kind` | Clés propres | Remarques |
 |---|---|---|
-| `media_player` | `entity_id` (obligatoire), `notify_service` (optionnel) | Éteinte quand la règle est fermée. Temps d'usage compté, `quota_minutes` applicable. |
+| `media_player` | `entity_id` (obligatoire), `notify_service` (optionnel) | Tout lecteur multimédia, quelle que soit l'intégration (Samsung/SmartThings, Android TV Remote, Google Cast…). Éteint quand la règle est fermée. Temps d'usage compté, `quota_minutes` applicable. Avec Google Cast, l'extinction arrête seulement la diffusion : préférer l'entité Android TV Remote d'une Google TV. |
+| `switch` | `entity_id` (obligatoire, `switch.*`), `turn_on_when_allowed` (optionnel, `false` par défaut) | Prise commandée, écran de PC… Coupé quand la règle est fermée (et recoupé s'il est rallumé). Allumé, il compte comme utilisé : temps d'usage compté, `quota_minutes` applicable. Avec `turn_on_when_allowed: true`, rallumé une fois au passage à « autorisé » ; jamais au démarrage de HA. |
 | `adguard_services` | `device_id` (obligatoire) | Appareil d'un client persistant de l'intégration `adguard_clients`. Le moteur lit l'attribut `services` de son capteur « Services bloqués » et écrit par `adguard_clients.set_blocked_services` (une écriture par décision). Seuls les services de loisirs sont gérés. |
 | `nintendo` | `device_id`, `limit_entity`, `remaining_entity`, `used_entity` | Les quatre sont obligatoires ; les trois entités sont celles de l'intégration Nintendo (limite du jour en `number`, temps restant et utilisé en `sensor`). La limite du jour doit rester à 0 : le temps s'accorde par bonus. |
 
@@ -206,8 +207,8 @@ morceaux. La configuration a donc trois niveaux :
 1. l'**appareil logique** (`resources[]`) : celui des cartes et des règles (enfants concernés,
    quota par type de journée, mode par enfant) ;
 2. ses **appareils physiques** (`devices`) : de simples étiquettes pour ranger, sans règle propre ;
-3. leurs **intégrations** (`integrations`) : un lecteur `media_player`, un client AdGuard, une
-   console Nintendo.
+3. leurs **intégrations** (`integrations`) : un lecteur `media_player`, un interrupteur `switch`,
+   un client AdGuard, une console Nintendo.
 
 Exemple : la Télé, avec la Samsung (lecteur et client AdGuard) et la Google TV (lecteur et deux
 clients AdGuard, un en local et un par le VPN).
@@ -323,7 +324,7 @@ administrateur doit le passer dans le champ `code` pour les actions qui débloqu
 Précisions :
 
 - `ajouter_bonus` sur un `kid_id` ajoute des minutes au quota de l'enfant du jour ; sur une
-  `resource_id` de type `media_player`, au quota de la ressource ; sur une ressource
+  `resource_id` avec un lecteur ou un interrupteur, au quota de la ressource ; sur une ressource
   `nintendo`, accorde du temps de jeu à la console. Pas de bonus pour AdGuard.
 - `exception` sans `service` exige un `resource_id` (cible précise). Avec `service`, la cible
   est un service AdGuard, pour une ressource, pour toutes les ressources d'un enfant ou pour
@@ -342,7 +343,7 @@ Chaque enfant, chaque ressource et la pause générale sont des appareils (type 
 | `sensor` Statut, par enfant | États : `autorise`, `bloque`, `attente_devoirs`, `attente_minuteur`, `quota_epuise`, `sur_demande`, `pause`. Les détails de l'instantané (type de journée, segment, fin de plage, temps restant, exceptions) sont en attributs. |
 | `button` Devoirs terminés, par enfant | Équivaut au service `devoirs_termines`, pour un administrateur seulement : un bouton ne transmet pas de code, il est donc refusé à un non-administrateur (utiliser le service avec `code`). |
 | `binary_sensor` Autorisée, par ressource | Ouverte selon la règle. Pour AdGuard, les services bloqués sont en attribut. |
-| `sensor` Temps utilisé / Temps restant, par ressource | Minutes, seulement pour les ressources `media_player` et `nintendo`. |
+| `sensor` Temps utilisé / Temps restant, par ressource | Minutes, seulement pour les appareils avec un lecteur, un interrupteur ou une console Nintendo. |
 | `switch` Pause générale | Ferme toutes les ressources (sur AdGuard, les services de loisirs) et remet la limite du jour Nintendo à 0. N'importe qui peut la poser ; l'éteindre est refusé à un non-administrateur (pas de code possible sur un interrupteur : utiliser le service `pause` avec `code`). |
 
 Les identifiants d'entités sont ceux que Home Assistant génère à partir des noms (par

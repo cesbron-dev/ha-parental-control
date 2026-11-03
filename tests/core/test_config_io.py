@@ -1,4 +1,5 @@
 import copy
+import re
 from datetime import time
 
 import pytest
@@ -260,3 +261,29 @@ def test_unsupported_version_rejected():
     d["version"] = 3
     with pytest.raises(ConfigError, match=r"^version : version non prise en charge : 3"):
         parse_config(d)
+
+
+def _with_switch(integration: dict) -> dict:
+    d = dump_config(parse_config(EX))
+    d["resources"].append({"id": "pc", "name": "PC", "owners": ["gabin"], "quota_minutes": {},
+                           "devices": [{"name": "Prise", "integrations": [integration]}]})
+    return d
+
+
+def test_switch_integration_parsed_and_counted() -> None:
+    cfg = parse_config(_with_switch({"kind": "switch", "entity_id": "switch.prise_pc",
+                                     "turn_on_when_allowed": True}))
+    pc = cfg.resource("pc")
+    assert pc.kind is ResourceKind.SWITCH
+    assert pc.measured
+    assert pc.integrations[0].options["turn_on_when_allowed"] is True
+    assert parse_config(dump_config(cfg)) == cfg
+
+
+def test_switch_integration_validation() -> None:
+    path = "resources[3].devices[0].integrations[0]"
+    with pytest.raises(ConfigError, match=re.escape(f"{path}.entity_id : entité switch.* attendue")):
+        parse_config(_with_switch({"kind": "switch", "entity_id": "light.lampe"}))
+    with pytest.raises(ConfigError, match=re.escape(f"{path}.turn_on_when_allowed : booléen attendu")):
+        parse_config(_with_switch({"kind": "switch", "entity_id": "switch.x",
+                                   "turn_on_when_allowed": "oui"}))

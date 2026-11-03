@@ -39,7 +39,7 @@ class CompositeAdapter:
         return list(dict.fromkeys(e for m in self.members for e in m.entity_ids()))
 
     def in_use(self) -> bool:
-        # seuls les lecteurs savent dire s'ils sont utilisés
+        # seuls les lecteurs et les interrupteurs savent dire s'ils sont utilisés
         return any(m.in_use() for m in self.members)
 
     def drifted(self, desired: ResourceState) -> bool:

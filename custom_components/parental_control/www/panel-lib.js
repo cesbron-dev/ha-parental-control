@@ -21,10 +21,36 @@ export const MODES = [
   { value: "libre", label: "Libre" },
 ];
 export const KINDS = [
-  { value: "media_player", label: "Télé (lecteur multimédia)", options: ["entity_id"] },
+  { value: "media_player", label: "Lecteur multimédia (télé, Google TV, Chromecast…)", options: ["entity_id"] },
+  { value: "switch", label: "Interrupteur (prise, écran de PC…)", options: ["entity_id"] },
   { value: "adguard_services", label: "Client AdGuard", options: ["device_id"] },
   { value: "nintendo", label: "Console Nintendo", options: ["device_id", "limit_entity", "remaining_entity", "used_entity"] },
 ];
+
+// Noms lisibles des intégrations HA les plus courantes ; les autres gardent leur identifiant.
+const PLATFORM_LABELS = {
+  androidtv_remote: "Android TV Remote", androidtv: "Android TV", cast: "Google Cast",
+  samsungtv: "Samsung TV", smartthings: "SmartThings", webostv: "LG webOS", braviatv: "Sony Bravia",
+  apple_tv: "Apple TV", roku: "Roku", shelly: "Shelly", tplink: "TP-Link", tuya: "Tuya",
+  zha: "Zigbee (ZHA)", mqtt: "MQTT", esphome: "ESPHome", hue: "Philips Hue", template: "Modèle",
+};
+
+// Entités d'un domaine (« media_player », « switch ») pour une liste de choix : libellé
+// « nom de l'appareil — intégration », trié ; l'appareil manque si l'entité n'en a pas.
+export function entityChoices(hass, domain) {
+  const prefix = `${domain}.`;
+  return Object.keys(hass?.states ?? {})
+    .filter((id) => id.startsWith(prefix))
+    .map((id) => {
+      const entry = hass.entities?.[id];
+      const device = entry?.device_id ? hass.devices?.[entry.device_id] : null;
+      const name = hass.states[id].attributes?.friendly_name
+        || device?.name_by_user || device?.name || id;
+      const platform = entry?.platform ? PLATFORM_LABELS[entry.platform] ?? entry.platform : null;
+      return { value: id, label: platform ? `${name} — ${platform}` : name };
+    })
+    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+}
 
 const BLOCKED_DAY = () => ({ segments: [{ start: "00:00", type: "bloque" }] });
 const clone = (v) => JSON.parse(JSON.stringify(v));
