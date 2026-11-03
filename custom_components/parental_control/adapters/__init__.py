@@ -18,7 +18,8 @@ __all__ = ["Adapter", "CompositeAdapter", "build_adapter"]
 def build_adapter(
     hass: HomeAssistant, resource: Resource, leisure: frozenset[str]
 ) -> CompositeAdapter:
-    """Composite de la ressource, un membre par intégration ; `leisure` ne sert qu'à AdGuard."""
+    """Composite de la ressource, un membre par intégration ; `leisure` (services gérés :
+    loisirs et services sur demande) ne sert qu'à AdGuard."""
     return CompositeAdapter(
         resource,
         [

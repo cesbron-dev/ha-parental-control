@@ -1246,3 +1246,22 @@ async def test_leaving_simulation_cuts_switch_in_closed_period(hass, freezer, se
     assert services.of("switch", "turn_off") == []
     await engine.set_simulation(False)
     assert services.entities("switch", "turn_off") == [PC]
+
+
+async def test_on_demand_service_blocked_on_adguard_in_free_window(hass, freezer, services) -> None:
+    """YouTube sur demande : bloqué sur le client AdGuard même en plage libre, débloqué par une
+    autorisation, rebloqué à son échéance."""
+    from custom_components.parental_control.core.config_io import dump_config
+
+    cfg = dump_config(parse_config(config_for(services)))
+    cfg["default_on_demand"] = ["youtube"]
+    await ParentalStore(hass).save_config(parse_config(cfg))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    services.adguard.set_blocked([])
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 40), entry=entry)
+    assert services.adguard.blocked == ["youtube"]
+    await engine.add_exception(Target(resource_id="iphone_hugo", service="youtube"), True, 10)
+    assert services.adguard.blocked == []
+    await tick(hass, freezer, 11)
+    assert services.adguard.blocked == ["youtube"]

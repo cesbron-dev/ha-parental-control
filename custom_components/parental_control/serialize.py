@@ -101,6 +101,7 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "icon": resource.icon,
             "owners": list(resource.owners),
             "leisure": sorted(cfg.leisure_for_resource(resource_id)),
+            "on_demand": sorted(cfg.on_demand_for_resource(resource_id)),
         }
         for integration in resource.integrations:
             if integration.kind is ResourceKind.NINTENDO:

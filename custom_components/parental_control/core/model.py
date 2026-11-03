@@ -64,6 +64,8 @@ class Kid:
     resource_modes: Mapping[str, ResourceMode]
     leisure_add: frozenset[str]
     leisure_remove: frozenset[str]
+    on_demand_add: frozenset[str] = frozenset()
+    on_demand_remove: frozenset[str] = frozenset()
 
     def profile_for(self, day: DayType) -> Profile:
         """Profil du jour ; congé pédagogique et vacances se replient sur la fin de semaine."""
@@ -132,6 +134,8 @@ class Config:
     default_leisure: tuple[str, ...]
     calendar_map: Mapping[str, DayType]
     notify: tuple[str, ...]
+    # Services « sur demande » : toujours bloqués, sauf autorisation explicite (exception).
+    default_on_demand: tuple[str, ...] = ()
 
     def kid(self, kid_id: str) -> Kid:
         for kid in self.kids:
@@ -155,3 +159,19 @@ class Config:
         for owner in self.resource(resource_id).owners:
             result |= self.leisure_for(owner)
         return result
+
+    def on_demand_for(self, kid_id: str) -> frozenset[str]:
+        kid = self.kid(kid_id)
+        return (frozenset(self.default_on_demand) | kid.on_demand_add) - kid.on_demand_remove
+
+    def on_demand_for_resource(self, resource_id: str) -> frozenset[str]:
+        """Union des services sur demande des propriétaires : un appareil partagé bloque le
+        service dès qu'il est sur demande pour l'un d'eux."""
+        result: frozenset[str] = frozenset()
+        for owner in self.resource(resource_id).owners:
+            result |= self.on_demand_for(owner)
+        return result
+
+    def managed_services_for_resource(self, resource_id: str) -> frozenset[str]:
+        """Services que le moteur bloque ou débloque sur les clients AdGuard de la ressource."""
+        return self.leisure_for_resource(resource_id) | self.on_demand_for_resource(resource_id)

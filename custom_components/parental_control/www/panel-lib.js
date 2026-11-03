@@ -94,7 +94,7 @@ export function setPath(obj, path, value) {
 // Brouillon d'une nouvelle installation (aucune config enregistrée) : au format v2, celui que
 // produisent `addResource`/`addIntegration`.
 export function emptyConfig() {
-  return { version: 2, default_leisure: [], calendar_map: {}, notify: [], kids: [], resources: [] };
+  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], kids: [], resources: [] };
 }
 
 // Ressource au format v2 (appareils physiques) ? Une ressource v1 collée dans l'onglet JSON n'en
@@ -110,7 +110,7 @@ export function addKid(cfg, name) {
     : { ecole: BLOCKED_DAY(), fin_de_semaine: BLOCKED_DAY() };
   const kid = {
     id, name: name || id, emoji: null, color: null, calendar: null,
-    leisure_add: [], leisure_remove: [], resource_modes: {}, profiles,
+    leisure_add: [], leisure_remove: [], on_demand_add: [], on_demand_remove: [], resource_modes: {}, profiles,
   };
   cfg.kids.push(kid);
   return kid;

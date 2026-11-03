@@ -245,7 +245,7 @@ class ParentalEngine:
             try:
                 self._adapters[resource.id] = SimulatedAdapter(
                     build_adapter(
-                        self._hass, resource, cfg.leisure_for_resource(resource.id)
+                        self._hass, resource, cfg.managed_services_for_resource(resource.id)
                     ),
                     lambda: self._decisions.simulation,
                     self._record_simulation,
