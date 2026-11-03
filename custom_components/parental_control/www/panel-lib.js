@@ -154,10 +154,15 @@ export function removeIntegration(device, index) {
   device.integrations.splice(index, 1);
 }
 
-const kindsOf = (resource) => resource.devices.flatMap((d) => d.integrations.map((i) => i.kind));
+// Une ressource v1 (collée dans l'onglet JSON) n'a pas d'appareils : son seul type est `kind`.
+const kindsOf = (resource) => (hasDevices(resource)
+  ? resource.devices.flatMap((d) => d.integrations?.map((i) => i.kind) ?? [])
+  : resource?.kind ? [resource.kind] : []);
 
-// Types ajoutables à la ressource : une Nintendo doit rester seule dans sa ressource.
+// Types ajoutables à la ressource : une Nintendo doit rester seule dans sa ressource ; rien dans une
+// ressource v1 (le moteur la convertit à l'enregistrement).
 export function integrationKindsAllowed(resource) {
+  if (!hasDevices(resource)) return [];
   const kinds = kindsOf(resource);
   if (kinds.includes("nintendo")) return [];
   const all = KINDS.map((k) => k.value);
@@ -169,7 +174,7 @@ export function integrationKindsAllowed(resource) {
 export function moveDevice(cfg, fromIndex, deviceIndex, toIndex) {
   const source = cfg.resources[fromIndex];
   const target = cfg.resources[toIndex];
-  if (!source || !target || fromIndex === toIndex) return null;
+  if (!hasDevices(source) || !hasDevices(target) || fromIndex === toIndex) return null;
   const [device] = source.devices.splice(deviceIndex, 1);
   if (!device) return null;
   target.devices.push(device);
@@ -180,13 +185,14 @@ export function moveDevice(cfg, fromIndex, deviceIndex, toIndex) {
 
 // Index des ressources où l'appareil physique peut aller sans casser la règle « une Nintendo reste
 // seule » : un appareil avec Nintendo ne va que dans une ressource sans intégration, les autres
-// jamais dans une ressource Nintendo.
+// jamais dans une ressource Nintendo ; jamais vers ni depuis une ressource v1.
 export function moveTargets(cfg, fromIndex, deviceIndex) {
-  const device = cfg.resources[fromIndex]?.devices[deviceIndex];
+  const source = cfg.resources[fromIndex];
+  const device = hasDevices(source) ? source.devices[deviceIndex] : null;
   if (!device) return [];
-  const nintendo = device.integrations.some((i) => i.kind === "nintendo");
+  const nintendo = (device.integrations ?? []).some((i) => i.kind === "nintendo");
   return cfg.resources.flatMap((r, i) => {
-    if (i === fromIndex) return [];
+    if (i === fromIndex || !hasDevices(r)) return [];
     const kinds = kindsOf(r);
     return (nintendo ? !kinds.length : !kinds.includes("nintendo")) ? [i] : [];
   });
@@ -352,20 +358,30 @@ export function addKidService(cfg, kid, list, value) {
   return service;
 }
 
-// Ajout à une liste commune ; un service n'est que dans une des deux (il quitte l'autre).
+const dropValue = (list, value) => {
+  if (list.includes(value)) list.splice(list.indexOf(value), 1);
+};
+
+// Ajout à une liste commune ; un service n'est que dans une des deux : s'il est dans l'autre, il
+// passe de l'une à l'autre avec les exemptions des enfants (moveCommonService).
 export function addCommonService(cfg, list, value) {
   const service = serviceName(value);
   if (!service) return null;
-  const target = listOf(cfg, SERVICE_LISTS[list].common);
-  const other = listOf(cfg, SERVICE_LISTS[otherList(list)].common);
-  if (other.includes(service)) other.splice(other.indexOf(service), 1);
-  if (!target.includes(service)) target.push(service);
+  if ((cfg[SERVICE_LISTS[otherList(list)].common] ?? []).includes(service)) moveCommonService(cfg, service);
+  else {
+    const target = listOf(cfg, SERVICE_LISTS[list].common);
+    if (!target.includes(service)) target.push(service);
+  }
   return service;
 }
 
+// Retire un service commun ; les exemptions des enfants pour ce service n'ont plus d'objet (et
+// exempteraient en silence s'il revenait dans la liste) : retirées aussi.
 export function removeCommonService(cfg, list, service) {
-  const common = listOf(cfg, SERVICE_LISTS[list].common);
-  if (common.includes(service)) common.splice(common.indexOf(service), 1);
+  dropValue(listOf(cfg, SERVICE_LISTS[list].common), service);
+  for (const kid of cfg.kids ?? []) {
+    if (Array.isArray(kid[SERVICE_LISTS[list].remove])) dropValue(kid[SERVICE_LISTS[list].remove], service);
+  }
 }
 
 // Passe un service commun dans l'autre liste ; un enfant qui en était exempté le reste, et ses
@@ -374,7 +390,9 @@ export function moveCommonService(cfg, service) {
   const from = ["leisure", "on_demand"].find((l) => (cfg[SERVICE_LISTS[l].common] ?? []).includes(service));
   if (!from) return null;
   const to = otherList(from);
-  addCommonService(cfg, to, service);
+  dropValue(listOf(cfg, SERVICE_LISTS[from].common), service);
+  const target = listOf(cfg, SERVICE_LISTS[to].common);
+  if (!target.includes(service)) target.push(service);
   for (const kid of cfg.kids ?? []) {
     const oldRemove = listOf(kid, SERVICE_LISTS[from].remove);
     if (oldRemove.includes(service)) {
@@ -433,6 +451,11 @@ export function integrationSummary(hass, registry, integ) {
 // Couleur d'un enfant utilisable dans un style : #rrggbb seulement.
 export function safeColor(value) {
   return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value) ? value : null;
+}
+
+// Nom d'icône Home Assistant (« mdi:television ») : tout autre texte n'est pas enregistré.
+export function isIconName(value) {
+  return typeof value === "string" && /^[a-z0-9-]+:[a-z0-9-]+$/.test(value);
 }
 
 export function isDirty(original, draft) {

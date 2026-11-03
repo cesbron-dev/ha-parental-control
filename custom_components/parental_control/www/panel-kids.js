@@ -1,7 +1,7 @@
 // Onglet « Enfants » du panneau Règles : méthodes ajoutées au panneau (`this` = le panneau).
 import { esc } from "./lib.js";
 import * as L from "./panel-lib.js";
-import { SEGMENT_COLORS, KID_COLORS, opt } from "./panel-style.js";
+import { SEGMENT_COLORS, KID_COLORS, opt, pick } from "./panel-style.js";
 
 const RULER = [0, 3, 6, 9, 12, 15, 18, 21, 24];
 const NARROW = 6; // % de la journée sous lequel une plage n'affiche pas son texte (info-bulle seulement)
@@ -105,18 +105,20 @@ export const kidsView = {
   _timeline(segments, pp) {
     const blocks = L.timelineBlocks(segments);
     const label = (type) => L.SEGMENT_TYPES.find((t) => t.value === type)?.label ?? type;
-    const html = blocks.map((b) => `<div class="b" style="left:${b.left}%;width:${b.width}%;background:${SEGMENT_COLORS[b.type] ?? "#666"}"
+    const html = blocks.map((b) => `<div class="b" style="left:${b.left}%;width:${b.width}%;background:${pick(SEGMENT_COLORS, b.type, "#666")}"
         title="${esc(label(b.type))} ${b.start} – ${b.end}">${b.width < NARROW ? "" : `<strong>${esc(label(b.type))}</strong><small>${b.start} – ${b.end}</small>`}</div>`).join("");
     const handles = blocks.filter((b) => b.index > 0).map((b) => {
-      const movable = !!L.segmentBounds(segments, b.index);
-      return `<span class="h ${movable ? "" : "fixed"}" style="left:${b.left}%" data-handle="${b.index}" data-pp="${pp}"
-        ${movable ? `tabindex="0" role="slider" aria-label="Début de la plage ${b.index + 1}" aria-valuetext="${b.start}"` : ""}></span>`;
+      const bounds = L.segmentBounds(segments, b.index);
+      const [hh, mm] = b.start.split(":").map(Number);
+      const aria = bounds ? `tabindex="0" role="slider" aria-label="Début de la plage ${b.index + 1}" aria-valuemin="${bounds.min}"
+        aria-valuemax="${bounds.max}" aria-valuenow="${hh * 60 + mm}" aria-valuetext="${b.start}"` : "";
+      return `<span class="h ${bounds ? "" : "fixed"}" style="left:${b.left}%" data-handle="${b.index}" data-pp="${pp}" ${aria}></span>`;
     }).join("");
     return `<div class="blocks">${html}</div>${handles}`;
   },
 
   _segRow(s, i, pp, day) {
-    const color = SEGMENT_COLORS[s.type] ?? "#666";
+    const color = pick(SEGMENT_COLORS, s.type, "#666");
     const time = i === 0
       ? `<span class="t0">00:00</span>`
       : `<input type="time" step="60" data-path="${pp}.segments.${i}.start" value="${esc(s.start)}">`;
@@ -132,19 +134,24 @@ export const kidsView = {
   // Carte « Services » : loisirs et services sur demande, pastilles communes puis ajouts de l'enfant.
   _servicesCard(kid) {
     const groups = ["leisure", "on_demand"].map((list) => {
-      const chips = L.serviceChips(this._draft, kid, list).map((c) => {
-        const title = c.common
-          ? c.removed ? `Liste commune : rétablir pour ${kid.name}` : `Liste commune : autoriser pour ${kid.name}`
-          : `Propre à ${kid.name} : retirer`;
-        return `<button type="button" class="pill ${c.removed ? "off" : ""} ${c.common ? "" : "own"}" data-act="kid-svc" data-list="${list}" data-arg="${esc(c.service)}" title="${esc(title)}">
-          ${esc(c.service)}${c.common ? "" : `<span class="x">✕</span>`}</button>`;
-      }).join("");
       const [title, sub] = LIST_TITLES[list];
       return `<div class="group"><h3>${title} <span class="mut">(${sub})</span></h3>
-        <div class="lz">${chips}<input class="pill-in" data-input="kid-svc-${list}" data-enter="add-kid-svc" data-list="${list}" placeholder="+ Ajouter" title="Service AdGuard (ex. fortnite), puis Entrée"></div></div>`;
+        <div class="lz" data-chips="kid:${list}">${this._kidChips(kid, list)}</div></div>`;
     }).join("");
     return `<div class="card"><h2>Services</h2>${groups}
       <div class="mut help">Barré : autorisé pour ${esc(kid.name)} malgré la liste commune. En bleu : ajouté pour ${esc(kid.name)} seulement.</div></div>`;
+  },
+
+  // Pastilles d'une liste pour l'enfant, puis le champ « + Ajouter » (redessinées sur place après un ajout).
+  _kidChips(kid, list) {
+    const chips = L.serviceChips(this._draft, kid, list).map((c) => {
+      const title = c.common
+        ? c.removed ? `Liste commune : rétablir pour ${kid.name}` : `Liste commune : autoriser pour ${kid.name}`
+        : `Propre à ${kid.name} : retirer`;
+      return `<button type="button" class="pill ${c.removed ? "off" : ""} ${c.common ? "" : "own"}" data-act="kid-svc" data-list="${list}" data-arg="${esc(c.service)}" title="${esc(title)}">
+        ${esc(c.service)}${c.common ? "" : `<span class="x">✕</span>`}</button>`;
+    }).join("");
+    return `${chips}<input class="pill-in" data-input="kid-svc-${list}" data-enter="add-kid-svc" data-list="${list}" placeholder="+ Ajouter" title="Service AdGuard (ex. fortnite)">`;
   },
 
   // Carte « Règle par appareil » : contrôle segmenté par appareil de l'enfant.
@@ -153,7 +160,7 @@ export const kidsView = {
     const rows = owned.map((r) => {
       const current = kid.resource_modes[r.id] ?? "suit_frise";
       return `<div class="mode"><span class="nm"><ha-icon icon="${esc(r.icon || this._resIcon(r))}"></ha-icon><span>${esc(r.name)}</span></span>
-        <span class="seg">${L.MODES.map((m) => `<button type="button" class="${m.value === current ? "on" : ""}" data-act="set-mode" data-arg="${m.value}" data-res="${esc(r.id)}" title="${esc(m.label)}">${MODE_SHORT[m.value] ?? esc(m.label)}</button>`).join("")}</span></div>`;
+        <span class="seg">${L.MODES.map((m) => `<button type="button" class="${m.value === current ? "on" : ""}" data-act="set-mode" data-arg="${m.value}" data-res="${esc(r.id)}" title="${esc(m.label)}">${esc(pick(MODE_SHORT, m.value, m.label))}</button>`).join("")}</span></div>`;
     }).join("");
     return `<div class="card"><h2>Règle par appareil</h2>
       ${rows ? `<div class="modes">${rows}</div>` : `<div class="mut">Aucun appareil : cochez cet enfant dans l'onglet Appareils.</div>`}</div>`;

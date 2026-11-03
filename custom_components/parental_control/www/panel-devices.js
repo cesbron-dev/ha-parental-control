@@ -1,7 +1,7 @@
 // Onglet « Appareils » du panneau Règles : méthodes ajoutées au panneau (`this` = le panneau).
 import { esc } from "./lib.js";
 import * as L from "./panel-lib.js";
-import { opt } from "./panel-style.js";
+import { opt, pick } from "./panel-style.js";
 
 const NINTENDO_DOMAIN = "nintendo_parental_controls";
 const ADGUARD_DOMAIN = "adguard_clients";
@@ -15,7 +15,7 @@ export const devicesView = {
   _resIcon(res) {
     const kinds = L.hasDevices(res) ? res.devices.flatMap((dev) => dev.integrations.map((i) => i.kind)) : [res.kind];
     const kind = ["nintendo", "media_player", "switch", "adguard_services"].find((k) => kinds.includes(k));
-    return KIND_ICONS[kind] ?? "mdi:shield-account";
+    return pick(KIND_ICONS, kind, "mdi:shield-account");
   },
 
   _resItem(i) {
@@ -57,7 +57,7 @@ export const devicesView = {
         <label class="field"><span>Identifiant${editable ? " (modifiable jusqu'à l'enregistrement)" : " (figé)"}</span>
           <input value="${esc(res.id)}" ${editable ? `data-rename="res:${esc(res.id)}"` : "readonly"}></label>
         <label class="field"><span>Icône</span><span class="icon-field">
-          <input data-path="${p}.icon" value="${esc(res.icon ?? "")}" placeholder="${esc(this._resIcon(res))}">
+          <input data-path="${p}.icon" value="${esc(res.icon ?? "")}" placeholder="${esc(this._resIcon(res))}" title="Icône Home Assistant, ex. mdi:television">
           <span class="preview"><ha-icon icon="${esc(res.icon || this._resIcon(res))}" data-icon-of="${p}"></ha-icon></span></span></label>
         ${this._btn("del-res", "Supprimer cet appareil", { cls: "link danger", icon: "mdi:delete-outline", confirmKey: `del-res:${res.id}` })}
       </div>` : "";
@@ -115,7 +115,7 @@ export const devicesView = {
     const key = `${j}:${k}`;
     const open = this._edit === key;
     const s = L.integrationSummary(this._hass, this._devices, integ);
-    const kind = KIND_SHORT[integ.kind] ?? L.KINDS.find((x) => x.value === integ.kind)?.label ?? integ.kind;
+    const kind = pick(KIND_SHORT, integ.kind, null) ?? L.KINDS.find((x) => x.value === integ.kind)?.label ?? integ.kind;
     const what = s.title
       ? `<span class="ent">${esc(s.title)}${s.detail ? `<small>${esc(s.detail)}</small>` : ""}</span>`
       : `<span class="ent none">À choisir${s.detail ? `<small>${esc(s.detail)}</small>` : ""}</span>`;
@@ -124,7 +124,7 @@ export const devicesView = {
           ${this._btn("del-integ", "Retirer cette intégration", { arg: key, cls: "quiet danger", icon: "mdi:delete-outline", confirmKey: `del-integ:${res.id}:${key}` })}</div>
       </div>` : "";
     return `<div class="ir ${open ? "open" : ""}" data-act="edit-integ" data-arg="${key}" title="${open ? "Fermer" : "Modifier"}">
-        <ha-icon icon="${INTEGRATION_ICONS[integ.kind] ?? "mdi:puzzle"}"></ha-icon>
+        <ha-icon icon="${pick(INTEGRATION_ICONS, integ.kind, "mdi:puzzle")}"></ha-icon>
         <span class="ty">${esc(kind)}</span>${what}${this._dot(s.found, p)}
         <button type="button" class="icon-btn" data-act="edit-integ" data-arg="${key}" title="Modifier"><ha-icon icon="mdi:dots-vertical"></ha-icon></button>
       </div>${edit}`;

@@ -59,6 +59,13 @@ class ParentalControlPanel extends HTMLElement {
     this.shadowRoot.addEventListener("pointermove", (ev) => this._dragMove(ev));
     this.shadowRoot.addEventListener("pointerup", (ev) => this._dragEnd(ev));
     this.shadowRoot.addEventListener("pointercancel", (ev) => this._dragEnd(ev));
+    // Capture perdue (frise redessinée, fenêtre quittée…) : le glissement s'arrête.
+    this.shadowRoot.addEventListener("lostpointercapture", (ev) => this._dragEnd(ev));
+    // Choix dans une liste proposée (datalist) d'une pastille « + Ajouter » : ajouté tout de suite.
+    this.shadowRoot.addEventListener("input", (ev) => {
+      const el = ev.target;
+      if (el.classList?.contains("pill-in") && ev.inputType === "insertReplacementText") this._act(el.dataset.enter, el);
+    });
     this._beforeUnload = (ev) => {
       if (this._dirty()) ev.preventDefault();
     };
@@ -202,7 +209,7 @@ class ParentalControlPanel extends HTMLElement {
     const list = el.dataset.list;
     switch (action) {
       case "tab": this._tab = arg; this._closeAll(); break;
-      case "save": this._save(); return;
+      case "save": this._commitPending(); this._save(); return;
       case "revert": if (!this._confirm("revert")) return; this._load(); return;
       case "kid": this._kid = Number(arg); this._closeAll(); break;
       case "res": this._res = Number(arg); this._closeAll(); break;
@@ -245,9 +252,9 @@ class ParentalControlPanel extends HTMLElement {
       }
       case "set-mode": L.setMode(kid, el.dataset.res, arg); break;
       case "kid-svc": L.toggleKidService(d, kid, list, arg); break;
-      case "add-kid-svc":
-        if (!L.addKidService(d, kid, list, this._input(`kid-svc-${list}`))) return;
-        this._focus = `[data-input="kid-svc-${list}"]`; // pour en ajouter plusieurs d'affilée
+      case "add-kid-svc": case "add-common": case "add-notify":
+        if (!this._commitPill(el)) return;
+        this._focus = `[data-input="${el.dataset.input}"]`; // pour en ajouter plusieurs d'affilée
         break;
       case "toggle-owner": L.toggleOwner(res, arg); break;
       case "add-dev": {
@@ -267,22 +274,12 @@ class ParentalControlPanel extends HTMLElement {
       }
       case "del-common": L.removeCommonService(d, list, arg); break;
       case "move-common": L.moveCommonService(d, arg); break;
-      case "add-common":
-        if (!L.addCommonService(d, list, this._input(`common-${list}`))) return;
-        this._focus = `[data-input="common-${list}"]`;
-        break;
       case "add-cal": {
         const word = this._input("cal-word");
         if (word) d.calendar_map[word] = this.shadowRoot.querySelector('[data-input="cal-day"]').value;
         break;
       }
       case "del-cal": delete d.calendar_map[arg]; break;
-      case "add-notify": {
-        const v = this._input("notify");
-        if (v && !d.notify.includes(v)) d.notify.push(v);
-        this._focus = '[data-input="notify"]';
-        break;
-      }
       case "del-notify": L.toggleListValue(d.notify, arg); break;
       case "apply-json": {
         const text = this.shadowRoot.querySelector("textarea").value;
@@ -299,6 +296,40 @@ class ParentalControlPanel extends HTMLElement {
     this._render();
   }
 
+  // Pastille « + Ajouter » : écrit la valeur saisie dans le brouillon et vide le champ ; faux si
+  // rien à ajouter. Sert pour Entrée, la sortie du champ, un choix proposé et Enregistrer.
+  _commitPill(el) {
+    const d = this._draft;
+    const value = (el.value ?? "").trim();
+    if (!d || !value) return false;
+    el.value = "";
+    const list = el.dataset.list;
+    switch (el.dataset.enter) {
+      case "add-kid-svc": return !!d.kids[this._kid] && !!L.addKidService(d, d.kids[this._kid], list, value);
+      case "add-common": return !!L.addCommonService(d, list, value);
+      case "add-notify":
+        if (!d.notify.includes(value)) d.notify.push(value);
+        return true;
+      default: return false;
+    }
+  }
+
+  // Avant d'enregistrer : une saisie laissée dans une pastille « + Ajouter » compte.
+  _commitPending() {
+    for (const el of this.shadowRoot.querySelectorAll("input.pill-in")) this._commitPill(el);
+  }
+
+  // Redessine sur place les groupes de pastilles (le reste de la page, et le clic en cours, intacts).
+  _refreshChips() {
+    const kid = this._draft.kids[this._kid];
+    for (const el of this.shadowRoot.querySelectorAll("[data-chips]")) {
+      const [kind, list] = el.dataset.chips.split(":");
+      if (kind === "kid" && kid) el.innerHTML = this._kidChips(kid, list);
+      else if (kind === "common") el.innerHTML = this._commonChips(list);
+      else if (kind === "notify") el.innerHTML = this._notifyChips();
+    }
+  }
+
   // Changement d'enfant, d'appareil ou d'onglet : formulaires, menus et éditions repliés.
   _closeAll() {
     this._adding = null;
@@ -308,6 +339,27 @@ class ParentalControlPanel extends HTMLElement {
 
   _onChange(ev) {
     const el = ev.target;
+    if (el.classList.contains("pill-in")) {
+      // Sortie du champ sans Entrée : la valeur est ajoutée, sans tout redessiner (le clic qui a fait
+      // sortir du champ doit encore arriver sur son bouton).
+      if (this._commitPill(el)) {
+        this._refreshChips();
+        this._renderHeader();
+      }
+      return;
+    }
+    if (/^resources\.\d+\.icon$/.test(el.dataset.path ?? "")) {
+      // Icône : « jeu:nom » ou vide ; sinon champ signalé, rien d'enregistré, aperçu inchangé.
+      const value = el.value.trim();
+      const valid = !value || L.isIconName(value);
+      if (!valid) {
+        el.setAttribute("aria-invalid", "true");
+        el.title = "Icône attendue sous la forme mdi:nom (ex. mdi:television)";
+        return;
+      }
+      el.removeAttribute("aria-invalid");
+      el.value = value;
+    }
     if (el.dataset.calday !== undefined) {
       this._draft.calendar_map[el.dataset.calday] = el.value;
     } else if (el.dataset.move) {
@@ -375,7 +427,7 @@ class ParentalControlPanel extends HTMLElement {
     const tl = h.closest(".tl");
     ev.preventDefault();
     h.focus?.();
-    this._drag = { pp: h.dataset.pp, index: Number(h.dataset.handle), tl, pointer: ev.pointerId };
+    this._drag = { pp: h.dataset.pp, index: Number(h.dataset.handle), tl, pointer: ev.pointerId, x: ev.clientX, moved: false };
     try {
       tl.setPointerCapture(ev.pointerId); // suit le pointeur même hors de la frise
     } catch {
@@ -387,6 +439,13 @@ class ParentalControlPanel extends HTMLElement {
   _dragMove(ev) {
     const drag = this._drag;
     if (!drag || ev.pointerId !== drag.pointer) return;
+    if (!drag.tl.isConnected) {
+      this._drag = null; // frise redessinée entre-temps : glissement abandonné
+      return;
+    }
+    // Un simple clic ne change pas l'heure : il faut avoir glissé de quelques pixels.
+    if (!drag.moved && Math.abs(ev.clientX - drag.x) < 3) return;
+    drag.moved = true;
     const segments = getPath(this._draft, drag.pp)?.segments;
     const rect = drag.tl.getBoundingClientRect();
     if (!segments || !rect.width) return;
@@ -396,23 +455,31 @@ class ParentalControlPanel extends HTMLElement {
   }
 
   _dragEnd(ev) {
-    if (!this._drag || ev.pointerId !== this._drag.pointer) return;
+    const drag = this._drag;
+    if (!drag || ev.pointerId !== drag.pointer) return;
     this._drag = null;
-    this._render();
+    drag.tl.classList.remove("dragging");
+    if (drag.moved && drag.tl.isConnected) this._render();
   }
 
-  // Clavier sur une poignée : flèches = ±5 min.
+  // Clavier sur une poignée : flèches = ±5 min, Début/Fin = bornes permises par les voisines.
   _handleKey(ev) {
-    const step = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[ev.key];
-    if (!step) return;
-    ev.preventDefault();
     const h = ev.target;
     const pp = h.dataset.pp;
     const index = Number(h.dataset.handle);
     const segments = getPath(this._draft, pp)?.segments;
-    if (!segments) return;
+    const bounds = segments && L.segmentBounds(segments, index);
+    if (!bounds) return;
     const [hh, mm] = segments[index].start.split(":").map(Number);
-    L.setSegmentStart(segments, index, hh * 60 + mm + step * L.SNAP_MINUTES);
+    const now = hh * 60 + mm;
+    const target = {
+      ArrowLeft: now - L.SNAP_MINUTES, ArrowDown: now - L.SNAP_MINUTES,
+      ArrowRight: now + L.SNAP_MINUTES, ArrowUp: now + L.SNAP_MINUTES,
+      Home: bounds.min, End: bounds.max,
+    }[ev.key];
+    if (target === undefined) return;
+    ev.preventDefault();
+    L.setSegmentStart(segments, index, target);
     this._refreshTimeline(pp, index);
     this.shadowRoot.querySelector(`.tl[data-tl="${pp}"] [data-handle="${index}"]`)?.focus();
   }
@@ -527,20 +594,28 @@ class ParentalControlPanel extends HTMLElement {
   // Liste commune (loisirs ou sur demande) : ✕ retire, ⇄ passe dans l'autre liste.
   _commonList(list) {
     const spec = COMMON_LISTS[list];
-    const key = L.SERVICE_LISTS[list].common;
-    const chips = (this._draft[key] ?? []).map((s) => `<span class="pill split">${esc(s)}
+    return `<div class="card"><h2>${spec.title}</h2>
+      <div class="lz" data-chips="common:${list}">${this._commonChips(list)}</div>
+      <div class="mut help">${spec.help}</div></div>`;
+  }
+
+  _commonChips(list) {
+    const spec = COMMON_LISTS[list];
+    const chips = (this._draft[L.SERVICE_LISTS[list].common] ?? []).map((s) => `<span class="pill split">${esc(s)}
         <button type="button" data-act="move-common" data-arg="${esc(s)}" title="Passer dans « ${spec.other} »">⇄</button>
         <button type="button" data-act="del-common" data-list="${list}" data-arg="${esc(s)}" title="Retirer">✕</button></span>`).join("");
-    return `<div class="card"><h2>${spec.title}</h2>
-      <div class="lz">${chips}<input class="pill-in" data-input="common-${list}" data-enter="add-common" data-list="${list}" placeholder="+ Ajouter" title="Service AdGuard (ex. youtube), puis Entrée"></div>
-      <div class="mut help">${spec.help}</div></div>`;
+    return `${chips}<input class="pill-in" data-input="common-${list}" data-enter="add-common" data-list="${list}" placeholder="+ Ajouter" title="Service AdGuard (ex. youtube)">`;
+  }
+
+  _notifyChips() {
+    const chips = (this._draft.notify ?? []).map((s) => `<button type="button" class="pill own" data-act="del-notify" data-arg="${esc(s)}" title="Retirer">${esc(s)}<span class="x">✕</span></button>`).join("");
+    return `${chips}<input class="pill-in" style="width:220px" data-input="notify" data-enter="add-notify" list="notifs" placeholder="+ notify.mobile_app_…" title="Service de notification">`;
   }
 
   _general() {
     const d = this._draft;
     const notifyServices = Object.keys(this._hass?.services?.notify ?? {}).map((s) => `notify.${s}`);
     const cal = Object.entries(d.calendar_map ?? {});
-    const notify = (d.notify ?? []).map((s) => `<button type="button" class="pill own" data-act="del-notify" data-arg="${esc(s)}" title="Retirer">${esc(s)}<span class="x">✕</span></button>`).join("");
     return `<div class="general">
       <div>${this._commonList("leisure")}<div style="height:16px"></div>${this._commonList("on_demand")}</div>
       <div>
@@ -557,7 +632,7 @@ class ParentalControlPanel extends HTMLElement {
         </div>
         <div style="height:16px"></div>
         <div class="card"><h2>Notifications</h2>
-          <div class="lz">${notify}<input class="pill-in" style="width:220px" data-input="notify" data-enter="add-notify" list="notifs" placeholder="+ notify.mobile_app_…" title="Service de notification, puis Entrée"></div>
+          <div class="lz" data-chips="notify">${this._notifyChips()}</div>
           ${this._datalist("notifs", notifyServices)}
           <div class="mut help">Services prévenus des avertissements (fin de plage, etc.).</div>
         </div>

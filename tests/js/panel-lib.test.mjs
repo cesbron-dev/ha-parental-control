@@ -462,3 +462,51 @@ test("safeColor : seules les couleurs #rrggbb passent dans un style", () => {
   assert.equal(lib.safeColor(null), null);
   assert.equal(lib.safeColor("#abc"), null);
 });
+
+test("addCommonService qui fait passer un service d'une liste à l'autre suit moveCommonService", () => {
+  const cfg = svcDraft();
+  const kid = cfg.kids[0];
+  kid.on_demand_add = ["roblox"];
+  assert.equal(lib.addCommonService(cfg, "on_demand", "Roblox"), "roblox");
+  assert.deepEqual(cfg.default_leisure, ["youtube"]);
+  assert.deepEqual(cfg.default_on_demand, ["netflix", "roblox"]);
+  assert.deepEqual(kid.leisure_remove, []); // plus d'exemption périmée côté loisirs
+  assert.deepEqual(kid.on_demand_remove, ["roblox"]);
+  assert.deepEqual(kid.on_demand_add, []);
+});
+
+test("removeCommonService retire aussi les exemptions des enfants pour ce service", () => {
+  const cfg = svcDraft();
+  const kid = cfg.kids[0];
+  kid.on_demand_remove = ["netflix"];
+  lib.removeCommonService(cfg, "leisure", "roblox");
+  assert.deepEqual(cfg.default_leisure, ["youtube"]);
+  assert.deepEqual(kid.leisure_remove, []);
+  lib.removeCommonService(cfg, "on_demand", "netflix");
+  assert.deepEqual(kid.on_demand_remove, []);
+  const old = draft(); // enfant sans clés « sur demande »
+  delete old.kids[0].on_demand_remove;
+  old.default_on_demand = ["x"];
+  lib.removeCommonService(old, "on_demand", "x");
+  assert.deepEqual(old.default_on_demand, []);
+});
+
+test("brouillon mêlant une ressource v1 : moveTargets, integrationKindsAllowed et moveDevice ne plantent pas", () => {
+  const cfg = draft();
+  cfg.resources.push({ id: "vieux", name: "Vieux", kind: "media_player", entity_id: "media_player.x", owners: [] });
+  assert.deepEqual(moveTargets(cfg, 0, 0), [1]); // pas vers la Nintendo ni vers la ressource v1
+  assert.deepEqual(moveTargets(cfg, 3, 0), []);
+  assert.deepEqual(integrationKindsAllowed(cfg.resources[3]), []);
+  assert.equal(moveDevice(cfg, 0, 0, 3), null);
+  assert.equal(cfg.resources[0].devices.length, 1);
+});
+
+test("isIconName : seules les icônes « jeu:nom » sont enregistrées", () => {
+  assert.equal(lib.isIconName("mdi:television"), true);
+  assert.equal(lib.isIconName("hass:power-socket-eu"), true);
+  assert.equal(lib.isIconName("mdi:"), false);
+  assert.equal(lib.isIconName("television"), false);
+  assert.equal(lib.isIconName('mdi:tv" onload="x'), false);
+  assert.equal(lib.isIconName("MDI:TV"), false);
+  assert.equal(lib.isIconName(null), false);
+});
