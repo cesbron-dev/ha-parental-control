@@ -384,18 +384,18 @@ navigateur garde une ancienne version.
 
 | Carte | Rôle | Configuration minimale |
 |---|---|---|
-| `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard : ses services en bascules (vert débloqué, gris bloqué). | `resource: tv` |
+| `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
 | `parental-timeline-card` | La frise de la journée de chaque enfant. | `type: custom:parental-timeline-card` ; `kids: [hugo]` limite aux enfants listés |
 | `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
 
 ```yaml
 type: custom:parental-resource-card
 resource: tv
-services: [youtube, netflix]  # optionnel : services affichés (tous par défaut)
+services: [youtube]           # optionnel : services sur demande affichés (tous par défaut)
 show_services: false          # optionnel : masque les bascules de services
 ```
 
-**Bascules de services.** Toucher un service bloqué l'autorise jusqu'au prochain changement de
+**Bascules de services.** La carte affiche les services sur demande de l'appareil. Toucher un service bloqué l'autorise jusqu'au prochain changement de
 plage (un compte non administrateur saisit le code et peut choisir une durée) ; toucher un service
 débloqué le bloque, sans code. Les cartes suivent le thème clair ou sombre de Home Assistant.
 
