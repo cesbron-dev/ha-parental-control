@@ -386,6 +386,7 @@ navigateur garde une ancienne version.
 |---|---|---|
 | `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
 | `parental-timeline-card` | La frise de la journée de chaque enfant. | `type: custom:parental-timeline-card` ; `kids: [hugo]` limite aux enfants listés |
+| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules sur tous ses appareils AdGuard, autorisations en cours (✕) et bonus. | `kid: alice` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
 | `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
 
 ```yaml
@@ -408,7 +409,7 @@ bonus_minutes: [15, 30, 60]   # optionnel
 ```
 
 **Le code parent.** Un compte non administrateur doit saisir le code (petit cadenas sur la
-pilule) pour **autoriser** et pour les **bonus**. Il est saisi sur un pavé numérique tactile (pas de clavier
+pilule) pour **autoriser**, les **bonus**, valider les **devoirs** et lancer un **minuteur**. Il est saisi sur un pavé numérique tactile (pas de clavier
 natif qui recouvre l'écran ; le clavier physique marche aussi), envoyé avec
 l'appel et oublié ; il n'est jamais stocké dans une carte ni dans la configuration du
 tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmation en deux appuis.

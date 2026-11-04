@@ -2,6 +2,7 @@
 import './resource-card.js';
 import './timeline-card.js';
 import './switch-card.js';
+import './kid-card.js';
 
 const CARDS = [
   {
@@ -18,6 +19,11 @@ const CARDS = [
     type: 'parental-switch-card',
     name: 'Contrôle parental — Switch',
     description: "Temps de jeu de la Nintendo Switch (jauge), état de la règle et bonus.",
+  },
+  {
+    type: 'parental-kid-card',
+    name: 'Contrôle parental — Enfant',
+    description: "Journée d'un enfant : statut, frise, devoirs, minuteur, services sur demande, autorisations et bonus.",
   },
 ];
 

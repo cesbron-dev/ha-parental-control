@@ -59,7 +59,7 @@ function servicesField(state, config) {
   };
 }
 
-// Schéma `ha-form` de l'éditeur d'une carte : `card` vaut "resource", "switch" ou "timeline".
+// Schéma `ha-form` de l'éditeur d'une carte : `card` vaut "resource", "switch", "timeline" ou "kid".
 export function editorSchema(card, state, config) {
   if (card === "resource") {
     return [
@@ -79,6 +79,25 @@ export function editorSchema(card, state, config) {
     ];
   }
   const kids = Object.entries(state?.kids ?? {}).map(([id, k]) => ({ value: id, label: k.name || id }));
+  if (card === "kid") {
+    const kidField = { name: "kid", label: "Enfant", required: true };
+    const kidOnDemand = [...new Set(Object.values(state?.resources ?? {})
+      .filter((r) => (r.owners ?? []).includes(config?.kid) && (r.kinds ?? [r.kind]).includes("adguard_services"))
+      .flatMap((r) => r.on_demand ?? []))];
+    return [
+      kids.length ? { ...kidField, selector: { select: { mode: "dropdown", options: withCurrent(kids, config?.kid) } } }
+        : { ...kidField, selector: { text: {} } },
+      text("name", "Nom affiché", "Vide : le prénom dans les règles"),
+      { name: "show_timeline", label: "Afficher la frise du jour", selector: { boolean: {} } },
+      { name: "show_services", label: "Afficher les services sur demande", helper: "Bascules autoriser / bloquer sur tous ses appareils AdGuard", selector: { boolean: {} } },
+      {
+        name: "services", label: "Services affichés", helper: "Aucun coché : tous ses services sur demande",
+        selector: { select: { multiple: true, mode: "list", options: withCurrent(kidOnDemand.map((s) => ({ value: s, label: serviceLabel(s) })), config?.services) } },
+      },
+      { name: "show_bonus", label: "Afficher les bonus de temps d'écran", helper: "Seulement les jours où l'enfant a un quota", selector: { boolean: {} } },
+      BONUS_FIELD,
+    ];
+  }
   return [{
     name: "kids",
     label: "Enfants affichés",
@@ -87,11 +106,14 @@ export function editorSchema(card, state, config) {
   }];
 }
 
+const SHOWN_BY_DEFAULT = { resource: ["show_services"], kid: ["show_timeline", "show_services", "show_bonus"] };
+
 // Données affichées par le formulaire (`card` : type de carte, comme pour editorSchema).
 export function editorData(config, card = "resource") {
   const out = { ...config };
   if (Array.isArray(out.bonus_minutes)) out.bonus_minutes = out.bonus_minutes.map(String);
-  if (card === "resource") out.show_services = out.show_services !== false; // affichés par défaut
+  // Sections affichées par défaut : la case est cochée tant que la config ne dit pas `false`.
+  for (const key of SHOWN_BY_DEFAULT[card] ?? []) out[key] = out[key] !== false;
   return out;
 }
 
@@ -103,7 +125,7 @@ export function editorConfig(config, value) {
     const minutes = out.bonus_minutes.map(Number).filter((m) => Number.isInteger(m) && m > 0);
     out.bonus_minutes = [...new Set(minutes)].sort((a, b) => a - b);
   }
-  if (out.show_services === true) delete out.show_services; // valeur par défaut
+  for (const key of ["show_services", "show_timeline", "show_bonus"]) if (out[key] === true) delete out[key]; // par défaut
   for (const [key, v] of Object.entries(out)) {
     if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0)) delete out[key];
   }
