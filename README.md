@@ -395,8 +395,9 @@ services: [youtube]           # optionnel : services sur demande affichés (tous
 show_services: false          # optionnel : masque les bascules de services
 ```
 
-**Bascules de services.** La carte affiche les services sur demande de l'appareil. Toucher un service bloqué l'autorise jusqu'au prochain changement de
-plage (un compte non administrateur saisit le code et peut choisir une durée) ; toucher un service
+**Bascules de services.** La carte affiche les services sur demande de l'appareil. Toucher un service bloqué ouvre une fenêtre pour choisir
+la durée (15 min à 2 h) ou « jusqu'au prochain changement » de plage, avec le code pour un compte
+non administrateur ; toucher un service
 débloqué le bloque, sans code. Les cartes suivent le thème clair ou sombre de Home Assistant.
 
 ```yaml
