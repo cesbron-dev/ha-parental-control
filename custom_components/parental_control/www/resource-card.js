@@ -45,7 +45,6 @@ const CSS = `
   .svcs .pills { margin-top: 0; gap: 8px; }
   .pill.svc-off { color: var(--g-muted); }
   .pill.svc-off ha-icon:first-child { color: var(--g-bad); }
-  .pill .tag { font-size: .7rem; opacity: .75; }
   .error { margin-top: 8px; }
 `;
 
@@ -154,7 +153,7 @@ class ParentalResourceCard extends StateCard {
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
-  // Services AdGuard de l'appareil en pastilles à bascule : vert débloqué, gris bloqué.
+  // Services sur demande de l'appareil en pastilles à bascule : vert débloqué, gris bloqué.
   _servicesBlock() {
     if (this._config.show_services === false) return "";
     const toggles = serviceToggles(this._state, this._config.resource, this._config.services);
@@ -162,13 +161,12 @@ class ParentalResourceCard extends StateCard {
     const lock = needsCode(this._hass, "open");
     const pills = toggles.map((t) => {
       const action = `svc:${t.service}`;
-      const tag = t.onDemand ? '<span class="tag">sur demande</span>' : "";
       return `<div class="pill ${t.open ? "vert" : "svc-off"}" data-action="${esc(action)}" role="switch" aria-checked="${t.open}"
         title="${esc(t.open ? `${t.label} débloqué : toucher pour bloquer` : `${t.label} bloqué : toucher pour autoriser`)}">`
-        + `<ha-icon icon="${t.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(t.label)}${tag}`
+        + `<ha-icon icon="${t.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(t.label)}`
         + `${!t.open && lock ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`;
     });
-    return `<div class="svcs"><div class="label muted">Services</div><div class="pills">${pills.join("")}</div></div>`;
+    return `<div class="svcs"><div class="label muted">Services sur demande</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
   _onClick(ev) {

@@ -47,14 +47,14 @@ function resourceField(state, current, kind) {
   return { ...field, selector: { select: { mode: "dropdown", options: withCurrent(options, current) } } };
 }
 
-// Services affichés sur la carte : ceux gérés pour l'appareil (sur demande, loisirs) ; aucun coché : tous.
+// Services affichés sur la carte : les services sur demande de l'appareil ; aucun coché : tous.
 function servicesField(state, config) {
   const r = state?.resources?.[config?.resource];
-  const ids = [...new Set([...(r?.on_demand ?? []), ...(r?.leisure ?? [])])];
+  const ids = r?.on_demand ?? [];
   return {
     name: "services",
     label: "Services affichés",
-    helper: "Aucun coché : tous les services de l'appareil",
+    helper: "Aucun coché : tous les services sur demande de l'appareil",
     selector: { select: { multiple: true, mode: "list", options: withCurrent(ids.map((s) => ({ value: s, label: serviceLabel(s) })), config?.services) } },
   };
 }
@@ -67,7 +67,7 @@ export function editorSchema(card, state, config) {
       text("name", "Nom affiché", "Vide : le nom de l'appareil dans les règles"),
       { name: "icon", label: "Icône", helper: "Vide : selon le type d'appareil", selector: { icon: {} } },
       { ...BONUS_FIELD, helper: `${BONUS_FIELD.helper} (Switch seulement)` },
-      { name: "show_services", label: "Afficher les services AdGuard", helper: "Bascules autoriser / bloquer (appareils AdGuard)", selector: { boolean: {} } },
+      { name: "show_services", label: "Afficher les services sur demande", helper: "Bascules autoriser / bloquer (appareils AdGuard)", selector: { boolean: {} } },
       servicesField(state, config),
     ];
   }

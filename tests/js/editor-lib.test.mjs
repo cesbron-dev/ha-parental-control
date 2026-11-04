@@ -78,8 +78,8 @@ test("bonus minutes: chosen as text in the form, saved as sorted numbers", () =>
   assert.deepEqual(editorConfig({ type: "t", bonus_minutes: [15] }, { bonus_minutes: ["abc"] }), { type: "t" });
 });
 
-test("resource card: AdGuard services toggles, shown by default, list from the device", () => {
-  const st = { resources: { tv: { name: "Télé", kind: "media_player", kinds: ["adguard_services", "media_player"], on_demand: ["youtube"], leisure: ["netflix", "youtube"] } } };
+test("resource card: on-demand services toggles, shown by default, list from the device", () => {
+  const st = { resources: { tv: { name: "Télé", kind: "media_player", kinds: ["adguard_services", "media_player"], on_demand: ["youtube", "netflix"], leisure: ["tiktok"] } } };
   const schema = editorSchema("resource", st, { resource: "tv" });
   assert.ok(field(schema, "show_services").selector.boolean);
   assert.deepEqual(field(schema, "services").selector.select.options, [

@@ -378,11 +378,11 @@ test("resourceView exposes on-demand services", () => {
   assert.deepEqual(resourceView({ resources: { ipad: { name: "iPad" } } }, "ipad").onDemand, []);
 });
 
-test("serviceToggles: on-demand first, state from blocked_services, own exceptions", async () => {
+test("serviceToggles: on-demand services only, state from blocked_services, own exceptions", async () => {
   const { serviceToggles } = await import("../../custom_components/parental_control/www/lib.js");
   const state = {
     resources: {
-      tv: { kinds: ["adguard_services", "media_player"], on_demand: ["youtube"], leisure: ["netflix", "youtube", "tiktok"], blocked_services: ["youtube", "tiktok"] },
+      tv: { kinds: ["adguard_services", "media_player"], owners: ["leo"], on_demand: ["youtube", "netflix", "tiktok"], leisure: ["roblox"], blocked_services: ["youtube", "tiktok", "roblox"] },
       ps: { kinds: ["media_player"], leisure: ["netflix"] },
     },
     exceptions: [
@@ -392,10 +392,11 @@ test("serviceToggles: on-demand first, state from blocked_services, own exceptio
     ],
   };
   const t = serviceToggles(state, "tv");
-  assert.deepEqual(t.map((x) => [x.service, x.onDemand, x.open, x.exceptions]), [
-    ["youtube", true, false, []],
-    ["netflix", false, true, ["a"]],
-    ["tiktok", false, false, []],
+  // Loisirs (roblox) absents ; netflix ouvert par l'exception d'enfant b (Léo propriétaire).
+  assert.deepEqual(t.map((x) => [x.service, x.open, x.exceptions, x.openedElsewhere]), [
+    ["youtube", false, [], false],
+    ["netflix", true, ["a"], true],
+    ["tiktok", false, [], false],
   ]);
   assert.equal(t[0].label, "YouTube");
   // Liste de la carte : filtre et ordre, services inconnus de l'appareil ignorés.
