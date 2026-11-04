@@ -4,7 +4,7 @@ import {
   esc, shouldSubscribe, timelineGeometry, exceptionsForKid, exceptionSpans, dayTypeLabel, segmentClass, statusClass, nextStepLabel, simulationBadge,
 } from "./lib.js";
 import { subscribeState } from "./connection.js";
-import { BASE_CSS } from "./style.js";
+import { BASE_CSS, applyTheme } from "./style.js";
 import { createEditor } from "./editor.js";
 
 const LEGEND = [
@@ -21,17 +21,17 @@ const CSS = `
   .kid { margin-top: 12px; }
   .kid .name { font-weight: 500; }
   .kid .status { font-size: .85rem; }
-  .tl { position: relative; height: 16px; border-radius: 8px; overflow: hidden; margin: 6px 0 2px; background: rgba(0,0,0,.35); }
+  .tl { position: relative; height: 16px; border-radius: 8px; overflow: hidden; margin: 6px 0 2px; background: var(--g-track); }
   .tl.tap { cursor: pointer; }
   .tl div { position: absolute; top: 0; bottom: 0; }
   .libre { background: linear-gradient(90deg, #2fbf71, #3ddc84); }
   .apres_devoirs { background: linear-gradient(90deg, #ff9a3c, #ffb347); }
   .quota { background: linear-gradient(90deg, #2f7fe0, #5fb3ff); }
-  .sur_demande { background: rgba(255,255,255,.3); }
+  .sur_demande { background: var(--g-ondemand); }
   .bloque { background: linear-gradient(90deg, #c0392b, #ff5f6d); }
   .exc { background: repeating-linear-gradient(45deg, rgba(124,192,255,.9) 0 4px, rgba(124,192,255,.4) 4px 8px); }
-  .tl .now { width: 3px; background: #fff; box-shadow: 0 0 6px #fff; }
-  .hours { position: relative; height: 1em; margin-top: 10px; font-size: .7rem; color: rgba(232,237,245,.45); }
+  .tl .now { width: 3px; background: var(--g-now); box-shadow: 0 0 6px var(--g-now); }
+  .hours { position: relative; height: 1em; margin-top: 10px; font-size: .7rem; color: var(--g-faint); }
   .hours span { position: absolute; transform: translateX(-50%); }
   .hours span:first-child { transform: none; }
   .hours span:last-child { transform: translateX(-100%); }
@@ -78,6 +78,7 @@ class ParentalTimelineCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    applyTheme(this, hass);
     if (this.isConnected) this._subscribe();
   }
 

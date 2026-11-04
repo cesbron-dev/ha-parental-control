@@ -73,7 +73,20 @@ test("bonus minutes: chosen as text in the form, saved as sorted numbers", () =>
     assert.equal(sel.custom_value, true);
     assert.ok(sel.options.some((o) => o.value === "15"));
   }
-  assert.deepEqual(editorData({ resource: "switch", bonus_minutes: [15, 30] }), { resource: "switch", bonus_minutes: ["15", "30"] });
+  assert.deepEqual(editorData({ resource: "switch", bonus_minutes: [15, 30] }, "switch"), { resource: "switch", bonus_minutes: ["15", "30"] });
   assert.deepEqual(editorConfig({ type: "t" }, { bonus_minutes: ["60", "10", "abc", "10", "0"] }), { type: "t", bonus_minutes: [10, 60] });
   assert.deepEqual(editorConfig({ type: "t", bonus_minutes: [15] }, { bonus_minutes: ["abc"] }), { type: "t" });
+});
+
+test("resource card: AdGuard services toggles, shown by default, list from the device", () => {
+  const st = { resources: { tv: { name: "Télé", kind: "media_player", kinds: ["adguard_services", "media_player"], on_demand: ["youtube"], leisure: ["netflix", "youtube"] } } };
+  const schema = editorSchema("resource", st, { resource: "tv" });
+  assert.ok(field(schema, "show_services").selector.boolean);
+  assert.deepEqual(field(schema, "services").selector.select.options, [
+    { value: "youtube", label: "YouTube" }, { value: "netflix", label: "Netflix" },
+  ]);
+  assert.equal(editorData({ resource: "tv" }).show_services, true);
+  assert.equal(editorData({ resource: "tv", show_services: false }).show_services, false);
+  assert.deepEqual(editorConfig({ type: "t", resource: "tv" }, { show_services: true, services: [] }), { type: "t", resource: "tv" });
+  assert.deepEqual(editorConfig({ type: "t", resource: "tv" }, { show_services: false }), { type: "t", resource: "tv", show_services: false });
 });

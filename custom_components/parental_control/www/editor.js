@@ -66,7 +66,7 @@ class ParentalCardEditor extends HTMLElement {
       this.shadowRoot.append(form);
     }
     form.hass = this._hass;
-    form.data = editorData(this._config);
+    form.data = editorData(this._config, this._card);
     form.schema = editorSchema(this._card, this._state, this._config);
   }
 }

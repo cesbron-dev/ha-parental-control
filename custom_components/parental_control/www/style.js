@@ -5,13 +5,47 @@ export const CONFIRM_MS = 3000;
 const ERROR_MS = 6000;
 
 export const BASE_CSS = `
-  :host { display: block; }
+  /* Jetons de couleur : verre sombre par défaut, verre clair si HA est en thème clair (attribut
+     « light » posé par applyTheme). */
+  :host {
+    display: block;
+    --g-text: #e8edf5; --g-muted: rgba(232,237,245,.62); --g-faint: rgba(232,237,245,.45);
+    --g-card: linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.03)), rgba(24,32,46,.78);
+    --g-dialog: linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.03)), rgba(24,32,46,.96);
+    --g-border: rgba(255,255,255,.18); --g-sep: rgba(255,255,255,.15);
+    --g-shadow: 0 8px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.12);
+    --g-dialog-shadow: 0 8px 32px rgba(0,0,0,.5); --g-backdrop: rgba(0,0,0,.55);
+    --g-soft: rgba(255,255,255,.06); --g-soft-hover: rgba(255,255,255,.12); --g-soft-strong: rgba(255,255,255,.22);
+    --g-line: rgba(255,255,255,.2); --g-strong-line: #fff; --g-track: rgba(0,0,0,.35); --g-input: rgba(0,0,0,.3);
+    --g-ondemand: rgba(255,255,255,.3); --g-ok: #3ddc84; --g-warn: #ffb347; --g-bad: #ff6b6b; --g-accent: #5fb3ff; --g-now: #fff;
+    --g-green: #8ff0b5; --g-green-bg: rgba(61,220,132,.12); --g-green-line: rgba(61,220,132,.5);
+    --g-violet: #d4a5ff; --g-violet-bg: rgba(160,90,240,.18); --g-violet-line: rgba(190,130,255,.55);
+    --g-red: #ff7b7b; --g-red-bg: rgba(230,60,60,.16); --g-red-line: rgba(255,110,110,.55);
+    --g-blue: #7cc0ff; --g-blue-bg: rgba(60,140,255,.12); --g-blue-line: rgba(110,170,255,.6);
+    --g-blue-sel: rgba(60,140,255,.32); --g-blue-sel-text: #fff;
+    --g-sim: #ffb347; --g-sim-bg: rgba(255,170,60,.16); --g-sim-line: rgba(255,170,60,.55);
+  }
+  :host([light]) {
+    --g-text: #1c2533; --g-muted: rgba(28,37,51,.64); --g-faint: rgba(28,37,51,.5);
+    --g-card: linear-gradient(135deg, rgba(255,255,255,.92), rgba(255,255,255,.72)), rgba(240,244,250,.85);
+    --g-dialog: linear-gradient(135deg, rgba(255,255,255,.98), rgba(255,255,255,.92)), #f4f7fb;
+    --g-border: rgba(20,40,70,.12); --g-sep: rgba(20,40,70,.12);
+    --g-shadow: 0 6px 24px rgba(20,40,70,.12), inset 0 1px 0 rgba(255,255,255,.8);
+    --g-dialog-shadow: 0 8px 32px rgba(20,40,70,.25); --g-backdrop: rgba(20,30,45,.35);
+    --g-soft: rgba(20,40,70,.04); --g-soft-hover: rgba(20,40,70,.09); --g-soft-strong: rgba(20,40,70,.14);
+    --g-line: rgba(20,40,70,.18); --g-strong-line: #1c2533; --g-track: rgba(20,40,70,.12); --g-input: rgba(20,40,70,.05);
+    --g-ondemand: rgba(20,40,70,.32); --g-ok: #138a4c; --g-warn: #b86a00; --g-bad: #c83232; --g-accent: #1a6fc4; --g-now: #1c2533;
+    --g-green: #137a43; --g-green-bg: rgba(30,170,95,.12); --g-green-line: rgba(30,150,85,.45);
+    --g-violet: #7a3fc4; --g-violet-bg: rgba(140,80,220,.1); --g-violet-line: rgba(140,80,220,.4);
+    --g-red: #c02e2e; --g-red-bg: rgba(220,50,50,.08); --g-red-line: rgba(200,50,50,.4);
+    --g-blue: #1a62b0; --g-blue-bg: rgba(40,110,220,.08); --g-blue-line: rgba(40,110,220,.4);
+    --g-blue-sel: #2f7fe0; --g-blue-sel-text: #fff;
+    --g-sim: #9a5a00; --g-sim-bg: rgba(230,140,20,.14); --g-sim-line: rgba(200,120,10,.5);
+  }
   ha-card {
     display: block; position: relative; overflow: hidden; height: 100%; box-sizing: border-box;
-    padding: 18px 20px; border-radius: 18px; color: #e8edf5;
-    background: linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.03)), rgba(24,32,46,.78);
-    border: 1px solid rgba(255,255,255,.18);
-    box-shadow: 0 8px 32px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.12);
+    padding: 18px 20px; border-radius: 18px; color: var(--g-text);
+    background: var(--g-card); border: 1px solid var(--g-border); box-shadow: var(--g-shadow);
     backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
     font-family: var(--ha-font-family-body, Roboto, sans-serif);
   }
@@ -21,10 +55,10 @@ export const BASE_CSS = `
   .sim {
     flex: none; display: inline-block; vertical-align: middle; margin-bottom: 4px; padding: 2px 8px; border-radius: 6px;
     font-size: .65rem; font-weight: 700; letter-spacing: .08em; text-transform: none;
-    color: #ffb347; background: rgba(255,170,60,.16); border: 1px solid rgba(255,170,60,.55);
+    color: var(--g-sim); background: var(--g-sim-bg); border: 1px solid var(--g-sim-line);
   }
-  .muted { color: rgba(232,237,245,.62); }
-  .ok { color: #3ddc84; } .warn { color: #ffb347; } .bad { color: #ff6b6b; }
+  .muted { color: var(--g-muted); }
+  .ok { color: var(--g-ok); } .warn { color: var(--g-warn); } .bad { color: var(--g-bad); }
   .badge { font-weight: 600; font-size: .8rem; letter-spacing: .04em; text-transform: uppercase; }
   .row { display: flex; align-items: center; gap: 12px; }
   .grow { flex: 1; min-width: 0; }
@@ -32,22 +66,29 @@ export const BASE_CSS = `
   .pill {
     display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none;
     padding: 6px 12px; border-radius: 8px; font-size: .9rem; font-weight: 500;
-    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.2); color: inherit;
+    background: var(--g-soft); border: 1px solid var(--g-line); color: inherit;
     font-family: inherit; transition: background .15s, transform .1s;
   }
-  .pill:hover { background: rgba(255,255,255,.12); }
+  .pill:hover { background: var(--g-soft-hover); }
   .pill:active { transform: scale(.97); }
   .pill[disabled] { opacity: .4; pointer-events: none; }
-  .pill.armed { background: rgba(255,255,255,.22); border-color: #fff; }
+  .pill.armed { background: var(--g-soft-strong); border-color: var(--g-strong-line); }
   .pill ha-icon { --mdc-icon-size: 18px; }
   .pill ha-icon.lock { --mdc-icon-size: 14px; opacity: .8; }
-  .pill.vert { color: #8ff0b5; background: rgba(61,220,132,.12); border-color: rgba(61,220,132,.5); }
-  .pill.violet { color: #d4a5ff; background: rgba(160,90,240,.18); border-color: rgba(190,130,255,.55); }
-  .pill.rouge { color: #ff7b7b; background: rgba(230,60,60,.16); border-color: rgba(255,110,110,.55); text-transform: uppercase; letter-spacing: .03em; }
-  .pill.bleu { color: #7cc0ff; background: rgba(60,140,255,.12); border-color: rgba(110,170,255,.6); min-width: 52px; justify-content: center; }
-  .pill.selected { background: rgba(60,140,255,.32); border-color: #7cc0ff; color: #fff; }
-  .error { color: #ff7b7b; font-size: .9rem; }
+  .pill.vert { color: var(--g-green); background: var(--g-green-bg); border-color: var(--g-green-line); }
+  .pill.violet { color: var(--g-violet); background: var(--g-violet-bg); border-color: var(--g-violet-line); }
+  .pill.rouge { color: var(--g-red); background: var(--g-red-bg); border-color: var(--g-red-line); text-transform: uppercase; letter-spacing: .03em; }
+  .pill.bleu { color: var(--g-blue); background: var(--g-blue-bg); border-color: var(--g-blue-line); min-width: 52px; justify-content: center; }
+  .pill.selected { background: var(--g-blue-sel); border-color: var(--g-blue); color: var(--g-blue-sel-text); }
+  .error { color: var(--g-red); font-size: .9rem; }
 `;
+
+// Thème des cartes : verre clair quand HA est en thème clair (`hass.themes.darkMode` faux).
+export function applyTheme(el, hass) {
+  const dark = hass?.themes?.darkMode;
+  if (dark === undefined) return;
+  el.toggleAttribute("light", !dark);
+}
 
 // Pilule cliquable ; `label` est échappé ici. Armée, elle affiche « Confirmer ? ».
 // `trailing` : icône en fin de pilule (✕) ; `lock` : petit cadenas (code parent demandé).

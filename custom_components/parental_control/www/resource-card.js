@@ -2,7 +2,7 @@
 // « Autoriser… », « Arrêter » ou, pour une Switch, pilules bonus.
 import {
   esc, needsCode, resourceView, exceptionsForResource, formatPill, serviceLabel,
-  reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge,
+  reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge, serviceToggles,
 } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
@@ -29,17 +29,23 @@ const CSS = `
   ${BASE_CSS}
   .ico {
     width: 40px; height: 40px; flex: none; border-radius: 12px; display: flex; align-items: center; justify-content: center;
-    background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.15);
+    background: var(--g-soft); border: 1px solid var(--g-sep);
   }
   .ico ha-icon { --mdc-icon-size: 22px; }
   .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .reason { margin-top: 8px; }
   .quota { margin-top: 10px; }
-  .bar { height: 8px; border-radius: 4px; overflow: hidden; background: rgba(0,0,0,.35); margin-bottom: 4px; }
+  .bar { height: 8px; border-radius: 4px; overflow: hidden; background: var(--g-track); margin-bottom: 4px; }
   .bar div { height: 100%; background: linear-gradient(90deg, #2fbf71, #3ddc84); }
   .bar div.over { background: linear-gradient(90deg, #c0392b, #ff5f6d); }
   .quota .muted { font-size: .85rem; }
   .pills { margin-top: 12px; }
+  .svcs { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--g-sep); }
+  .svcs .label { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 8px; }
+  .svcs .pills { margin-top: 0; gap: 8px; }
+  .pill.svc-off { color: var(--g-muted); }
+  .pill.svc-off ha-icon:first-child { color: var(--g-bad); }
+  .pill .tag { font-size: .7rem; opacity: .75; }
   .error { margin-top: 8px; }
 `;
 
@@ -144,7 +150,25 @@ class ParentalResourceCard extends StateCard {
       ${quota ? `<div class="quota"><div class="bar"><div class="${quota.over ? "over" : ""}" style="width:${quota.pct}%"></div></div>
         <div class="muted">Utilisé ${quota.text}</div></div>` : ""}
       <div class="pills">${pills.join("")}</div>
+      ${this._servicesBlock()}
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
+  }
+
+  // Services AdGuard de l'appareil en pastilles à bascule : vert débloqué, gris bloqué.
+  _servicesBlock() {
+    if (this._config.show_services === false) return "";
+    const toggles = serviceToggles(this._state, this._config.resource, this._config.services);
+    if (!toggles.length) return "";
+    const lock = needsCode(this._hass, "open");
+    const pills = toggles.map((t) => {
+      const action = `svc:${t.service}`;
+      const tag = t.onDemand ? '<span class="tag">sur demande</span>' : "";
+      return `<div class="pill ${t.open ? "vert" : "svc-off"}" data-action="${esc(action)}" role="switch" aria-checked="${t.open}"
+        title="${esc(t.open ? `${t.label} débloqué : toucher pour bloquer` : `${t.label} bloqué : toucher pour autoriser`)}">`
+        + `<ha-icon icon="${t.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(t.label)}${tag}`
+        + `${!t.open && lock ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`;
+    });
+    return `<div class="svcs"><div class="label muted">Services</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
   _onClick(ev) {
@@ -163,6 +187,7 @@ class ParentalResourceCard extends StateCard {
     const resource_id = this._config.resource;
     if (action === "allow") return this._openAllow();
     if (action === "stop") return this._call("exception", { resource_id, open: false });
+    if (action.startsWith("svc:")) return this._toggleService(action.slice(4));
     if (action.startsWith("cancel:")) return this._call("annuler_exception", { exception_id: action.slice(7) });
     if (action.startsWith("bonus:")) {
       const title = this._config.name || this._view().name || resource_id;
@@ -195,6 +220,42 @@ class ParentalResourceCard extends StateCard {
         if (duration) data.minutes = duration;
         return callAction(this._hass, "exception", data, code);
       },
+    });
+  }
+
+  // Bascule d'un service : autoriser jusqu'au prochain changement de plage (avec le code, dans une
+  // fenêtre qui propose aussi une durée), ou bloquer. Les exceptions de ce service sur l'appareil
+  // sont d'abord annulées, pour ne pas s'empiler.
+  async _toggleService(service) {
+    const resource_id = this._config.resource;
+    const t = serviceToggles(this._state, resource_id).find((x) => x.service === service);
+    if (!t) return;
+    const replace = async (code, open, minutes) => {
+      for (const exception_id of t.exceptions) {
+        const res = await callAction(this._hass, "annuler_exception", { exception_id }, code);
+        if (!res.ok) return res;
+      }
+      if (!open && !t.openedElsewhere) return { ok: true };
+      const data = { resource_id, service, open };
+      if (minutes) data.minutes = minutes;
+      return callAction(this._hass, "exception", data, code);
+    };
+    if (t.open) {
+      const res = await replace(undefined, false);
+      this._error.set(res.ok ? "" : res.error || "Action refusée");
+      return this._render();
+    }
+    if (!needsCode(this._hass, "open")) {
+      const res = await replace(undefined, true);
+      this._error.set(res.ok ? "" : res.error || "Action refusée");
+      return this._render();
+    }
+    openActionDialog(this.shadowRoot, {
+      title: `Autoriser · ${t.label}`,
+      durations: DURATIONS,
+      needCode: true,
+      submitLabel: "Autoriser",
+      onSubmit: ({ duration, code }) => replace(code, true, duration),
     });
   }
 
