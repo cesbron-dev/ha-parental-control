@@ -377,3 +377,29 @@ test("resourceView exposes on-demand services", () => {
   assert.deepEqual(resourceView(s, "ipad").onDemand, ["youtube"]);
   assert.deepEqual(resourceView({ resources: { ipad: { name: "iPad" } } }, "ipad").onDemand, []);
 });
+
+test("serviceToggles: on-demand first, state from blocked_services, own exceptions", async () => {
+  const { serviceToggles } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    resources: {
+      tv: { kinds: ["adguard_services", "media_player"], on_demand: ["youtube"], leisure: ["netflix", "youtube", "tiktok"], blocked_services: ["youtube", "tiktok"] },
+      ps: { kinds: ["media_player"], leisure: ["netflix"] },
+    },
+    exceptions: [
+      { id: "a", target: { resource_id: "tv", service: "netflix" }, open: false },
+      { id: "b", target: { kid_id: "leo", service: "netflix" }, open: true },
+      { id: "c", target: { resource_id: "tv", service: null }, open: true },
+    ],
+  };
+  const t = serviceToggles(state, "tv");
+  assert.deepEqual(t.map((x) => [x.service, x.onDemand, x.open, x.exceptions]), [
+    ["youtube", true, false, []],
+    ["netflix", false, true, ["a"]],
+    ["tiktok", false, false, []],
+  ]);
+  assert.equal(t[0].label, "YouTube");
+  // Liste de la carte : filtre et ordre, services inconnus de l'appareil ignorés.
+  assert.deepEqual(serviceToggles(state, "tv", ["tiktok", "roblox", "youtube"]).map((x) => x.service), ["tiktok", "youtube"]);
+  assert.deepEqual(serviceToggles(state, "ps"), []); // pas d'AdGuard
+  assert.deepEqual(serviceToggles(state, "inconnu"), []);
+});

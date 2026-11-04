@@ -37,3 +37,15 @@ test("pill escapes label and shows armed state", () => {
   assert.match(pill({ action: "a", icon: "mdi:check", label: "x", trailing: "mdi:close" }), /mdi:close/);
   assert.doesNotMatch(pill({ action: "a", icon: "mdi:check", label: "x", trailing: "mdi:close", armed: true }), /mdi:close/);
 });
+
+test("applyTheme sets the light attribute from hass.themes.darkMode", async () => {
+  const { applyTheme } = await import("../../custom_components/parental_control/www/style.js");
+  const attrs = new Set();
+  const el = { toggleAttribute: (name, on) => (on ? attrs.add(name) : attrs.delete(name)) };
+  applyTheme(el, { themes: { darkMode: false } });
+  assert.ok(attrs.has("light"));
+  applyTheme(el, { themes: { darkMode: true } });
+  assert.ok(!attrs.has("light"));
+  applyTheme(el, {}); // thème inconnu : inchangé (sombre par défaut)
+  assert.ok(!attrs.has("light"));
+});

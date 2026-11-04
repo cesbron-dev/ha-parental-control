@@ -6,26 +6,25 @@ import { callAction } from "./connection.js";
 const DIALOG_CSS = `
   dialog {
     box-sizing: border-box; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
-    padding: 18px 20px; border-radius: 18px; color: #e8edf5;
-    background: linear-gradient(135deg, rgba(255,255,255,.11), rgba(255,255,255,.03)), rgba(24,32,46,.96);
-    border: 1px solid rgba(255,255,255,.18); box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    padding: 18px 20px; border-radius: 18px; color: var(--g-text);
+    background: var(--g-dialog); border: 1px solid var(--g-border); box-shadow: var(--g-dialog-shadow);
     font-family: var(--ha-font-family-body, Roboto, sans-serif);
   }
-  dialog::backdrop { background: rgba(0,0,0,.55); }
-  .dlg-label { margin: 14px 0 8px; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: rgba(232,237,245,.62); }
+  dialog::backdrop { background: var(--g-backdrop); }
+  .dlg-label { margin: 14px 0 8px; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--g-muted); }
   .dlg-code {
     box-sizing: border-box; width: 100%; min-height: 48px; padding: 10px 12px; border-radius: 8px;
     font-size: 1.6rem; letter-spacing: .35em; text-align: center;
-    background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.25);
+    background: var(--g-input); border: 1px solid var(--g-line);
   }
   /* pavé numérique tactile : pas de clavier natif qui recouvre la fenêtre sur la tablette */
   .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
   .keypad button {
     min-height: 56px; border-radius: 10px; font-size: 1.4rem; font-weight: 500; cursor: pointer;
-    color: inherit; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2);
+    color: inherit; background: var(--g-soft); border: 1px solid var(--g-line);
     font-family: inherit; touch-action: manipulation; user-select: none;
   }
-  .keypad button:active { background: rgba(255,255,255,.22); }
+  .keypad button:active { background: var(--g-soft-strong); }
   .keypad button:disabled { opacity: .4; }
   .error { margin-top: 10px; min-height: 1.2em; }
   .dlg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }

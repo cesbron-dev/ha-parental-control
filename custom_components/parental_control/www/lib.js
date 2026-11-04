@@ -152,6 +152,32 @@ export function resourceView(state, resourceId) {
   };
 }
 
+// Services AdGuard affichés sur la carte d'un appareil, avec leur état actuel (débloqué ou non,
+// d'après `blocked_services` du moteur) : sur demande d'abord, puis loisirs. `only` (liste
+// d'ids, config de la carte) restreint et ordonne l'affichage. `exceptions` : ids des exceptions
+// de ce service posées sur cet appareil (à remplacer lors d'une bascule, pour ne pas les empiler).
+export function serviceToggles(state, resourceId, only = null) {
+  const r = state?.resources?.[resourceId];
+  if (!r || !(r.kinds ?? [r.kind]).includes("adguard_services")) return [];
+  const onDemand = r.on_demand ?? [];
+  const managed = [...onDemand, ...(r.leisure ?? []).filter((s) => !onDemand.includes(s))];
+  const ids = Array.isArray(only) && only.length ? only.filter((s) => managed.includes(s)) : managed;
+  const blocked = new Set(r.blocked_services ?? []);
+  return ids.map((service) => ({
+    service,
+    label: serviceLabel(service),
+    onDemand: onDemand.includes(service),
+    open: !blocked.has(service),
+    exceptions: (state.exceptions ?? [])
+      .filter((e) => e.target?.resource_id === resourceId && e.target?.service === service)
+      .map((e) => e.id),
+    // Ouvert sans exception de cet appareil (loisir d'un appareil ouvert, exception d'enfant ou
+    // globale) : le bloquer demande une fermeture, pas seulement d'annuler ses exceptions.
+    openedElsewhere: (!onDemand.includes(service) && !!r.open)
+      || exceptionsForResource(state, resourceId).some((e) => e.service === service && e.scope !== "resource"),
+  }));
+}
+
 // Heure de reprise d'une ressource fermée par la frise, que le moteur ne donne pas (`until` nul) :
 // fin de segment la plus proche, seulement si tous les propriétaires sont dans un segment « bloque »
 // (la frise affiche la même heure par enfant). La Switch (« sur demande ») n'a pas de reprise.

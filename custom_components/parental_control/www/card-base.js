@@ -1,6 +1,7 @@
 // Socle des cartes qui suivent l'état du moteur : souscription WebSocket liée au cycle de vie de l'élément.
 import { subscribeState } from "./connection.js";
 import { shouldSubscribe } from "./lib.js";
+import { applyTheme } from "./style.js";
 
 export class StateCard extends HTMLElement {
   constructor() {
@@ -24,6 +25,7 @@ export class StateCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    applyTheme(this, hass);
     if (this.isConnected) this._subscribe();
     this._hassChanged(hass);
   }

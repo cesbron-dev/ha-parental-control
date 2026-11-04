@@ -22,10 +22,10 @@ const CSS = `
   .pct { position: absolute; left: 0; right: 0; bottom: 6px; font-size: 1.6rem; font-weight: 600; }
   .sub { font-size: .85rem; }
   .play { flex: 1; min-width: 120px; align-self: center; }
-  .play h4 { margin: 0 0 6px; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: #5fb3ff; }
+  .play h4 { margin: 0 0 6px; font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--g-accent); }
   .play .big { font-size: 1.1rem; font-weight: 500; }
   /* temps utilisé et bonus sur une ligne pleine largeur, sous la jauge ; boutons côte à côte */
-  .side { flex: 1 1 100%; padding-top: 12px; border-top: 1px solid rgba(255,255,255,.15); display: flex; flex-direction: column; gap: 10px; }
+  .side { flex: 1 1 100%; padding-top: 12px; border-top: 1px solid var(--g-sep); display: flex; flex-direction: column; gap: 10px; }
   .side .pills { gap: 8px; }
   .side .pill { flex: 1 1 90px; justify-content: center; min-height: 44px; }
   .error { margin-top: 8px; }
@@ -124,7 +124,7 @@ class ParentalSwitchCard extends StateCard {
                 <stop offset="0" stop-color="#ff4d4d"/><stop offset=".35" stop-color="#ffb02e"/>
                 <stop offset=".6" stop-color="#e8e337"/><stop offset="1" stop-color="#3ddc84"/>
               </linearGradient></defs>
-              <path d="M12 62 A48 48 0 0 1 108 62" pathLength="100" fill="none" stroke="rgba(0,0,0,.4)" stroke-width="12" stroke-linecap="round"/>
+              <path d="M12 62 A48 48 0 0 1 108 62" pathLength="100" fill="none" style="stroke: var(--g-track)" stroke-width="12" stroke-linecap="round"/>
               ${pct > 0 ? `<path d="M12 62 A48 48 0 0 1 108 62" pathLength="100" fill="none" stroke="url(#g)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${pct} 100"/>` : ""}
             </svg>
             <div class="pct">${pct} %</div>

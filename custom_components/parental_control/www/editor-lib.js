@@ -1,6 +1,8 @@
 // Logique pure des éditeurs visuels de cartes : schéma `ha-form` construit à partir de l'état du
 // moteur (appareils et enfants proposés en liste) et nettoyage de la config produite, sans DOM.
 
+import { serviceLabel } from "./lib.js";
+
 const KIND_LABELS = { media_player: "Télé", switch: "Interrupteur", adguard_services: "AdGuard", nintendo: "Nintendo" };
 
 const text = (name, label, helper) => ({ name, label, helper, selector: { text: {} } });
@@ -45,6 +47,18 @@ function resourceField(state, current, kind) {
   return { ...field, selector: { select: { mode: "dropdown", options: withCurrent(options, current) } } };
 }
 
+// Services affichés sur la carte : ceux gérés pour l'appareil (sur demande, loisirs) ; aucun coché : tous.
+function servicesField(state, config) {
+  const r = state?.resources?.[config?.resource];
+  const ids = [...new Set([...(r?.on_demand ?? []), ...(r?.leisure ?? [])])];
+  return {
+    name: "services",
+    label: "Services affichés",
+    helper: "Aucun coché : tous les services de l'appareil",
+    selector: { select: { multiple: true, mode: "list", options: withCurrent(ids.map((s) => ({ value: s, label: serviceLabel(s) })), config?.services) } },
+  };
+}
+
 // Schéma `ha-form` de l'éditeur d'une carte : `card` vaut "resource", "switch" ou "timeline".
 export function editorSchema(card, state, config) {
   if (card === "resource") {
@@ -53,6 +67,8 @@ export function editorSchema(card, state, config) {
       text("name", "Nom affiché", "Vide : le nom de l'appareil dans les règles"),
       { name: "icon", label: "Icône", helper: "Vide : selon le type d'appareil", selector: { icon: {} } },
       { ...BONUS_FIELD, helper: `${BONUS_FIELD.helper} (Switch seulement)` },
+      { name: "show_services", label: "Afficher les services AdGuard", helper: "Bascules autoriser / bloquer (appareils AdGuard)", selector: { boolean: {} } },
+      servicesField(state, config),
     ];
   }
   if (card === "switch") {
@@ -71,10 +87,11 @@ export function editorSchema(card, state, config) {
   }];
 }
 
-// Données affichées par le formulaire.
-export function editorData(config) {
+// Données affichées par le formulaire (`card` : type de carte, comme pour editorSchema).
+export function editorData(config, card = "resource") {
   const out = { ...config };
   if (Array.isArray(out.bonus_minutes)) out.bonus_minutes = out.bonus_minutes.map(String);
+  if (card === "resource") out.show_services = out.show_services !== false; // affichés par défaut
   return out;
 }
 
@@ -86,6 +103,7 @@ export function editorConfig(config, value) {
     const minutes = out.bonus_minutes.map(Number).filter((m) => Number.isInteger(m) && m > 0);
     out.bonus_minutes = [...new Set(minutes)].sort((a, b) => a - b);
   }
+  if (out.show_services === true) delete out.show_services; // valeur par défaut
   for (const [key, v] of Object.entries(out)) {
     if (v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0)) delete out[key];
   }
