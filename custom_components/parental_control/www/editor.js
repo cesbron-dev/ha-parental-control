@@ -71,7 +71,7 @@ class ParentalCardEditor extends HTMLElement {
   }
 }
 
-const EDITORS = { resource: "parental-resource-card-editor", switch: "parental-switch-card-editor", timeline: "parental-timeline-card-editor" };
+const EDITORS = { resource: "parental-resource-card-editor", switch: "parental-switch-card-editor", timeline: "parental-timeline-card-editor", kid: "parental-kid-card-editor" };
 for (const [card, tag] of Object.entries(EDITORS)) {
   if (!customElements.get(tag)) {
     customElements.define(tag, class extends ParentalCardEditor {

@@ -42,10 +42,11 @@ export function serviceLabel(id) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// Le compte non admin doit saisir le code parent pour ouvrir (open, bonus), pas pour fermer.
+// Le compte non admin doit saisir le code parent pour ouvrir (open, bonus, devoirs, minuteur),
+// pas pour fermer.
 export function needsCode(hass, action) {
   if (hass?.user?.is_admin) return false;
-  return action === "open" || action === "bonus";
+  return ["open", "bonus", "homework", "timer"].includes(action);
 }
 
 function scopeOf(target) {
@@ -173,6 +174,84 @@ export function serviceToggles(state, resourceId, only = null) {
     // seulement d'annuler les exceptions de cet appareil.
     openedElsewhere: exceptionsForResource(state, resourceId).some((e) => e.service === service && e.scope !== "resource"),
   }));
+}
+
+// Appareils AdGuard d'un enfant (il en est propriétaire), ids triés.
+function kidAdguardResources(state, kidId) {
+  return Object.entries(state?.resources ?? {})
+    .filter(([, r]) => (r.owners ?? []).includes(kidId) && (r.kinds ?? [r.kind]).includes("adguard_services"))
+    .map(([id]) => id)
+    .sort();
+}
+
+// Services sur demande d'un enfant (réunis sur ses appareils AdGuard) avec leur état : débloqué si
+// aucun de ses appareils qui le gèrent ne le bloque. `exceptions` : exceptions de ce service qui
+// visent l'enfant ou un de ses appareils (annulées lors d'une bascule) ; `openedElsewhere` : une
+// exception globale l'ouvre (bloquer demande alors une fermeture pour l'enfant).
+export function kidServiceToggles(state, kidId, only = null) {
+  const resources = kidAdguardResources(state, kidId);
+  const holders = new Map(); // service -> appareils qui le gèrent sur demande
+  for (const id of resources) {
+    for (const s of state.resources[id].on_demand ?? []) {
+      if (!holders.has(s)) holders.set(s, []);
+      holders.get(s).push(id);
+    }
+  }
+  const all = [...holders.keys()];
+  const ids = Array.isArray(only) && only.length ? only.filter((s) => holders.has(s)) : all;
+  return ids.map((service) => ({
+    service,
+    label: serviceLabel(service),
+    open: holders.get(service).every((id) => !(state.resources[id].blocked_services ?? []).includes(service)),
+    exceptions: (state.exceptions ?? [])
+      .filter((e) => e.target?.service === service
+        && (e.target.kid_id === kidId || resources.includes(e.target.resource_id)))
+      .map((e) => e.id),
+    openedElsewhere: (state.exceptions ?? []).some((e) => e.open && e.target?.service === service
+      && !e.target.kid_id && !e.target.resource_id),
+  }));
+}
+
+// Autorisations en cours qui touchent un enfant, pour ses pilules (formatPill) : libellé selon la
+// cible (service, appareil, tous ses appareils), sans répéter le nom de l'enfant.
+export function kidExceptions(state, kidId) {
+  const out = [];
+  for (const e of state?.exceptions ?? []) {
+    if (!e.open) continue;
+    const t = e.target ?? {};
+    const resource = t.resource_id ? state.resources?.[t.resource_id] : null;
+    if (t.resource_id && !(resource?.owners ?? []).includes(kidId)) continue;
+    if (t.kid_id && t.kid_id !== kidId) continue;
+    // Où : l'appareil, tous ceux de l'enfant, ou tous (formatPill ajoute alors « tout le monde »).
+    const where = resource ? (resource.name || t.resource_id) : t.kid_id ? "tous ses appareils" : "";
+    const label = t.service
+      ? [serviceLabel(t.service), where].filter(Boolean).join(" · ")
+      : where ? where.charAt(0).toUpperCase() + where.slice(1) : "Tous les appareils";
+    out.push({
+      id: e.id, label, service: t.service ?? null,
+      scope: t.resource_id || t.kid_id ? "resource" : "all",
+      kid: null, until: e.until ?? null, endsAt: e.ends_at ?? null,
+    });
+  }
+  return out;
+}
+
+// Ce que la carte enfant montre de la journée : devoirs (plage « après devoirs » : à valider ou
+// validés), minuteur (plage « quota » : en cours ou à lancer) et temps d'écran restant.
+export function kidView(state, kidId) {
+  const kid = state?.kids?.[kidId];
+  if (!kid) return { status: Object.keys(state?.kids ?? {}).length ? "unknown" : "unavailable" };
+  const remaining = kid.remaining_minutes ?? null;
+  return {
+    status: "ok",
+    kid,
+    name: kid.name || kidId,
+    homework: kid.segment === "apres_devoirs" ? (kid.status === "attente_devoirs" ? "todo" : "done") : null,
+    timer: kid.segment !== "quota" ? null
+      : kid.timer_end ? { running: true, end: kid.timer_end }
+        : { running: false, canStart: kid.status === "attente_minuteur" && (remaining ?? 0) > 0 },
+    remaining,
+  };
 }
 
 // Heure de reprise d'une ressource fermée par la frise, que le moteur ne donne pas (`until` nul) :

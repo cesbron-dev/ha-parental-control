@@ -90,3 +90,22 @@ test("resource card: on-demand services toggles, shown by default, list from the
   assert.deepEqual(editorConfig({ type: "t", resource: "tv" }, { show_services: true, services: [] }), { type: "t", resource: "tv" });
   assert.deepEqual(editorConfig({ type: "t", resource: "tv" }, { show_services: false }), { type: "t", resource: "tv", show_services: false });
 });
+
+test("kid card: kid choice, sections shown by default, the kid's on-demand services", () => {
+  const st = {
+    kids: { mael: { name: "Maël" }, leo: { name: "Léo" } },
+    resources: {
+      tv: { kinds: ["adguard_services", "media_player"], owners: ["mael", "leo"], on_demand: ["youtube"] },
+      ipad: { kinds: ["adguard_services"], owners: ["leo"], on_demand: ["tiktok"] },
+    },
+  };
+  const schema = editorSchema("kid", st, { kid: "mael" });
+  assert.deepEqual(field(schema, "kid").selector.select.options, [{ value: "mael", label: "Maël" }, { value: "leo", label: "Léo" }]);
+  assert.deepEqual(field(schema, "services").selector.select.options, [{ value: "youtube", label: "YouTube" }]);
+  for (const key of ["show_timeline", "show_services", "show_bonus"]) assert.ok(field(schema, key).selector.boolean);
+  assert.deepEqual(field(editorSchema("kid", null, {}), "kid").selector, { text: {} });
+  const data = editorData({ kid: "mael", show_bonus: false }, "kid");
+  assert.deepEqual([data.show_timeline, data.show_services, data.show_bonus], [true, true, false]);
+  assert.deepEqual(editorConfig({ type: "t", kid: "mael" }, { show_timeline: true, show_services: true, show_bonus: false }),
+    { type: "t", kid: "mael", show_bonus: false });
+});

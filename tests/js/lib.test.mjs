@@ -404,3 +404,49 @@ test("serviceToggles: on-demand services only, state from blocked_services, own 
   assert.deepEqual(serviceToggles(state, "ps"), []); // pas d'AdGuard
   assert.deepEqual(serviceToggles(state, "inconnu"), []);
 });
+
+test("kid card: services over the kid's AdGuard devices, its exceptions, homework and timer", async () => {
+  const { kidServiceToggles, kidExceptions, kidView, needsCode } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    kids: {
+      mael: { name: "Maël", segment: "apres_devoirs", status: "attente_devoirs", remaining_minutes: null, timer_end: null },
+      leo: { name: "Léo", segment: "quota", status: "attente_minuteur", remaining_minutes: 40, timer_end: null },
+    },
+    resources: {
+      tv: { name: "Télé", owners: ["mael", "leo"], kinds: ["adguard_services", "media_player"], on_demand: ["youtube"], blocked_services: [] },
+      ipad: { name: "iPad", owners: ["mael"], kinds: ["adguard_services"], on_demand: ["youtube", "tiktok"], blocked_services: ["youtube", "tiktok"] },
+      ps: { name: "PS5", owners: ["mael"], kinds: ["media_player"], on_demand: ["netflix"] },
+    },
+    exceptions: [
+      { id: "a", target: { resource_id: "tv", kid_id: null, service: "youtube" }, open: true, until: null },
+      { id: "b", target: { resource_id: null, kid_id: "mael", service: "tiktok" }, open: false, until: null },
+      { id: "c", target: { resource_id: null, kid_id: "leo", service: "youtube" }, open: true, until: null },
+      { id: "d", target: { resource_id: null, kid_id: null, service: "tiktok" }, open: true, until: null },
+      { id: "e", target: { resource_id: null, kid_id: "mael", service: null }, open: true, until: null },
+    ],
+  };
+  // YouTube bloqué sur l'iPad : pas débloqué pour Maël ; PS5 sans AdGuard ignorée.
+  assert.deepEqual(kidServiceToggles(state, "mael").map((t) => [t.service, t.open, t.exceptions, t.openedElsewhere]), [
+    ["youtube", false, ["a"], false],
+    ["tiktok", false, ["b"], true],
+  ]);
+  assert.deepEqual(kidServiceToggles(state, "mael", ["tiktok", "netflix"]).map((t) => t.service), ["tiktok"]);
+  assert.deepEqual(kidServiceToggles(state, "inconnu"), []);
+
+  assert.deepEqual(kidExceptions(state, "mael").map((e) => [e.id, e.label, e.scope]), [
+    ["a", "YouTube · Télé", "resource"],
+    ["d", "TikTok", "all"],
+    ["e", "Tous ses appareils", "resource"],
+  ]);
+
+  assert.equal(kidView(state, "mael").homework, "todo");
+  assert.equal(kidView(state, "mael").timer, null);
+  assert.deepEqual(kidView(state, "leo").timer, { running: false, canStart: true });
+  assert.equal(kidView({ ...state, kids: { ...state.kids, mael: { ...state.kids.mael, status: "autorise" } } }, "mael").homework, "done");
+  assert.equal(kidView(state, "x").status, "unknown");
+  assert.equal(kidView({ kids: {} }, "x").status, "unavailable");
+
+  const user = { user: { is_admin: false } };
+  assert.equal(needsCode(user, "homework"), true);
+  assert.equal(needsCode(user, "timer"), true);
+});
