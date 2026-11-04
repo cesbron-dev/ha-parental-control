@@ -221,8 +221,8 @@ class ParentalResourceCard extends StateCard {
     });
   }
 
-  // Bascule d'un service : autoriser jusqu'au prochain changement de plage (avec le code, dans une
-  // fenêtre qui propose aussi une durée), ou bloquer. Les exceptions de ce service sur l'appareil
+  // Bascule d'un service : autoriser, dans une fenêtre qui demande la durée (ou jusqu'au prochain
+  // changement de plage) et le code pour un compte non admin ; ou bloquer, sans fenêtre. Les exceptions de ce service sur l'appareil
   // sont d'abord annulées, pour ne pas s'empiler.
   async _toggleService(service) {
     const resource_id = this._config.resource;
@@ -243,15 +243,10 @@ class ParentalResourceCard extends StateCard {
       this._error.set(res.ok ? "" : res.error || "Action refusée");
       return this._render();
     }
-    if (!needsCode(this._hass, "open")) {
-      const res = await replace(undefined, true);
-      this._error.set(res.ok ? "" : res.error || "Action refusée");
-      return this._render();
-    }
     openActionDialog(this.shadowRoot, {
       title: `Autoriser · ${t.label}`,
       durations: DURATIONS,
-      needCode: true,
+      needCode: needsCode(this._hass, "open"),
       submitLabel: "Autoriser",
       onSubmit: ({ duration, code }) => replace(code, true, duration),
     });
