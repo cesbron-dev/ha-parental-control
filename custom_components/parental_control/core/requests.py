@@ -6,7 +6,7 @@ import hmac
 import secrets
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 
@@ -45,7 +45,7 @@ class RequestError(ValueError):
 @dataclass
 class TimeRequest:
     id: str
-    token: str
+    token: str = field(repr=False)  # secret : jamais dans les journaux
     kind: RequestKind
     kid_id: str
     resource_id: str | None
