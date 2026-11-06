@@ -9,7 +9,7 @@ from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .adapters.adguard import ADGUARD_DOMAIN
+from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_config
 from .engine import ParentalEngine
@@ -70,20 +70,6 @@ async def ws_config_set(
         return
     await engine.set_config(cfg)
     connection.send_result(msg["id"], {"config": dump_config(cfg)})
-
-
-def services_catalog(hass: HomeAssistant) -> dict[str, str]:
-    """Services AdGuard connus (id → nom), réunis depuis les entrées `adguard_clients` chargées.
-
-    Lu dans le coordinateur de cette intégration (`runtime_data.catalog`) : vide si elle est
-    absente ou pas encore chargée ; le panneau garde alors la saisie libre.
-    """
-    catalog: dict[str, str] = {}
-    for entry in hass.config_entries.async_entries(ADGUARD_DOMAIN):
-        found = getattr(getattr(entry, "runtime_data", None), "catalog", None)
-        if isinstance(found, dict):
-            catalog.update({str(k): str(v) for k, v in found.items()})
-    return dict(sorted(catalog.items(), key=lambda kv: kv[1].casefold()))
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/services/catalog"})
