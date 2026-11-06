@@ -227,7 +227,7 @@ test("isDirty", () => {
 
 test("emptyConfig : brouillon v2 d'une nouvelle installation, prêt à recevoir un appareil", () => {
   const cfg = emptyConfig();
-  assert.deepEqual(cfg, { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], kids: [], resources: [] });
+  assert.deepEqual(cfg, { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], kids: [], resources: [] });
   const res = addResource(cfg, "Télé");
   addIntegration(res.devices[0], "media_player");
   assert.equal(cfg.version, 2);
