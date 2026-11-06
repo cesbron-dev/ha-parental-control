@@ -110,4 +110,21 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
     for data, exc in zip(state["exceptions"], engine.decisions.exceptions, strict=True):
         end = exception_end(cfg, snap, exc) if snap is not None else None
         data["ends_at"] = _value(end)
+    state["requests_enabled"] = bool(cfg.request_notify)
+    # Jamais `token`, `options`, `replace` ni `answered_by` : le jeton ne doit pas sortir.
+    state["requests"] = [
+        {
+            "id": r.id,
+            "kind": r.kind.value,
+            "kid_id": r.kid_id,
+            "resource_id": r.resource_id,
+            "service": r.service,
+            "proposed": r.proposed,
+            "status": r.status.value,
+            "granted": r.granted,
+            "reason": r.reason,
+            "expires": _value(r.expires),
+        }
+        for r in engine.requests.visible(now)
+    ]
     state["now"] = now.isoformat()

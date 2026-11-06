@@ -98,3 +98,43 @@ importer_configuration:
       required: true
       selector:
         object:
+
+demander:
+  fields:
+    kind:
+      required: true
+      example: open
+      selector:
+        select:
+          options:
+            - open
+            - bonus
+            - homework
+            - timer
+    kid_id: *kid_id
+    resource_id: *resource_id
+    service:
+      required: false
+      example: youtube
+      selector:
+        text:
+    minutes:
+      required: false
+      example: 30
+      selector:
+        number:
+          min: 1
+          max: 240
+          step: 1
+          unit_of_measurement: min
+          mode: box
+    options:
+      required: false
+      example: "[15, 30, 60, null]"
+      selector:
+        object:
+    replace:
+      required: false
+      example: "[]"
+      selector:
+        object:

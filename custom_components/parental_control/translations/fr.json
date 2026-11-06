@@ -111,6 +111,15 @@
     },
     "nintendo_use_bonus": {
       "message": "Pour la Switch, utilisez ajouter_bonus."
+    },
+    "requests_disabled": {
+      "message": "Aucun parent ne reçoit les demandes."
+    },
+    "request_pending": {
+      "message": "Une demande identique est déjà en attente."
+    },
+    "invalid_request": {
+      "message": "Demande invalide."
     }
   },
   "services": {
@@ -243,6 +252,40 @@
         "config": {
           "name": "Configuration",
           "description": "Objet de configuration (format JSON, version 1)."
+        }
+      }
+    },
+    "demander": {
+      "name": "Demander du temps",
+      "description": "Un enfant demande du temps aux parents. Aucun code exigé : un parent doit répondre depuis la notification. Renvoie l'identifiant de la demande.",
+      "fields": {
+        "kind": {
+          "name": "Type",
+          "description": "open, bonus, homework ou timer."
+        },
+        "kid_id": {
+          "name": "Enfant",
+          "description": "Identifiant de l'enfant."
+        },
+        "resource_id": {
+          "name": "Ressource",
+          "description": "Identifiant de la ressource (facultatif)."
+        },
+        "service": {
+          "name": "Service",
+          "description": "Service AdGuard (facultatif)."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Durée proposée (1 à 240 minutes)."
+        },
+        "options": {
+          "name": "Options",
+          "description": "Durées offertes aux parents (null : jusqu'au prochain changement)."
+        },
+        "replace": {
+          "name": "Remplace",
+          "description": "Identifiants d'exceptions à remplacer en cas d'acceptation."
         }
       }
     }
