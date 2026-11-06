@@ -137,3 +137,8 @@ def test_duration_label():
     assert duration_label(90) == "1 h 30"
     assert duration_label(120) == "2 h"
     assert duration_label(None) == "Jusqu'au prochain changement"
+
+
+def test_repr_does_not_leak_token():
+    req = make(RequestBook())
+    assert req.token not in repr(req)
