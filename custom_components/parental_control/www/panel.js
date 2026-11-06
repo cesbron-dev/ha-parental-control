@@ -258,7 +258,7 @@ class ParentalControlPanel extends HTMLElement {
       }
       case "set-mode": L.setMode(kid, el.dataset.res, arg); break;
       case "kid-svc": L.toggleKidService(d, kid, list, arg); break;
-      case "add-kid-svc": case "add-common": case "add-notify":
+      case "add-kid-svc": case "add-common": case "add-notify": case "add-request-notify":
         if (!this._commitPill(el)) return;
         this._focus = `[data-input="${el.dataset.input}"]`; // pour en ajouter plusieurs d'affilée
         break;
@@ -287,6 +287,7 @@ class ParentalControlPanel extends HTMLElement {
       }
       case "del-cal": delete d.calendar_map[arg]; break;
       case "del-notify": L.toggleListValue(d.notify, arg); break;
+      case "del-request-notify": L.toggleListValue(d.request_notify, arg); break;
       case "apply-json": {
         const text = this.shadowRoot.querySelector("textarea").value;
         try {
@@ -316,6 +317,10 @@ class ParentalControlPanel extends HTMLElement {
       case "add-notify":
         if (!d.notify.includes(value)) d.notify.push(value);
         return true;
+      case "add-request-notify":
+        d.request_notify ??= [];
+        if (!d.request_notify.includes(value)) d.request_notify.push(value);
+        return true;
       default: return false;
     }
   }
@@ -333,6 +338,7 @@ class ParentalControlPanel extends HTMLElement {
       if (kind === "kid" && kid) el.innerHTML = this._kidChips(kid, list);
       else if (kind === "common") el.innerHTML = this._commonChips(list);
       else if (kind === "notify") el.innerHTML = this._notifyChips();
+      else if (kind === "request_notify") el.innerHTML = this._requestNotifyChips();
     }
   }
 
@@ -638,6 +644,11 @@ class ParentalControlPanel extends HTMLElement {
     return `${chips}<input class="pill-in" style="width:220px" data-input="notify" data-enter="add-notify" list="notifs" placeholder="+ notify.mobile_app_…" title="Service de notification">`;
   }
 
+  _requestNotifyChips() {
+    const chips = (this._draft.request_notify ?? []).map((s) => `<button type="button" class="pill own" data-act="del-request-notify" data-arg="${esc(s)}" title="Retirer">${esc(s)}<span class="x">✕</span></button>`).join("");
+    return `${chips}<input class="pill-in" style="width:220px" data-input="request_notify" data-enter="add-request-notify" list="notifs" placeholder="+ notify.mobile_app_…" title="Service de notification">`;
+  }
+
   _general() {
     const d = this._draft;
     const notifyServices = Object.keys(this._hass?.services?.notify ?? {}).map((s) => `notify.${s}`);
@@ -660,7 +671,12 @@ class ParentalControlPanel extends HTMLElement {
         <div class="card"><h2>Notifications</h2>
           <div class="lz" data-chips="notify">${this._notifyChips()}</div>
           ${this._datalist("notifs", notifyServices)}
-          <div class="mut help">Services prévenus des avertissements (fin de plage, etc.).</div>
+          <div class="mut help">Services prévenus des avertissements (fin de plage, etc.), par exemple les appareils des enfants.</div>
+        </div>
+        <div style="height:16px"></div>
+        <div class="card"><h2>Demandes de temps (parents)</h2>
+          <div class="lz" data-chips="request_notify">${this._requestNotifyChips()}</div>
+          <div class="mut help">Téléphones des parents (application Home Assistant) qui reçoivent les demandes et y répondent.</div>
         </div>
       </div>
     </div>`;

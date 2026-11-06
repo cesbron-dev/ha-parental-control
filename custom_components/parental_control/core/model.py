@@ -136,6 +136,8 @@ class Config:
     notify: tuple[str, ...]
     # Services « sur demande » : toujours bloqués, sauf autorisation explicite (exception).
     default_on_demand: tuple[str, ...] = ()
+    # Services notify des parents : reçoivent les demandes de temps et y répondent.
+    request_notify: tuple[str, ...] = ()
 
     def kid(self, kid_id: str) -> Kid:
         for kid in self.kids:

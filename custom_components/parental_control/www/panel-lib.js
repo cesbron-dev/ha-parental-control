@@ -94,7 +94,7 @@ export function setPath(obj, path, value) {
 // Brouillon d'une nouvelle installation (aucune config enregistrée) : au format v2, celui que
 // produisent `addResource`/`addIntegration`.
 export function emptyConfig() {
-  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], kids: [], resources: [] };
+  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], kids: [], resources: [] };
 }
 
 // Ressource au format v2 (appareils physiques) ? Une ressource v1 collée dans l'onglet JSON n'en

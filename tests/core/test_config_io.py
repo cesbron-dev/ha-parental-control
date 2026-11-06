@@ -299,3 +299,19 @@ def test_on_demand_services_roundtrip() -> None:
     assert parse_config(dump_config(cfg)) == cfg
     with pytest.raises(ConfigError, match=re.escape("default_on_demand")):
         parse_config({**d, "default_on_demand": "youtube"})
+
+
+def test_request_notify_round_trip() -> None:
+    cfg = parse_config(EX | {"request_notify": ["notify.mobile_app_iphone_de_manou"]})
+    assert cfg.request_notify == ("notify.mobile_app_iphone_de_manou",)
+    assert dump_config(cfg)["request_notify"] == ["notify.mobile_app_iphone_de_manou"]
+    assert parse_config(dump_config(cfg)) == cfg
+
+
+def test_request_notify_defaults_empty() -> None:
+    assert parse_config(EX).request_notify == ()
+
+
+def test_request_notify_must_be_strings() -> None:
+    with pytest.raises(ConfigError, match=re.escape("request_notify")):
+        parse_config(EX | {"request_notify": [3]})
