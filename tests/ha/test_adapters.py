@@ -3,7 +3,7 @@
 import logging
 
 import pytest
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import CoreState, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from pytest_homeassistant_custom_component.common import async_mock_service
 
@@ -258,6 +258,24 @@ async def test_adguard_missing_sensor_logs_once(
     assert len(warnings) == 1
 
 
+async def test_adguard_missing_sensor_waits_for_startup(
+    hass: HomeAssistant, fake, caplog: pytest.LogCaptureFixture
+) -> None:
+    adapter = adguard(hass, fake)  # capteur enregistré, sans état
+    desired = state(False, LEISURE)
+
+    hass.set_state(CoreState.starting)
+    with caplog.at_level(logging.WARNING):
+        await adapter.apply(desired)
+    assert "introuvable" not in caplog.text
+
+    # toujours absent une fois HA démarré : l'avertissement part
+    hass.set_state(CoreState.running)
+    with caplog.at_level(logging.WARNING):
+        await adapter.apply(desired)
+    assert "introuvable" in caplog.text
+
+
 async def test_adguard_unknown_device_has_no_entities(hass: HomeAssistant, fake) -> None:
     adapter = AdGuardAdapter(hass, "iPhone Hugo", {"device_id": "inconnu"}, LEISURE)
     assert adapter.entity_ids() == []
@@ -375,6 +393,21 @@ async def test_media_player_missing_entity_warns_once(
     warnings = [r for r in caplog.records if TV_ENTITY in r.getMessage()]
     assert len(warnings) == 1
     assert warnings[0].levelno == logging.WARNING
+
+
+async def test_media_player_missing_entity_waits_for_startup(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    adapter = tv_adapter(hass)
+    hass.set_state(CoreState.starting)
+    with caplog.at_level(logging.WARNING):
+        assert not adapter.in_use()
+    assert TV_ENTITY not in caplog.text
+
+    hass.set_state(CoreState.running)
+    with caplog.at_level(logging.WARNING):
+        assert not adapter.in_use()
+    assert TV_ENTITY in caplog.text
 
 
 # --- Nintendo ---------------------------------------------------------------
