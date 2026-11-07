@@ -1,6 +1,6 @@
 // Panneau « Règles » (barre latérale, admins) : édite la configuration du moteur en brouillon,
 // l'écrit avec `parental_control/config/set` ; le moteur valide et cite le chemin fautif.
-import { esc } from "./lib.js";
+import { esc, pendingCount } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import * as L from "./panel-lib.js";
 import { CSS, opt } from "./panel-style.js";
@@ -39,6 +39,7 @@ class ParentalControlPanel extends HTMLElement {
     this._message = null; // {kind: "error" | "ok", text}
     this._saving = false;
     this._simulation = false;
+    this._requests = null; // {enabled, pending} : bouton « Demandes » ; null tant que l'état n'est pas reçu
     this._unsub = null;
     this._subConn = null;
     this._armed = null;
@@ -92,7 +93,8 @@ class ParentalControlPanel extends HTMLElement {
     this._unsubscribe();
   }
 
-  // Suit seulement `simulation` ; le bandeau est mis à jour sur place pour ne pas effacer une saisie en cours.
+  // Suit `simulation` et les demandes en attente ; bandeau et bouton sont mis à jour sur place pour ne
+  // pas effacer une saisie en cours.
   _subscribe() {
     const conn = this._hass?.connection;
     if (!this.isConnected || !conn || this._subConn === conn) return;
@@ -102,6 +104,12 @@ class ParentalControlPanel extends HTMLElement {
     this._subToken = token;
     subscribeState(this._hass, (msg) => {
       if (this._subToken !== token) return;
+      const requests = { enabled: !!msg?.requests_enabled, pending: pendingCount(msg) };
+      if (requests.enabled !== this._requests?.enabled || requests.pending !== this._requests?.pending) {
+        this._requests = requests;
+        const slot = this.shadowRoot.querySelector(".req-slot");
+        if (slot) slot.innerHTML = this._requestsButton();
+      }
       const sim = !!msg?.simulation;
       if (sim === this._simulation) return;
       this._simulation = sim;
@@ -127,6 +135,16 @@ class ParentalControlPanel extends HTMLElement {
       const el = this.shadowRoot.querySelector(".sim-slot");
       if (el) el.innerHTML = "";
     }
+  }
+
+  // Bouton vers l'écran « Demandes », avec le nombre de demandes en attente.
+  _requestsButton() {
+    if (!this._requests?.enabled) return "";
+    const n = this._requests.pending;
+    return this._btn("requests", n ? `Demandes (${n})` : "Demandes", {
+      cls: `btn${n ? " pending" : ""}`, icon: "mdi:hand-back-right", title: "Demandes de temps des enfants",
+      confirmKey: "requests",
+    });
   }
 
   _simBanner() {
@@ -217,6 +235,12 @@ class ParentalControlPanel extends HTMLElement {
       case "tab": this._tab = arg; this._closeAll(); break;
       case "save": this._commitPending(); this._save(); return;
       case "revert": if (!this._confirm("revert")) return; this._load(); return;
+      case "requests":
+        // Quitter le panneau perd le brouillon : confirmation en deux appuis s'il y en a un.
+        if (this._dirty() && !this._confirm("requests")) return;
+        history.pushState(null, "", "/parental-control-requests");
+        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+        return;
       case "kid": this._kid = Number(arg); this._closeAll(); break;
       case "res": this._res = Number(arg); this._closeAll(); break;
       case "day": this._day = arg; break;
@@ -542,6 +566,7 @@ class ParentalControlPanel extends HTMLElement {
       ? `<nav class="tabs">${TABS.map((t) => `<button type="button" class="${t.id === this._tab ? "on" : ""}" data-act="tab" data-arg="${t.id}">${t.label}</button>`).join("")}</nav>`
       : "";
     return `<h1>Règles</h1><span class="sim-slot">${this._simBanner()}</span>${tabs}<span class="sp"></span>
+      <span class="req-slot">${this._requestsButton()}</span>
       ${dirty ? `<span class="dirty">Modifications non enregistrées</span>` : msg?.kind === "ok" ? `<span class="ok">${esc(msg.text)}</span>` : ""}
       ${this._btn("revert", "Annuler", { cls: "btn", title: "Annuler les modifications", disabled: !dirty || this._saving, confirmKey: "revert" })}
       ${this._btn("save", this._saving ? "Enregistrement…" : "Enregistrer", { cls: "btn primary", disabled: !dirty || this._saving })}`;

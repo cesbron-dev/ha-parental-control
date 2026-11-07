@@ -445,7 +445,8 @@ aux avertissements de fermeture destinés aux enfants.
 créé par l'intégration (aucun tableau de bord à configurer, pas d'entrée dans la barre
 latérale). Il liste les demandes en attente avec le temps restant et les mêmes boutons que la
 notification, puis les réponses des 5 dernières minutes (qui a répondu, ce qui a été accordé).
-Il se met à jour en direct. Tout utilisateur peut l'ouvrir, mais seuls les parents définis
+Il se met à jour en direct. Le panneau « Règles » y mène aussi par son bouton « Demandes », qui
+affiche le nombre de demandes en attente. Tout utilisateur peut l'ouvrir, mais seuls les parents définis
 ci-dessous y voient les boutons, et le moteur revérifie chaque réponse. Sur iPhone, un appui
 long sur la notification permet aussi de répondre sans ouvrir l'app.
 

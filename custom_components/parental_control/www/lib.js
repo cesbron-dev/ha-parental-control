@@ -114,6 +114,11 @@ export function requestOutcome(req) {
   }
 }
 
+// Nombre de demandes en attente (pastille du bouton « Demandes » du panneau « Règles »).
+export function pendingCount(state) {
+  return (state?.requests ?? []).filter((r) => r.status === "pending").length;
+}
+
 // Demandes de l'écran : en attente (la plus ancienne d'abord) puis récentes (la plus récente d'abord).
 export function requestsScreen(requests) {
   const list = requests ?? [];

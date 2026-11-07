@@ -36,6 +36,7 @@ const {
   requestRemaining,
   requestOutcome,
   requestsScreen,
+  pendingCount,
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
@@ -543,4 +544,10 @@ test("requestsScreen : en attente d'abord (plus ancienne en tête), puis récent
   assert.deepEqual(view.pending.map((x) => x.id), ["c", "a"]);
   assert.deepEqual(view.recent.map((x) => x.id), ["d", "b"]);
   assert.deepEqual(requestsScreen(undefined), { pending: [], recent: [] });
+});
+
+test("pendingCount : demandes en attente seulement", () => {
+  const s = { requests: [{ status: "pending" }, { status: "accepted" }, { status: "pending" }] };
+  assert.equal(pendingCount(s), 2);
+  assert.equal(pendingCount(undefined), 0);
 });
