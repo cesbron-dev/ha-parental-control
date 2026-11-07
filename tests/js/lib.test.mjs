@@ -33,6 +33,9 @@ const {
   requestsFor,
   requestLine,
   ownerChoices,
+  requestRemaining,
+  requestOutcome,
+  requestsScreen,
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
@@ -512,4 +515,32 @@ test("ownerChoices : nom de l'enfant, à défaut son id", () => {
   assert.deepEqual(ownerChoices({ kids: { hugo: { name: "Hugo" } } }, ["hugo", "zoe"]),
     [{ value: "hugo", label: "Hugo" }, { value: "zoe", label: "zoe" }]);
   assert.deepEqual(ownerChoices({}, undefined), []);
+});
+
+test("requestRemaining : minutes avant l'expiration, arrondies au-dessus", () => {
+  assert.equal(requestRemaining("2026-10-30T15:12:00-04:00", NOW), "Expire dans 12 min");
+  assert.equal(requestRemaining("2026-10-30T15:00:20-04:00", NOW), "Expire dans 1 min");
+  assert.equal(requestRemaining("2026-10-30T15:00:00-04:00", NOW), "Expire maintenant");
+  assert.equal(requestRemaining(null, NOW), "Expire maintenant");
+});
+
+test("requestOutcome : qui a répondu et ce qui a été accordé", () => {
+  const r = (extra) => ({ kind: "open", answered_by: "Julie", ...extra });
+  assert.equal(requestOutcome(r({ status: "accepted", granted: 30 })), "Acceptée par Julie : 30 min");
+  assert.equal(requestOutcome(r({ status: "accepted", granted: null })), "Acceptée par Julie : jusqu'au prochain changement");
+  assert.equal(requestOutcome(r({ kind: "homework", status: "accepted" })), "Acceptée par Julie");
+  assert.equal(requestOutcome(r({ status: "refused" })), "Refusée par Julie");
+  assert.equal(requestOutcome(r({ status: "expired", answered_by: null })), "Expirée sans réponse");
+  assert.equal(requestOutcome(r({ status: "failed", reason: "Déjà ouvert" })), "Acceptée par Julie, mais impossible : Déjà ouvert");
+  assert.equal(requestOutcome(r({ status: "refused", answered_by: null })), "Refusée");
+});
+
+test("requestsScreen : en attente d'abord (plus ancienne en tête), puis récentes", () => {
+  const r = (id, status, created) => ({ id, status, created: `2026-10-30T${created}:00-04:00` });
+  const view = requestsScreen([
+    r("a", "pending", "14:50"), r("b", "accepted", "14:40"), r("c", "pending", "14:45"), r("d", "expired", "14:55"),
+  ]);
+  assert.deepEqual(view.pending.map((x) => x.id), ["c", "a"]);
+  assert.deepEqual(view.recent.map((x) => x.id), ["d", "b"]);
+  assert.deepEqual(requestsScreen(undefined), { pending: [], recent: [] });
 });

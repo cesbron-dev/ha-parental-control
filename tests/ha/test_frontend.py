@@ -101,3 +101,16 @@ async def test_registers_admin_rules_panel_once(hass: HomeAssistant, http) -> No
     assert panel.sidebar_title == "Règles"
     assert panel.config["_panel_custom"]["name"] == "parental-control-panel"
     assert panel.config["_panel_custom"]["module_url"] == f"{_BASE}/panel.js"
+
+
+async def test_registers_requests_screen_for_everyone_off_sidebar(hass: HomeAssistant, http) -> None:
+    from homeassistant.components.frontend import DATA_PANELS
+
+    await async_register_frontend(hass)
+    await async_register_frontend(hass)
+
+    panel = hass.data[DATA_PANELS]["parental-control-requests"]
+    assert panel.require_admin is False  # Julie, parent non admin
+    assert panel.sidebar_title is None  # on y arrive par la notification
+    assert panel.config["_panel_custom"]["name"] == "parental-control-requests"
+    assert panel.config["_panel_custom"]["module_url"] == f"{_BASE}/requests.js"

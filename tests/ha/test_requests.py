@@ -641,3 +641,99 @@ async def test_possible_request_accepted_at_creation(make_env, julie, data) -> N
     data = {k: v for k, v in data.items() if v is not None}
     await env.call("demander", data, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
+
+
+# --- écran « Demandes » (WebSocket) ----------------------------------------------
+
+# Avertissement tiers du composant `http` de HA (requis par websocket_api), fatal sous `-W error`.
+_ws = pytest.mark.filterwarnings(
+    "ignore:It is recommended to use web:aiohttp.web_exceptions.NotAppKeyWarning"
+)
+
+
+async def _ws_client(hass, hass_ws_client, user):
+    token = await hass.auth.async_create_refresh_token(user, "https://example.com")
+    return await hass_ws_client(hass, hass.auth.async_create_access_token(token))
+
+
+async def _ws_answer(client, request_id: str, choice: str) -> dict:
+    await client.send_json_auto_id(
+        {"type": "parental_control/requests/answer", "request_id": request_id, "choice": choice}
+    )
+    return await client.receive_json()
+
+
+async def test_notification_opens_requests_screen(make_env, julie) -> None:
+    env = await _env(make_env)
+    await _ask(env)
+    data = julie[-1].data["data"]
+    assert data["url"] == "/parental-control-requests"
+    assert data["clickAction"] == "/parental-control-requests"
+
+
+@_ws
+async def test_requests_screen_lists_choices_without_token(
+    make_env, julie, julie_user, catalog, hass_ws_client
+) -> None:
+    env = await _parents_env(make_env, julie_user)
+    req_id = await _ask(env)
+    token = env.engine.requests.get(req_id).token
+    for user, can_answer in ((julie_user, True), (env.kid, False)):
+        client = await _ws_client(env.hass, hass_ws_client, user)
+        await client.send_json_auto_id({"type": "parental_control/requests/subscribe"})
+        assert (await client.receive_json())["success"]
+        event = (await client.receive_json())["event"]
+        assert token not in json.dumps(event)
+        assert event["can_answer"] is can_answer
+        (req,) = event["requests"]
+        assert req["id"] == req_id and req["status"] == "pending"
+        assert req["message"] == "Hugo demande 30 min de YouTube sur iPhone Hugo"
+        assert req["choices"][0] == ["0", "Accepter 30 min"]
+        assert req["choices"][-1] == ["refuse", "Refuser"]
+
+
+@_ws
+async def test_requests_screen_parent_non_admin_answers(
+    make_env, julie, julie_user, hass_ws_client
+) -> None:
+    env = await _parents_env(make_env, julie_user)
+    req_id = await _ask(env)
+    client = await _ws_client(env.hass, hass_ws_client, julie_user)
+    resp = await _ws_answer(client, req_id, "0")
+    assert resp["success"] and resp["result"] == {"status": "accepted"}
+    req = env.engine.requests.get(req_id)
+    assert req.granted == 30 and req.answered_by == "Julie"
+    await env.hass.async_block_till_done()
+    assert len(_clears(julie, req_id)) == 1
+    # Première réponse seulement : une seconde est refusée sans effet.
+    resp = await _ws_answer(client, req_id, "refuse")
+    assert resp["error"]["code"] == "not_pending"
+    assert env.engine.requests.get(req_id).status == "accepted"
+
+
+@_ws
+async def test_requests_screen_refuses_non_parents(
+    make_env, julie, julie_user, hass_ws_client
+) -> None:
+    # Marc est admin mais n'a pas de téléphone : il ne peut pas répondre, la tablette non plus.
+    env = await _parents_env(make_env, julie_user, marc=False)
+    req_id = await _ask(env)
+    for user in (env.kid, env.admin):
+        client = await _ws_client(env.hass, hass_ws_client, user)
+        resp = await _ws_answer(client, req_id, "0")
+        assert resp["error"]["code"] == "unauthorized"
+    assert env.engine.requests.get(req_id).status == "pending"
+
+
+@_ws
+async def test_requests_screen_unknown_choice_keeps_request(
+    make_env, julie, julie_user, hass_ws_client
+) -> None:
+    env = await _parents_env(make_env, julie_user)
+    req_id = await _ask(env)
+    client = await _ws_client(env.hass, hass_ws_client, julie_user)
+    resp = await _ws_answer(client, req_id, "9")
+    assert resp["error"]["code"] == "invalid_choice"
+    assert env.engine.requests.get(req_id).status == "pending"
+    resp = await _ws_answer(client, "inconnue", "0")
+    assert resp["error"]["code"] == "not_pending"
