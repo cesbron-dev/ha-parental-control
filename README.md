@@ -441,19 +441,45 @@ téléphones des parents (clé `request_notify`, par exemple `notify.mobile_app_
 Sans cette liste, les demandes sont désactivées. Cette liste est distincte de `notify`, qui sert
 aux avertissements de fermeture destinés aux enfants.
 
-**Écran « Demandes ».** Toucher la notification ouvre l'écran `/parental-control-requests`,
-créé par l'intégration (aucun tableau de bord à configurer, pas d'entrée dans la barre
-latérale). Il liste les demandes en attente avec le temps restant et les mêmes boutons que la
-notification, puis les réponses des 5 dernières minutes (qui a répondu, ce qui a été accordé).
-Il se met à jour en direct. Le panneau « Règles » y mène aussi par son bouton « Demandes », qui
-affiche le nombre de demandes en attente. Tout utilisateur peut l'ouvrir, mais seuls les parents définis
-ci-dessous y voient les boutons, et le moteur revérifie chaque réponse. Sur iPhone, un appui
-long sur la notification permet aussi de répondre sans ouvrir l'app.
+**Écran « Demandes ».** L'intégration crée l'écran `/parental-control-requests` : aucun tableau
+de bord à configurer. Il liste les demandes en attente avec le temps restant et les mêmes boutons
+que la notification, puis les réponses des 5 dernières minutes (qui a répondu, ce qui a été
+accordé). Il se met à jour en direct. Tout utilisateur peut l'ouvrir, mais seuls les parents
+définis ci-dessous y voient les boutons, et le moteur revérifie chaque réponse. Sur iPhone, un
+appui long sur la notification permet aussi de répondre sans ouvrir l'app.
+
+L'écran n'a pas d'entrée dans la barre latérale, pour que les enfants ne le voient pas. On y
+arrive :
+
+- en touchant la notification d'une demande ;
+- **administrateurs** : par le bouton « Demandes » du panneau « Règles », qui affiche le nombre
+  de demandes en attente ;
+- **parents non administrateurs** (le panneau « Règles » leur est fermé) : la notification ne
+  suffit plus une fois qu'elle a été ignorée ou effacée. Pour revenir à l'écran :
+  - dans un navigateur, ouvrir `https://<votre-instance>/parental-control-requests` et l'ajouter
+    aux favoris ;
+  - ou ajouter un bouton sur un tableau de bord que ce parent utilise. La condition de
+    visibilité `user` le cache aux autres comptes, dont celui de la tablette des enfants
+    (l'identifiant se trouve dans Paramètres → Personnes → Utilisateurs) :
+
+    ```yaml
+    type: button
+    name: Demandes
+    icon: mdi:hand-back-right
+    tap_action:
+      action: navigate
+      navigation_path: /parental-control-requests
+    visibility:
+      - condition: user
+        users:
+          - <identifiant de l'utilisateur du parent>
+    ```
 
 **Qui peut répondre.** Une réponse n'est acceptée que si elle vient de l'**utilisateur
 propriétaire d'un téléphone de la liste**, depuis la notification (qui porte en plus le **jeton
-secret** propre à la demande) ou depuis l'écran « Demandes » : être administrateur ne suffit pas. Si deux appareils `mobile_app` portent le même nom, aucun
-des deux ne peut répondre (un avertissement est journalisé) : donnez-leur des noms distincts.
+secret** propre à la demande) ou depuis l'écran « Demandes » : être administrateur ne suffit
+pas. Si deux appareils `mobile_app` portent le même nom, aucun des deux ne peut répondre (un
+avertissement est journalisé) : donnez-leur des noms distincts.
 
 **Règles.**
 
