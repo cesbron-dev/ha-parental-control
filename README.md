@@ -1,6 +1,6 @@
 # Contrôle parental pour Home Assistant
 
-Intégration Home Assistant (HACS) de contrôle parental. Chaque enfant a une frise
+Intégration Home Assistant de contrôle parental. Chaque enfant a une frise
 horaire par type de journée (école, fin de semaine, congé pédagogique, vacances).
 Le moteur l'applique en continu aux téléviseurs (`media_player`), aux services
 AdGuard Home (via [ha-adguard-clients](https://github.com/cesbron-dev/ha-adguard-clients)) et aux consoles Nintendo Switch. Il gère aussi
@@ -11,18 +11,26 @@ Le projet comporte trois pièces :
 
 1. **le moteur** (ce dépôt) : intégration, services, entités, API WebSocket ;
 2. **les cartes du tableau de bord** : voir [Cartes](#cartes) ;
-3. **l'éditeur visuel de la configuration** : à venir.
+3. **le panneau « Règles »** : l'éditeur visuel de la configuration, voir
+   [Panneau « Règles »](#panneau--règles-).
 
-En attendant l'éditeur, la configuration se charge sous forme de JSON (voir plus bas).
+La configuration peut aussi se charger sous forme de JSON (voir plus bas).
 
-## Installation (HACS)
+Distribuée sous [licence MIT](LICENSE). Textes de l'interface en français.
 
-1. HACS, menu en haut à droite, **Dépôts personnalisés**.
-2. Dépôt `https://github.com/cesbron-dev/ha-parental-control`, catégorie **Intégration**.
-3. Installer « Parental Control », puis redémarrer Home Assistant.
-4. **Paramètres, Appareils et services, Ajouter une intégration, Contrôle parental**
-   (l'intégration est listée sous ce nom dans Home Assistant, « Parental Control » dans HACS).
-5. Choisir le **code parent** : 4 à 8 chiffres. Il est stocké haché (PBKDF2), jamais en clair.
+## Installation
+
+Prérequis : Home Assistant **2026.10** ou plus récent. Pour piloter les services AdGuard Home,
+installez aussi [AdGuard Clients](https://github.com/cesbron-dev/ha-adguard-clients).
+
+1. **Paramètres, Marketplace**, bouton **Ajouter grâce à un lien** en haut à droite, avec l'URL
+   `https://github.com/cesbron-dev/ha-parental-control` (avant Home Assistant 2026.11 : HACS,
+   menu en haut à droite, **Dépôts personnalisés**, catégorie **Intégration**).
+2. Installer « Parental Control », puis redémarrer Home Assistant.
+3. **Paramètres, Appareils et services, Ajouter une intégration, Contrôle parental**
+   (l'intégration est listée sous ce nom dans Home Assistant, « Parental Control » dans
+   Marketplace).
+4. Choisir le **code parent** : 4 à 8 chiffres. Il est stocké haché (PBKDF2), jamais en clair.
    Une seule instance de l'intégration est possible. Le code se change plus tard dans les
    options de l'intégration.
 
