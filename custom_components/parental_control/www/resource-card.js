@@ -218,7 +218,7 @@ class ParentalResourceCard extends StateCard {
       submitLabel: "Autoriser",
       // Choix libre : pas d'état « en attente » ; le moteur refuse un doublon et la fenêtre l'affiche.
       request: this._request(v.owners, (kid, { choice, duration }) => {
-        const data = { kind: "open", kid_id: kid, resource_id };
+        const data = { kind: "open", kid_id: kid, resource_id, options: DURATIONS.map((d) => d.value) };
         if (choice) data.service = choice;
         if (duration) data.minutes = duration;
         return data;
