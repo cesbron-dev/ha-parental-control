@@ -560,6 +560,22 @@ class ParentalEngine:
             resource = self._check_resource(cfg, resource_id)
             if kid_id not in resource.owners:
                 raise _invalid("invalid_target")
+        # Une demande impossible à appliquer est refusée dès l'envoi (mêmes règles
+        # que les actions parentales), pas à la réponse du parent.
+        if kind == RequestKind.OPEN:
+            self._check_target(
+                cfg,
+                Target(
+                    resource_id=resource_id,
+                    kid_id=None if resource_id else kid_id,
+                    service=service,
+                ),
+            )
+        elif kind == RequestKind.BONUS:
+            if resource_id is not None:
+                self._bonus_by_grant(cfg, resource_id)
+        elif resource_id is not None:
+            raise _invalid("invalid_request")  # minuteur et devoirs visent l'enfant
         try:
             req = self._requests.create(
                 kind,
@@ -746,6 +762,17 @@ class ParentalEngine:
         if not any(r.has(ResourceKind.ADGUARD) for r in scope):
             raise _invalid("invalid_target")
 
+    def _bonus_by_grant(self, cfg: Config, resource_id: str) -> bool:
+        """Un bonus sur la ressource passe par l'appareil (Nintendo : `True`) ou par le
+        temps mesuré (`False`) ; sinon la ressource n'accepte pas de bonus."""
+        resource = self._check_resource(cfg, resource_id)
+        adapter = self._adapters.get(resource_id)
+        if adapter is not None and adapter.inner.nintendo is not None:
+            return True
+        if resource.measured:
+            return False
+        raise _invalid("invalid_target")
+
     # ------------------------------------------------------------------ actions
 
     async def homework_done(self, kid_id: str) -> None:
@@ -766,17 +793,13 @@ class ParentalEngine:
             self._decisions.bonuses.append(Bonus(today, minutes, kid_id=kid_id))
         else:
             assert resource_id is not None
-            resource = self._check_resource(cfg, resource_id)
-            adapter = self._adapters.get(resource_id)
-            if adapter is not None and adapter.inner.nintendo is not None:
+            if self._bonus_by_grant(cfg, resource_id):
                 # Via l'enveloppe : en simulation, rien n'est accordé.
-                await adapter.grant(minutes)
-            elif resource.measured:
+                await self._adapters[resource_id].grant(minutes)
+            else:
                 self._decisions.bonuses.append(
                     Bonus(today, minutes, resource_id=resource_id)
                 )
-            else:
-                raise _invalid("invalid_target")
         await self.async_evaluate("bonus")
 
     async def add_exception(

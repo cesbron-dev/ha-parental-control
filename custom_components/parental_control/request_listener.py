@@ -39,20 +39,34 @@ def parse_action(action: object) -> tuple[str, str, str] | None:
 def parent_user_ids(hass: HomeAssistant, targets: Sequence[str]) -> set[str]:
     """Utilisateurs propriétaires des téléphones `notify.mobile_app_<x>` de la liste.
 
-    Les autres cibles (et les entrées incomplètes) sont ignorées.
+    Les autres cibles (et les entrées incomplètes) sont ignorées. Tout utilisateur peut
+    enregistrer un appareil au nom de son choix : un service auquel mènent plusieurs
+    entrées `mobile_app` est ambigu, et aucun de leurs propriétaires n'est retenu.
     """
     services = set()
     for target in targets:
         domain, _, service = target.partition(".")
         if domain == "notify" and service.startswith(MOBILE_APP_SERVICE):
             services.add(service)
-    users: set[str] = set()
+    owners: dict[str, list[object]] = {}
     for entry in hass.config_entries.async_entries(MOBILE_APP):
         device_name = entry.data.get("device_name")
-        user_id = entry.data.get("user_id")
-        if not isinstance(device_name, str) or not isinstance(user_id, str) or not user_id:
+        if not isinstance(device_name, str):
             continue
-        if MOBILE_APP_SERVICE + slugify(device_name) in services:
+        service = MOBILE_APP_SERVICE + slugify(device_name)
+        if service in services:
+            owners.setdefault(service, []).append(entry.data.get("user_id"))
+    users: set[str] = set()
+    for service, user_ids in owners.items():
+        if len(user_ids) > 1:
+            _LOGGER.warning(
+                "notify.%s : plusieurs appareils mobile_app portent ce nom ; "
+                "aucune réponse aux demandes n'est acceptée par ce service",
+                service,
+            )
+            continue
+        user_id = user_ids[0]
+        if isinstance(user_id, str) and user_id:
             users.add(user_id)
     return users
 

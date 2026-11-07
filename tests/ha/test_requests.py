@@ -35,10 +35,11 @@ from tests.ha.test_engine import (
 OLIVIER = "notify.mobile_app_iphone_de_olivier"
 MANOU = "notify.mobile_app_iphone_de_manou"
 CONFIG = {**EX, "request_notify": [OLIVIER, MANOU]}
+# Une exception par service vise une ressource AdGuard (`tv` n'est qu'un media_player).
 OPEN_CALL = {
     "kind": "open",
     "kid_id": "gabin",
-    "resource_id": "tv",
+    "resource_id": "iphone_gabin",
     "service": "youtube",
     "minutes": 30,
     "options": [15, 30, 60, 120, None],
@@ -79,7 +80,7 @@ async def test_request_sends_actionable_notification_to_each_parent(
     assert len(olivier) == 1 and len(manou) == 1
     for call in (olivier[0], manou[0]):
         assert call.data["title"] == "Contrôle parental"
-        assert call.data["message"] == "Gabin demande 30 min de YouTube sur Télé salon"
+        assert call.data["message"] == "Gabin demande 30 min de YouTube sur iPhone Gabin"
         assert call.data["data"]["tag"] == f"parental_control_{req_id['id']}"
         actions = call.data["data"]["actions"]
         assert actions[0]["title"] == "Accepter 30 min"
@@ -161,21 +162,23 @@ async def test_simulation_prefixes_request_message(make_env, manou, catalog) -> 
     await env.call("demander", OPEN_CALL, env.kid_ctx)
     await env.hass.async_block_till_done()
     assert manou[0].data["message"] == (
-        "[Simulation] Gabin demande 30 min de YouTube sur Télé salon"
+        "[Simulation] Gabin demande 30 min de YouTube sur iPhone Gabin"
     )
 
 
 @pytest.mark.parametrize(
     ("kwargs", "expected"),
     [
-        ({"kind": RequestKind.OPEN, "resource_id": "tv", "service": "youtube", "proposed": 30},
-         "Gabin demande 30 min de YouTube sur Télé salon"),
+        ({"kind": RequestKind.OPEN, "resource_id": "iphone_gabin", "service": "youtube",
+          "proposed": 30},
+         "Gabin demande 30 min de YouTube sur iPhone Gabin"),
         ({"kind": RequestKind.OPEN, "service": "youtube", "proposed": 30},
          "Gabin demande 30 min de YouTube"),
         ({"kind": RequestKind.OPEN, "resource_id": "tv", "proposed": 30},
          "Gabin demande 30 min sur Télé salon"),
-        ({"kind": RequestKind.OPEN, "resource_id": "tv", "service": "youtube", "proposed": None},
-         "Gabin demande YouTube sur Télé salon jusqu'au prochain changement"),
+        ({"kind": RequestKind.OPEN, "resource_id": "iphone_gabin", "service": "youtube",
+          "proposed": None},
+         "Gabin demande YouTube sur iPhone Gabin jusqu'au prochain changement"),
         ({"kind": RequestKind.OPEN, "resource_id": "tv", "proposed": None},
          "Gabin demande Télé salon jusqu'au prochain changement"),
         ({"kind": RequestKind.BONUS, "proposed": 30}, "Gabin demande un bonus de 30 min"),
@@ -195,8 +198,6 @@ async def test_request_message(make_env, manou, catalog, kwargs, expected) -> No
 # --- réponse depuis la notification ---------------------------------------------
 
 EVENT = "mobile_app_notification_action"
-# `tv` (media_player) n'accepte pas d'exception par service : on vise l'iPhone (AdGuard).
-PHONE_CALL = {**OPEN_CALL, "resource_id": "iphone_gabin"}
 
 
 @pytest.fixture
@@ -227,7 +228,7 @@ async def _parents_env(make_env, manou_user, moment=None, config=CONFIG, *, oliv
     return env
 
 
-async def _ask(env, data=PHONE_CALL) -> str:
+async def _ask(env, data=OPEN_CALL) -> str:
     req_id = (await env.call("demander", data, env.kid_ctx, return_response=True))["id"]
     await env.hass.async_block_till_done()
     return req_id
@@ -263,6 +264,7 @@ def _clears(calls: list[ServiceCall], req_id: str) -> list[ServiceCall]:
         ("PARENTAL_REQ::tok:0", None),
         ("PARENTAL_REQ:abc::0", None),
         ("PARENTAL_REQ:abc:tok:", None),
+        ("PARENTAL_REQ:abc:to:k:0", None),
         ("", None),
         (None, None),
         (42, None),
@@ -329,7 +331,7 @@ async def test_unauthorized_answer_logs_without_token(
     req_id = await _ask(env)
     req = env.engine.requests.get(req_id)
     await _answer(env, _actions(manou)["0"], env.kid.id)
-    assert "refusée" in caplog.text or "ignorée" in caplog.text
+    assert f"Réponse à la demande {req_id} ignorée" in caplog.text
     assert req.token not in caplog.text
 
 
@@ -370,7 +372,7 @@ async def test_accept_replaces_listed_exceptions(make_env, manou, manou_user) ->
     closing = await env.engine.add_exception(
         Target(resource_id="iphone_gabin", service="youtube"), False, 30
     )
-    await _ask(env, {**PHONE_CALL, "replace": [closing, "absente"]})
+    await _ask(env, {**OPEN_CALL, "replace": [closing, "absente"]})
     await _answer(env, _actions(manou)["0"], manou_user.id)
     (exc,) = env.engine.decisions.exceptions
     assert exc.id != closing and exc.open
@@ -494,3 +496,67 @@ async def test_unexpected_error_still_finishes_request(make_env, manou, manou_us
     assert req.status == "failed" and req.resolved_at is not None
     await env.hass.async_block_till_done()
     assert len(_clears(manou, req_id)) == 1
+
+
+async def test_duplicate_device_name_trusted_for_nobody(
+    make_env, manou, manou_user, caplog: pytest.LogCaptureFixture
+) -> None:
+    """La tablette enregistre un appareil au même nom que celui de Manou : ni l'une ni
+    l'autre ne peut répondre par ce service."""
+    env = await _parents_env(make_env, manou_user, olivier=False)
+    add_phone(env.hass, "iPhone de Manou", env.kid.id)
+    assert parent_user_ids(env.hass, CONFIG["request_notify"]) == set()
+    assert "mobile_app_iphone_de_manou" in caplog.text and "plusieurs" in caplog.text
+    req_id = await _ask(env)
+    req = env.engine.requests.get(req_id)
+    for user_id in (env.kid.id, manou_user.id):
+        await _answer(env, _actions(manou)["0"], user_id)
+        assert req.status == "pending"
+    assert req.token not in caplog.text
+
+
+async def test_duplicate_device_name_keeps_other_phones(make_env, manou, manou_user) -> None:
+    env = await _parents_env(make_env, manou_user)
+    add_phone(env.hass, "iPhone de Manou", env.kid.id)
+    assert parent_user_ids(env.hass, CONFIG["request_notify"]) == {env.admin.id}
+
+
+@pytest.mark.parametrize(
+    ("data", "key"),
+    [
+        ({**OPEN_CALL, "resource_id": "tv"}, "invalid_target"),  # pas d'AdGuard sur la télé
+        ({"kind": "open", "kid_id": "gabin", "minutes": 30}, "invalid_target"),
+        ({"kind": "open", "kid_id": "gabin", "resource_id": "switch", "minutes": 30},
+         "nintendo_use_bonus"),
+        ({"kind": "bonus", "kid_id": "gabin", "resource_id": "iphone_gabin", "minutes": 30},
+         "invalid_target"),
+        ({"kind": "timer", "kid_id": "gabin", "resource_id": "tv", "minutes": 30},
+         "invalid_request"),
+        ({"kind": "homework", "kid_id": "gabin", "resource_id": "tv"}, "invalid_request"),
+    ],
+)
+async def test_impossible_request_rejected_at_creation(make_env, manou, data, key) -> None:
+    env = await _env(make_env)
+    data = {k: v for k, v in data.items() if v is not None}
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call("demander", data, env.kid_ctx)
+    assert err.value.translation_key == key
+    assert env.engine.requests.visible(at(TUESDAY, 16, 30)) == []
+    assert manou == []
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {**OPEN_CALL, "resource_id": None},  # service pour tous les appareils de l'enfant
+        {"kind": "open", "kid_id": "gabin", "resource_id": "tv", "minutes": 30},
+        {"kind": "bonus", "kid_id": "gabin", "resource_id": "tv", "minutes": 30},
+        {"kind": "bonus", "kid_id": "gabin", "resource_id": "switch", "minutes": 30},
+        {"kind": "bonus", "kid_id": "gabin", "minutes": 30},
+    ],
+)
+async def test_possible_request_accepted_at_creation(make_env, manou, data) -> None:
+    env = await _env(make_env)
+    data = {k: v for k, v in data.items() if v is not None}
+    await env.call("demander", data, env.kid_ctx)
+    assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
