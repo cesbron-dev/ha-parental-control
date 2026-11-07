@@ -422,6 +422,28 @@ export function serviceOptions(catalog, taken) {
     .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base" }));
 }
 
+// Nom lisible d'un service de notification : l'appareil de l'application Home Assistant dont il
+// porte le nom (`notify.mobile_app_<nom en slug>`), sinon le service lui-même.
+export function notifyLabel(service, devices) {
+  const slug = String(service ?? "").replace(/^notify\.mobile_app_/, "");
+  if (slug === service) return service;
+  const dev = (devices ?? []).find((d) => (d.identifiers ?? []).some(([dom]) => dom === "mobile_app")
+    && slugify(d.name) === slug);
+  return dev ? dev.name_by_user || dev.name : service;
+}
+
+// Choix d'un menu de notification : services `notify.*` pas encore pris, triés par libellé ;
+// `mobileOnly` ne garde que les téléphones de l'application (seuls à pouvoir répondre aux demandes).
+export function notifyOptions(services, devices, taken, mobileOnly = false) {
+  const skip = new Set(taken);
+  return (services ?? [])
+    .filter((s) => !mobileOnly || s.startsWith("mobile_app_"))
+    .map((s) => `notify.${s}`)
+    .filter((value) => !skip.has(value))
+    .map((value) => ({ value, label: notifyLabel(value, devices) }))
+    .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base" }));
+}
+
 // Services déjà présents dans les deux listes communes (un service n'est que dans l'une des deux).
 export function commonServices(cfg) {
   return Object.values(SERVICE_LISTS).flatMap((keys) => cfg[keys.common] ?? []);
