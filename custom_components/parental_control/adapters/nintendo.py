@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from ..core.evaluator import ResourceState
+from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -67,7 +68,7 @@ class NintendoAdapter:
     def _minutes(self, entity_id: str) -> float | None:
         state = self.hass.states.get(entity_id)
         if state is None:
-            if entity_id not in self._missing_logged:
+            if entity_id not in self._missing_logged and ha_started(self.hass):
                 self._missing_logged.add(entity_id)
                 _LOGGER.warning(
                     "%s : entité introuvable %s", self.label, entity_id
