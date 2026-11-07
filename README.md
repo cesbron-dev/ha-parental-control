@@ -142,6 +142,7 @@ accepte pas).
 | `default_leisure` | Services AdGuard considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Défaut : `youtube`, `roblox`, `tiktok`, `netflix`, `disneyplus`, `twitch`. |
 | `calendar_map` | Associe un mot cherché dans le titre des événements « journée entière » du calendrier de l'enfant à un type de journée. Comparaison sans accent ni casse, par inclusion. |
 | `notify` | Services `notify.*` des parents : avertissements de fin de plage d'un enfant et de re-blocage d'un service AdGuard ouvert par exception. |
+| `request_notify` | Téléphones des parents (`notify.mobile_app_…`) qui reçoivent et peuvent répondre aux demandes de temps des enfants. Distinct de `notify`. Voir « Demandes de temps ». |
 | `kids` | Liste des enfants. |
 | `resources` | Liste des appareils logiques contrôlés (voir [Appareils logiques](#appareils-logiques)). |
 
@@ -320,6 +321,7 @@ administrateur doit le passer dans le champ `code` pour les actions qui débloqu
 | `parental_control.arreter_minuteur` | `kid_id` | non |
 | `parental_control.pause` | `active` | oui pour lever la pause (`active: false`), non pour la poser |
 | `parental_control.importer_configuration` | `config` | réservé aux administrateurs |
+| `parental_control.demander` | `kind`, `kid_id`, `resource_id`, `service`, `minutes`, `options`, `replace` | non (voir « Demandes de temps ») |
 
 Précisions :
 
@@ -423,6 +425,53 @@ physiques, puis intégrations : lecteur, clients AdGuard, console Nintendo, avec
 dit si l'entité ou l'appareil existe dans Home Assistant) et leurs quotas, loisirs par défaut, mots du calendrier scolaire et notifications. Les
 modifications restent en brouillon jusqu'à « Enregistrer » ; le moteur valide et, en cas d'erreur,
 indique le champ fautif. Un onglet JSON garde l'accès à la configuration brute.
+
+## Demandes de temps
+
+Un enfant qui n'est pas administrateur peut **demander** du temps plutôt que de le débloquer :
+les fenêtres des cartes (autorisation, bonus, devoirs, minuteur) ont un bouton « Demander », sans
+code. Les parents reçoivent une notification actionnable dans l'app Home Assistant (« Hugo
+demande 30 min de YouTube sur iPhone Hugo ») avec un bouton par durée proposée et « Refuser ».
+La première réponse valable applique l'action (exception, bonus, minuteur ou devoirs terminés) ; la
+notification disparaît chez tous les parents. La carte de l'enfant montre « Demande envoyée · en
+attente », puis le résultat (accepté, refusé, sans réponse) pendant 5 minutes.
+
+**Activer.** Dans le panneau « Règles », carte « Demandes de temps (parents) », ajoutez les
+téléphones des parents (clé `request_notify`, par exemple `notify.mobile_app_iphone_de_marc`).
+Sans cette liste, les demandes sont désactivées. Cette liste est distincte de `notify`, qui sert
+aux avertissements de fermeture destinés aux enfants.
+
+**Qui peut répondre.** Une réponse n'est acceptée que si elle vient de l'**utilisateur
+propriétaire d'un téléphone de la liste** et porte le **jeton secret** propre à la demande :
+être administrateur ne suffit pas. Si deux appareils `mobile_app` portent le même nom, aucun
+des deux ne peut répondre (un avertissement est journalisé) : donnez-leur des noms distincts.
+
+**Règles.**
+
+- Une demande impossible (cible inconnue, ressource qui n'est pas à l'enfant, bonus non
+  applicable à la ressource…) est refusée dès l'envoi, pas à la réponse du parent.
+- Une seule demande en attente par enfant et par action.
+- Sans réponse après **15 minutes**, la demande expire.
+- Les demandes sont gardées **en mémoire** : elles sont perdues au redémarrage de Home Assistant
+  (la notification reste alors sur le téléphone, mais sa réponse est ignorée).
+- Chaque issue (acceptée, refusée, impossible, sans réponse) laisse une ligne dans le journal
+  (« Contrôle parental »).
+- Un **iPhone** est recommandé : Android n'affiche que 3 boutons au plus par notification, ce
+  qui coupe les durées proposées.
+
+**Service `parental_control.demander`.** Utilisé par les cartes ; appelable aussi depuis un
+script ou une automatisation. Il ne demande pas de code et n'accorde rien tant qu'un parent n'a
+pas répondu. Avec `response_variable`, il retourne `{"id": "..."}`.
+
+| Champ | Détail |
+|---|---|
+| `kind` | `open` (autoriser), `bonus`, `homework` (devoirs terminés) ou `timer` (minuteur). Obligatoire. |
+| `kid_id` | L'enfant qui demande. Obligatoire. |
+| `resource_id` | La ressource visée (`open` et `bonus` seulement) ; elle doit appartenir à l'enfant. |
+| `service` | Un service AdGuard à débloquer (`open`). |
+| `minutes` | Durée proposée (1 à 240), obligatoire pour `bonus` et `timer`, interdite pour `homework`. Mise en tête des boutons. |
+| `options` | Autres durées proposées, en minutes ; `null` pour `open` = « jusqu'au prochain changement ». Six boutons de durée au plus. |
+| `replace` | Identifiants d'exceptions à annuler quand le parent accepte (`open`). |
 
 ## Mode simulation
 
