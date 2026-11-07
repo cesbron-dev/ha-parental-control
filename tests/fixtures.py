@@ -1,7 +1,7 @@
 """Données de test partagées : config d'exemple de la tâche 1."""
 
 EX = {
-    "version": 1,
+    "version": 2,
     "default_leisure": ["youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch"],
     "calendar_map": {"pédagogique": "conge_peda", "vacances": "vacances", "relâche": "vacances"},
     "notify": ["notify.mobile_app_iphone_de_olivier"],
@@ -39,28 +39,40 @@ EX = {
         {
             "id": "tv",
             "name": "Télé salon",
-            "kind": "media_player",
             "owners": ["gabin"],
-            "entity_id": "media_player.tv_salon",
-            "notify_service": None,
             "quota_minutes": {"fin_de_semaine": 180},
+            "devices": [{"name": "Télé salon", "integrations": [
+                {"kind": "media_player", "entity_id": "media_player.tv_salon", "notify_service": None},
+            ]}],
         },
         {
             "id": "iphone_gabin",
             "name": "iPhone Gabin",
-            "kind": "adguard_services",
             "owners": ["gabin"],
-            "device_id": "adguard_iphone_gabin",
+            "devices": [{"name": "iPhone Gabin", "integrations": [
+                {"kind": "adguard_services", "device_id": "adguard_iphone_gabin"},
+            ]}],
         },
         {
             "id": "switch",
             "name": "Switch",
-            "kind": "nintendo",
             "owners": ["gabin"],
-            "device_id": "b64d274dc045916f9a6de862a104fbb5",
-            "limit_entity": "number.switch_papa_temps_d_ecran_max_aujourd_hui",
-            "remaining_entity": "sensor.switch_papa_temps_d_ecran_restant",
-            "used_entity": "sensor.switch_papa_temps_d_ecran_utilise",
+            "devices": [{"name": "Switch", "integrations": [
+                {
+                    "kind": "nintendo",
+                    "device_id": "b64d274dc045916f9a6de862a104fbb5",
+                    "limit_entity": "number.switch_papa_temps_d_ecran_max_aujourd_hui",
+                    "remaining_entity": "sensor.switch_papa_temps_d_ecran_restant",
+                    "used_entity": "sensor.switch_papa_temps_d_ecran_utilise",
+                },
+            ]}],
         },
     ],
 }
+
+
+def integration_of(resource: dict) -> dict:
+    """Seule intégration d'une ressource de l'exemple (un appareil, une intégration)."""
+    (device,) = resource["devices"]
+    (integration,) = device["integrations"]
+    return integration

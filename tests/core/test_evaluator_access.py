@@ -1,3 +1,4 @@
+import copy
 from datetime import date, datetime, timedelta
 
 from custom_components.parental_control.core.decisions import (
@@ -8,6 +9,7 @@ from custom_components.parental_control.core.decisions import (
 from custom_components.parental_control.core.evaluator import KidStatus, evaluate
 from custom_components.parental_control.core.model import DayType, SegmentType
 from tests.core.conftest import TZ, mixed_tv
+from tests.fixtures import integration_of
 
 TUESDAY = date(2026, 10, 27)
 ECOLE = {"gabin": DayType.ECOLE, "leo": DayType.ECOLE, "mael": DayType.ECOLE}
@@ -212,8 +214,9 @@ def test_service_exception_closes_one_service_when_open(cfg):
 
 def test_kid_service_exception_applies_to_all_kid_devices(make_cfg):
     def modify(d):
-        extra = dict(d["resources"][1])
-        extra.update(id="ipad_gabin", name="iPad Gabin", client="ipad_gabin")
+        extra = copy.deepcopy(d["resources"][1])
+        extra.update(id="ipad_gabin", name="iPad Gabin")
+        integration_of(extra)["device_id"] = "adguard_ipad_gabin"
         d["resources"].append(extra)
 
     cfg = make_cfg(modify)
@@ -244,8 +247,9 @@ def test_newer_service_open_beats_resource_close(cfg):
 
 def test_resource_close_keeps_kid_service_open_on_other_devices(make_cfg):
     def modify(d):
-        extra = dict(d["resources"][1])
-        extra.update(id="ipad_gabin", name="iPad Gabin", client="ipad_gabin")
+        extra = copy.deepcopy(d["resources"][1])
+        extra.update(id="ipad_gabin", name="iPad Gabin")
+        integration_of(extra)["device_id"] = "adguard_ipad_gabin"
         d["resources"].append(extra)
 
     cfg = make_cfg(modify)

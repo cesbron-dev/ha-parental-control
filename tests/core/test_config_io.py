@@ -15,7 +15,7 @@ from custom_components.parental_control.core.model import (
     Segment,
     SegmentType,
 )
-from tests.fixtures import EX
+from tests.fixtures import EX, integration_of
 
 
 def ex():
@@ -89,7 +89,7 @@ def test_resource_mode_unknown_resource_rejected():
 )
 def test_kind_options_required(index, key):
     d = ex()
-    del d["resources"][index][key]
+    del integration_of(d["resources"][index])[key]
     with pytest.raises(ConfigError, match=key):
         parse_config(d)
 
@@ -147,29 +147,18 @@ SWITCH = {"kind": "nintendo", "device_id": "dev", "limit_entity": "number.l",
           "remaining_entity": "sensor.r", "used_entity": "sensor.u"}
 
 
-def test_v1_resource_is_converted_to_one_device_with_one_integration():
+def test_example_dumps_back_unchanged():
     out = dump_config(parse_config(ex()))
     assert out["version"] == 2
-    assert out["resources"][0] == {
-        "id": "tv",
-        "name": "Télé salon",
-        "owners": ["gabin"],
-        "quota_minutes": {"fin_de_semaine": 180},
-        "devices": [{"name": "Télé salon", "integrations": [
-            {"kind": "media_player", "entity_id": "media_player.tv_salon",
-             "notify_service": None},
-        ]}],
-    }
-    assert [r["id"] for r in out["resources"]] == ["tv", "iphone_gabin", "switch"]
-    assert all("kind" not in r for r in out["resources"])
+    assert out["resources"] == [{"quota_minutes": {}, **r} for r in EX["resources"]]
 
 
-def test_v1_keeps_kind_and_options():
+def test_example_kinds_and_options():
     cfg = parse_config(ex())
     assert [r.kind for r in cfg.resources] == [
         ResourceKind.MEDIA_PLAYER, ResourceKind.ADGUARD, ResourceKind.NINTENDO]
     switch = cfg.resource("switch").integrations[0]
-    assert switch.options["used_entity"] == EX["resources"][2]["used_entity"]
+    assert switch.options["used_entity"] == integration_of(EX["resources"][2])["used_entity"]
 
 
 def test_mixed_tv_kinds_and_integrations():
@@ -256,10 +245,27 @@ def test_v2_round_trip():
     assert "icon" not in out["resources"][1]
 
 
-def test_unsupported_version_rejected():
+@pytest.mark.parametrize("version", [1, 3, None])
+def test_unsupported_version_rejected(version):
     d = ex()
-    d["version"] = 3
-    with pytest.raises(ConfigError, match=r"^version : version non prise en charge : 3"):
+    d["version"] = version
+    with pytest.raises(ConfigError, match=rf"^version : version non prise en charge : {version!r}"):
+        parse_config(d)
+
+
+def test_missing_version_rejected():
+    d = ex()
+    del d["version"]
+    with pytest.raises(ConfigError, match=r"^version : version non prise en charge : None"):
+        parse_config(d)
+
+
+def test_flat_resource_rejected():
+    """Une ressource sans `devices` (ancien format plat) est refusée."""
+    d = ex()
+    d["resources"][0] = {"id": "tv", "name": "Télé", "kind": "media_player",
+                         "owners": ["gabin"], "entity_id": "media_player.tv"}
+    with pytest.raises(ConfigError, match=r"^resources\[0\]\.devices"):
         parse_config(d)
 
 
