@@ -526,3 +526,23 @@ test("AdGuard catalogue: readable names, unknown services and menu choices", () 
   assert.deepEqual(lib.commonServices(cfg), ["tiktok", "youtube"]);
   assert.deepEqual(lib.commonServices({}), []);
 });
+
+test("Notification services: menu choices with mobile_app device names", () => {
+  const services = ["mobile_app_iphone_de_manou", "mobile_app_ipad_de_leo", "persistent_notification", "mobile_app_inconnu"];
+  const devices = [
+    { name: "iPhone de Manou", identifiers: [["mobile_app", "a"]] },
+    { name: "iPad de Léo", name_by_user: "iPad Léo", identifiers: [["mobile_app", "b"]] },
+    { name: "Télé", identifiers: [["samsungtv", "c"]] },
+  ];
+  assert.equal(lib.notifyLabel("notify.mobile_app_iphone_de_manou", devices), "iPhone de Manou");
+  assert.equal(lib.notifyLabel("notify.persistent_notification", devices), "notify.persistent_notification");
+  // Téléphones de l'application seulement, sans ceux déjà pris, triés par libellé.
+  assert.deepEqual(lib.notifyOptions(services, devices, ["notify.mobile_app_iphone_de_manou"], true), [
+    { value: "notify.mobile_app_ipad_de_leo", label: "iPad Léo" },
+    { value: "notify.mobile_app_inconnu", label: "notify.mobile_app_inconnu" },
+  ]);
+  assert.deepEqual(lib.notifyOptions(services, devices, [], false).map((o) => o.value), [
+    "notify.mobile_app_ipad_de_leo", "notify.mobile_app_iphone_de_manou",
+    "notify.mobile_app_inconnu", "notify.persistent_notification",
+  ]);
+});

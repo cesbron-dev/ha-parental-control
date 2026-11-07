@@ -338,7 +338,7 @@ class ParentalControlPanel extends HTMLElement {
       if (kind === "kid" && kid) el.innerHTML = this._kidChips(kid, list);
       else if (kind === "common") el.innerHTML = this._commonChips(list);
       else if (kind === "notify") el.innerHTML = this._notifyChips();
-      else if (kind === "request_notify") el.innerHTML = this._requestNotifyChips();
+      else if (kind === "request_notify") el.innerHTML = this._notifyChips("request_notify");
     }
   }
 
@@ -585,10 +585,6 @@ class ParentalControlPanel extends HTMLElement {
     }
   }
 
-  _datalist(id, values) {
-    return `<datalist id="${id}">${values.map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>`;
-  }
-
   _entities(prefix, deviceId = null) {
     const states = Object.keys(this._hass?.states ?? {});
     const byDevice = deviceId
@@ -639,19 +635,21 @@ class ParentalControlPanel extends HTMLElement {
     return L.serviceLabel(this._catalog, service).known ? service : `${service} : inconnu d'AdGuard, à retirer`;
   }
 
-  _notifyChips() {
-    const chips = (this._draft.notify ?? []).map((s) => `<button type="button" class="pill own" data-act="del-notify" data-arg="${esc(s)}" title="Retirer">${esc(s)}<span class="x">✕</span></button>`).join("");
-    return `${chips}<input class="pill-in" style="width:220px" data-input="notify" data-enter="add-notify" list="notifs" placeholder="+ notify.mobile_app_…" title="Service de notification">`;
-  }
-
-  _requestNotifyChips() {
-    const chips = (this._draft.request_notify ?? []).map((s) => `<button type="button" class="pill own" data-act="del-request-notify" data-arg="${esc(s)}" title="Retirer">${esc(s)}<span class="x">✕</span></button>`).join("");
-    return `${chips}<input class="pill-in" style="width:220px" data-input="request_notify" data-enter="add-request-notify" list="notifs" placeholder="+ notify.mobile_app_…" title="Service de notification">`;
+  // Destinataires (`notify` ou `request_notify`) : pastilles au nom de l'appareil, puis menu des
+  // services pas encore pris ; les demandes n'acceptent que les téléphones de l'application.
+  _notifyChips(key = "notify") {
+    const act = key === "notify" ? "notify" : "request-notify";
+    const taken = this._draft[key] ?? [];
+    const devices = this._devices;
+    const chips = taken.map((s) => `<button type="button" class="pill own" data-act="del-${act}" data-arg="${esc(s)}" title="Retirer ${esc(s)}">${esc(L.notifyLabel(s, devices))}<span class="x">✕</span></button>`).join("");
+    const services = Object.keys(this._hass?.services?.notify ?? {});
+    const options = L.notifyOptions(services, devices, taken, key === "request_notify");
+    return `${chips}<select class="pill-in" data-input="${key}" data-enter="add-${act}" title="Ajouter un destinataire" ${options.length ? "" : "disabled"}>
+      <option value="">+ Ajouter…</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
   }
 
   _general() {
     const d = this._draft;
-    const notifyServices = Object.keys(this._hass?.services?.notify ?? {}).map((s) => `notify.${s}`);
     const cal = Object.entries(d.calendar_map ?? {});
     return `<div class="general">
       <div>${this._commonList("leisure")}<div style="height:16px"></div>${this._commonList("on_demand")}</div>
@@ -670,12 +668,11 @@ class ParentalControlPanel extends HTMLElement {
         <div style="height:16px"></div>
         <div class="card"><h2>Notifications</h2>
           <div class="lz" data-chips="notify">${this._notifyChips()}</div>
-          ${this._datalist("notifs", notifyServices)}
           <div class="mut help">Services prévenus des avertissements (fin de plage, etc.), par exemple les appareils des enfants.</div>
         </div>
         <div style="height:16px"></div>
         <div class="card"><h2>Demandes de temps (parents)</h2>
-          <div class="lz" data-chips="request_notify">${this._requestNotifyChips()}</div>
+          <div class="lz" data-chips="request_notify">${this._notifyChips("request_notify")}</div>
           <div class="mut help">Téléphones des parents (application Home Assistant) qui reçoivent les demandes et y répondent.</div>
         </div>
       </div>
