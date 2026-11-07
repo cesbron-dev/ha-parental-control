@@ -3,11 +3,11 @@
 import {
   esc, needsCode, kidView, kidServiceToggles, kidExceptions, formatPill, timelineGeometry, exceptionsForKid,
   exceptionSpans, segmentClass, statusClass, nextStepLabel, dayTypeLabel, simulationBadge, fmtDuration,
-  bonusLabel, bonusMinutes,
+  bonusLabel, bonusMinutes, canRequest, findRequest,
 } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
-import { BASE_CSS, TIMELINE_CSS, pill, ConfirmState, ErrorNotice } from "./style.js";
+import { BASE_CSS, TIMELINE_CSS, pill, ConfirmState, ErrorNotice, requestLines } from "./style.js";
 import { openActionDialog } from "./dialogs.js";
 import { createEditor } from "./editor.js";
 
@@ -124,6 +124,7 @@ class ParentalKidCard extends StateCard {
       ${this._services()}
       ${this._exceptions(now)}
       ${this._bonus(v)}
+      ${requestLines(this._state, { kid_id: id })}
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
@@ -242,8 +243,20 @@ class ParentalKidCard extends StateCard {
   // Action protégée : directe pour un admin (déjà confirmée par deux appuis), sinon fenêtre du code.
   _withCode(kind, title, submitLabel, service, data) {
     if (!needsCode(this._hass, kind)) return this._call(service, data);
+    const kid_id = data.kid_id;
+    let request = null;
+    if (canRequest(this._hass, this._state)) {
+      // « Demander » : l'enfant de la carte, sans code ; le parent répond depuis la notification.
+      const extra = kind === "timer" ? { minutes: data.minutes, options: TIMER_MINUTES }
+        : kind === "bonus" ? { minutes: data.minutes, options: bonusMinutes(this._config) } : {};
+      request = {
+        kids: null,
+        pending: findRequest(this._state, { kind, kid_id })?.status === "pending",
+        onRequest: () => callAction(this._hass, "demander", { kind, kid_id, ...extra }),
+      };
+    }
     openActionDialog(this.shadowRoot, {
-      title, needCode: true, submitLabel,
+      title, needCode: true, submitLabel, request,
       onSubmit: ({ code }) => callAction(this._hass, service, data, code),
     });
   }
@@ -269,11 +282,24 @@ class ParentalKidCard extends StateCard {
       this._error.set(res.ok ? "" : res.error || "Action refusée");
       return this._render();
     }
+    let request = null;
+    if (canRequest(this._hass, this._state)) {
+      request = {
+        kids: null,
+        pending: findRequest(this._state, { kind: "open", kid_id, service })?.status === "pending",
+        onRequest: ({ duration }) => {
+          const data = { kind: "open", kid_id, service, options: DURATIONS.map((d) => d.value), replace: t.exceptions };
+          if (duration) data.minutes = duration;
+          return callAction(this._hass, "demander", data);
+        },
+      };
+    }
     openActionDialog(this.shadowRoot, {
       title: `Autoriser ${t.label} · ${name}`,
       durations: DURATIONS,
       needCode: needsCode(this._hass, "open"),
       submitLabel: "Autoriser",
+      request,
       onSubmit: ({ duration, code }) => replace(code, true, duration),
     });
   }
