@@ -378,6 +378,52 @@ async def test_accept_replaces_listed_exceptions(make_env, julie, julie_user) ->
     assert exc.id != closing and exc.open
 
 
+async def test_accept_keeps_listed_exception_of_other_target(
+    make_env, julie, julie_user
+) -> None:
+    """`replace` vient de la tablette : une fermeture d'une autre cible n'est jamais
+    annulée par l'acceptation (il faudrait le code parent)."""
+    env = await _parents_env(make_env, julie_user)
+    same = await env.engine.add_exception(
+        Target(resource_id="iphone_hugo", service="youtube"), False, 30
+    )
+    other_resource = await env.engine.add_exception(Target(resource_id="tv"), False, 60)
+    other_service = await env.engine.add_exception(
+        Target(resource_id="iphone_hugo", service="roblox"), False, 60
+    )
+    kid_wide = await env.engine.add_exception(
+        Target(kid_id="hugo", service="youtube"), False, 60
+    )
+    await _ask(env, {**OPEN_CALL, "replace": [same, other_resource, other_service, kid_wide]})
+    await _answer(env, _actions(julie)["0"], julie_user.id)
+    ids = {e.id for e in env.engine.decisions.exceptions}
+    assert same not in ids
+    assert {other_resource, other_service, kid_wide} <= ids
+
+
+async def test_accept_with_invalid_target_cancels_nothing(make_env, julie, julie_user) -> None:
+    """La cible n'est plus valide (config changée) : la demande échoue sans retirer la
+    fermeture listée dans `replace`."""
+    env = await _parents_env(make_env, julie_user)
+    closing = await env.engine.add_exception(
+        Target(resource_id="iphone_hugo", service="youtube"), False, 30
+    )
+    req_id = await _ask(env, {**OPEN_CALL, "replace": [closing]})
+    cfg = copy.deepcopy(CONFIG)
+    (iphone,) = [r for r in cfg["resources"] if r["id"] == "iphone_hugo"]
+    iphone.clear()
+    iphone.update(
+        id="iphone_hugo", name="iPhone Hugo", kind="media_player", owners=["hugo"],
+        entity_id="media_player.iphone_hugo", notify_service=None,
+    )
+    await env.engine.set_config(parse_config(cfg))
+    assert any(e.id == closing for e in env.engine.decisions.exceptions)
+    await _answer(env, _actions(julie)["0"], julie_user.id)
+    req = env.engine.requests.get(req_id)
+    assert req.status == "failed" and req.reason
+    assert [e.id for e in env.engine.decisions.exceptions] == [closing]
+
+
 async def test_accept_bonus_on_switch_resource(make_env, julie, julie_user) -> None:
     env = await _parents_env(make_env, julie_user, at(SATURDAY, 10, 0))
     set_nintendo(env.hass)
@@ -543,6 +589,41 @@ async def test_impossible_request_rejected_at_creation(make_env, julie, data, ke
     assert err.value.translation_key == key
     assert env.engine.requests.visible(at(TUESDAY, 16, 30)) == []
     assert julie == []
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        {**OPEN_CALL, "service": "Donne-moi tout"},  # texte libre, pas un service
+        {**OPEN_CALL, "resource_id": None, "service": "steam"},  # hors des loisirs de l'enfant
+    ],
+)
+async def test_request_service_outside_target_rejected(make_env, julie, data) -> None:
+    env = await _env(make_env)
+    data = {k: v for k, v in data.items() if v is not None}
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call("demander", data, env.kid_ctx)
+    assert err.value.translation_key == "invalid_target"
+    assert julie == []
+
+
+async def test_request_on_demand_service_accepted(make_env, julie) -> None:
+    cfg = {**CONFIG, "default_on_demand": ["steam"]}
+    env = await _env(make_env, cfg)
+    await env.call("demander", {**OPEN_CALL, "service": "steam"}, env.kid_ctx)
+    kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
+    await env.call("demander", {**kid_wide, "service": "steam"}, env.kid_ctx)
+    assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 2
+
+
+async def test_too_many_pending_requests_rejected(make_env, julie) -> None:
+    env = await _env(make_env)
+    for service in ("youtube", "roblox", "tiktok"):
+        await env.call("demander", {**OPEN_CALL, "service": service}, env.kid_ctx)
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call("demander", {**OPEN_CALL, "service": "netflix"}, env.kid_ctx)
+    assert err.value.translation_key == "too_many_requests"
+    assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 3
 
 
 @pytest.mark.parametrize(

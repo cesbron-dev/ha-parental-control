@@ -15,6 +15,7 @@ RESULT_DISPLAY = timedelta(minutes=5)
 MAX_OPTIONS = 6
 MIN_MINUTES = 1
 MAX_MINUTES = 240
+MAX_PENDING_PER_KID = 3  # contre l'envoi en rafale vers les téléphones des parents
 
 UNTIL_NEXT_CHANGE = "Jusqu'au prochain changement"
 
@@ -120,9 +121,15 @@ class RequestBook:
     ) -> TimeRequest:
         opts = normalize_options(kind, proposed, options)
         key = (str(kind), kid_id, resource_id, service)
-        for other in self._requests.values():
-            if other.status == RequestStatus.PENDING and other.key == key:
-                raise RequestError("request_pending")
+        pending = [
+            r
+            for r in self._requests.values()
+            if r.status == RequestStatus.PENDING and r.kid_id == kid_id
+        ]
+        if any(other.key == key for other in pending):
+            raise RequestError("request_pending")
+        if len(pending) >= MAX_PENDING_PER_KID:
+            raise RequestError("too_many_requests")
         req = TimeRequest(
             id=uuid.uuid4().hex,
             token=secrets.token_urlsafe(16),

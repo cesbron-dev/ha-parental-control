@@ -4,6 +4,7 @@ import pytest
 
 from custom_components.parental_control.core.requests import (
     MAX_OPTIONS,
+    MAX_PENDING_PER_KID,
     REQUEST_TIMEOUT,
     RESULT_DISPLAY,
     RequestBook,
@@ -66,6 +67,23 @@ def test_create_rejects_duplicate_pending():
         make(book)
     assert e.value.key == "request_pending"
     assert make(book, service="youtube") is not None
+
+
+def test_create_caps_pending_per_kid():
+    book = RequestBook()
+    services = ["youtube", "roblox", "tiktok"]
+    assert MAX_PENDING_PER_KID == len(services)
+    reqs = [make(book, service=s) for s in services]
+    with pytest.raises(RequestError) as e:
+        make(book, service="netflix")
+    assert e.value.key == "too_many_requests"
+    other = book.create(
+        RequestKind.HOMEWORK, "kid2", resource_id=None, service=None,
+        proposed=None, options=(), replace=(), now=NOW,
+    )
+    assert other is not None  # le plafond est par enfant
+    book.finish(reqs[0], RequestStatus.REFUSED, NOW)
+    assert make(book, service="netflix") is not None  # une demande résolue libère une place
 
 
 def test_create_sets_fields():
