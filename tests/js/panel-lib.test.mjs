@@ -227,7 +227,7 @@ test("isDirty", () => {
 
 test("emptyConfig : brouillon v2 d'une nouvelle installation, prêt à recevoir un appareil", () => {
   const cfg = emptyConfig();
-  assert.deepEqual(cfg, { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], kids: [], resources: [] });
+  assert.deepEqual(cfg, { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], kids: [], resources: [] });
   const res = addResource(cfg, "Télé");
   addIntegration(res.devices[0], "media_player");
   assert.equal(cfg.version, 2);
@@ -525,4 +525,24 @@ test("AdGuard catalogue: readable names, unknown services and menu choices", () 
   const cfg = { default_leisure: ["tiktok"], default_on_demand: ["youtube"] };
   assert.deepEqual(lib.commonServices(cfg), ["tiktok", "youtube"]);
   assert.deepEqual(lib.commonServices({}), []);
+});
+
+test("Notification services: menu choices with mobile_app device names", () => {
+  const services = ["mobile_app_iphone_de_julie", "mobile_app_ipad_de_zoe", "persistent_notification", "mobile_app_inconnu"];
+  const devices = [
+    { name: "iPhone de Julie", identifiers: [["mobile_app", "a"]] },
+    { name: "iPad de Zoé", name_by_user: "iPad Zoé", identifiers: [["mobile_app", "b"]] },
+    { name: "Télé", identifiers: [["samsungtv", "c"]] },
+  ];
+  assert.equal(lib.notifyLabel("notify.mobile_app_iphone_de_julie", devices), "iPhone de Julie");
+  assert.equal(lib.notifyLabel("notify.persistent_notification", devices), "notify.persistent_notification");
+  // Téléphones de l'application seulement, sans ceux déjà pris, triés par libellé.
+  assert.deepEqual(lib.notifyOptions(services, devices, ["notify.mobile_app_iphone_de_julie"], true), [
+    { value: "notify.mobile_app_ipad_de_zoe", label: "iPad Zoé" },
+    { value: "notify.mobile_app_inconnu", label: "notify.mobile_app_inconnu" },
+  ]);
+  assert.deepEqual(lib.notifyOptions(services, devices, [], false).map((o) => o.value), [
+    "notify.mobile_app_ipad_de_zoe", "notify.mobile_app_iphone_de_julie",
+    "notify.mobile_app_inconnu", "notify.persistent_notification",
+  ]);
 });

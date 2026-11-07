@@ -1,5 +1,5 @@
 // Style « verre » commun aux cartes, pilules et confirmation en deux appuis.
-import { esc, needsCode, bonusLabel } from "./lib.js";
+import { esc, needsCode, bonusLabel, requestsFor, requestLine } from "./lib.js";
 
 export const CONFIRM_MS = 3000;
 const ERROR_MS = 6000;
@@ -81,6 +81,7 @@ export const BASE_CSS = `
   .pill.bleu { color: var(--g-blue); background: var(--g-blue-bg); border-color: var(--g-blue-line); min-width: 52px; justify-content: center; }
   .pill.selected { background: var(--g-blue-sel); border-color: var(--g-blue); color: var(--g-blue-sel-text); }
   .error { color: var(--g-red); font-size: .9rem; }
+  .reqline { margin-top: 8px; font-size: .9rem; color: var(--g-muted); }
 `;
 
 // Frise d'une journée (segments colorés, exceptions hachurées, trait « maintenant », heures),
@@ -181,4 +182,9 @@ export class ErrorNotice {
   clear() {
     clearTimeout(this._timer);
   }
+}
+
+// Lignes d'état des demandes de temps d'une carte (sous les pastilles, comme la ligne d'erreur).
+export function requestLines(state, target) {
+  return requestsFor(state, target).map((r) => `<div class="reqline">${esc(requestLine(r))}</div>`).join("");
 }

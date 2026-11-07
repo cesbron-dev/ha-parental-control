@@ -17,6 +17,7 @@ from homeassistant.helpers import config_validation as cv
 from .const import CONF_CODE, CONF_CODE_HASH, DOMAIN
 from .core.config_io import ConfigError, parse_config
 from .core.decisions import Target
+from .core.requests import RequestKind
 from .security import check_unlock
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ SERVICE_START_TIMER = "demarrer_minuteur"
 SERVICE_STOP_TIMER = "arreter_minuteur"
 SERVICE_PAUSE = "pause"
 SERVICE_IMPORT_CONFIG = "importer_configuration"
+SERVICE_REQUEST = "demander"
 
 ATTR_KID_ID = "kid_id"
 ATTR_RESOURCE_ID = "resource_id"
@@ -75,6 +77,19 @@ START_TIMER_SCHEMA = vol.Schema(
 STOP_TIMER_SCHEMA = vol.Schema({vol.Required(ATTR_KID_ID): cv.string, **_CODE})
 PAUSE_SCHEMA = vol.Schema({vol.Required(ATTR_ACTIVE): cv.boolean, **_CODE})
 IMPORT_CONFIG_SCHEMA = vol.Schema({vol.Required(ATTR_CONFIG): dict, **_CODE})
+REQUEST_SCHEMA = vol.Schema(
+    {
+        vol.Required("kind"): vol.In([k.value for k in RequestKind]),
+        vol.Required(ATTR_KID_ID): cv.string,
+        vol.Optional(ATTR_RESOURCE_ID): cv.string,
+        vol.Optional(ATTR_SERVICE): cv.string,
+        vol.Optional(ATTR_MINUTES): _MINUTES,
+        vol.Optional("options", default=list): vol.All(
+            cv.ensure_list, [vol.Any(None, _MINUTES)]
+        ),
+        vol.Optional("replace", default=list): vol.All(cv.ensure_list, [cv.string]),
+    }
+)
 
 SERVICES = (
     SERVICE_HOMEWORK_DONE,
@@ -85,6 +100,7 @@ SERVICES = (
     SERVICE_STOP_TIMER,
     SERVICE_PAUSE,
     SERVICE_IMPORT_CONFIG,
+    SERVICE_REQUEST,
 )
 
 
@@ -158,6 +174,19 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
             ) from err
         await entry.runtime_data.set_config(cfg)
 
+    async def request(call: ServiceCall) -> ServiceResponse:
+        # Pas de code : la demande n'accorde rien, un parent doit y répondre.
+        req_id = await entry.runtime_data.request_time(
+            RequestKind(call.data["kind"]),
+            call.data[ATTR_KID_ID],
+            resource_id=call.data.get(ATTR_RESOURCE_ID),
+            service=call.data.get(ATTR_SERVICE),
+            proposed=call.data.get(ATTR_MINUTES),
+            options=call.data["options"],
+            replace=call.data["replace"],
+        )
+        return {"id": req_id} if call.return_response else None
+
     register = hass.services.async_register
     register(DOMAIN, SERVICE_HOMEWORK_DONE, homework_done, HOMEWORK_SCHEMA)
     register(DOMAIN, SERVICE_ADD_BONUS, add_bonus, ADD_BONUS_SCHEMA)
@@ -170,6 +199,10 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
     register(DOMAIN, SERVICE_STOP_TIMER, stop_timer, STOP_TIMER_SCHEMA)
     register(DOMAIN, SERVICE_PAUSE, pause, PAUSE_SCHEMA)
     register(DOMAIN, SERVICE_IMPORT_CONFIG, import_config, IMPORT_CONFIG_SCHEMA)
+    register(
+        DOMAIN, SERVICE_REQUEST, request, REQUEST_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
 
 def async_unload_services(hass: HomeAssistant) -> None:

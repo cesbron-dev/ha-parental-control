@@ -10,6 +10,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import SIGNAL_UPDATE
 from .engine import ParentalEngine
 from .frontend import async_register_frontend
+from .request_listener import async_setup_request_listener
 from .services import async_setup_services, async_unload_services
 from .store import ParentalStore
 from .websocket import async_register_websocket
@@ -24,6 +25,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ParentalConfigEntry) -> 
     engine = ParentalEngine(hass, entry, ParentalStore(hass))
     entry.runtime_data = engine
     await engine.async_start()
+    entry.async_on_unload(async_setup_request_listener(hass, entry))
     async_setup_services(hass, entry)
     async_register_websocket(hass)
     await async_register_frontend(hass)

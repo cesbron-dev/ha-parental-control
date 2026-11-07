@@ -20,7 +20,7 @@ from custom_components.parental_control.serialize import serialize_snapshot
 from tests.fixtures import EX
 from tests.ha.fake_adguard import FakeAdGuard
 from tests.ha.test_engine import LEISURE, SATURDAY, TUESDAY, TV, at, set_nintendo
-from tests.ha.test_services import Env, make_env  # noqa: F401 - fixture
+from tests.ha.conftest import Env
 
 
 def entity_id(env: Env, platform: str, key: str) -> str | None:

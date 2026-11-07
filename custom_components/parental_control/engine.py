@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
@@ -44,11 +44,21 @@ from homeassistant.util import dt as dt_util
 from .adapters import build_adapter
 from .adapters.simulation import SimulatedAdapter
 from .calendar_source import fetch_all_day_events
-from .const import DOMAIN, EVENT_WARNING, SIGNAL_UPDATE, TICK_SECONDS
+from .catalog import services_catalog
+from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TICK_SECONDS
 from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
 from .core.model import Config, DayType, Kid, Resource, ResourceKind, SegmentType
+from .core.requests import (
+    RequestBook,
+    RequestError,
+    RequestKind,
+    RequestStatus,
+    TimeRequest,
+    action_choices,
+    duration_label,
+)
 from .store import INVALID_CONFIG_NOTIFICATION, ParentalStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,6 +69,11 @@ DEFAULT_WARN_MINUTES = 5
 DRIFT_COOLDOWN = timedelta(seconds=30)
 NOTIFY_TITLE = "Contrôle parental"
 SIMULATION_PREFIX = "[Simulation] "
+
+
+def request_tag(request_id: str) -> str:
+    """Étiquette de la notification d'une demande (remplacée ou retirée par `clear_notification`)."""
+    return f"parental_control_{request_id}"
 
 
 def _invalid(key: str, **placeholders: str) -> ServiceValidationError:
@@ -135,6 +150,7 @@ class ParentalEngine:
         # Dernier envoi de commande par ressource (anti-rafale des corrections de dérive).
         self._sent_at: dict[str, datetime] = {}
         self._last_eval: datetime | None = None
+        self._requests = RequestBook()
         self._lock = asyncio.Lock()
         self._unsubs: list[CALLBACK_TYPE] = []
         self._state_unsub: CALLBACK_TYPE | None = None
@@ -163,6 +179,10 @@ class ParentalEngine:
     @property
     def simulation(self) -> bool:
         return self._decisions.simulation
+
+    @property
+    def requests(self) -> RequestBook:
+        return self._requests
 
     @property
     def closures(self) -> dict[str, datetime]:
@@ -271,6 +291,7 @@ class ParentalEngine:
 
     @callback
     def _on_tick(self, _now: datetime) -> None:
+        self._expire_requests(dt_util.now())
         self._schedule(self.async_evaluate("tick"))
 
     @callback
@@ -465,14 +486,261 @@ class ParentalEngine:
         for target in cfg.notify:
             self._schedule(self._send_notify(target, message))
 
-    async def _send_notify(self, target: str, message: str) -> None:
+    async def _send_notify(
+        self,
+        target: str,
+        message: str,
+        data: dict[str, Any] | None = None,
+        *,
+        title: str | None = NOTIFY_TITLE,
+    ) -> None:
         domain, _, service = target.partition(".")
+        payload: dict[str, Any] = {"message": message}
+        if title is not None:
+            payload["title"] = title
+        if data is not None:
+            payload["data"] = data
         try:
-            await self._hass.services.async_call(
-                domain, service, {"title": NOTIFY_TITLE, "message": message}, blocking=False
-            )
+            await self._hass.services.async_call(domain, service, payload, blocking=False)
         except Exception as err:  # noqa: BLE001 - une notification ne bloque rien
             _LOGGER.warning("Notification %s impossible : %s", target, err)
+
+    # ------------------------------------------------------------------ demandes
+
+    def _service_label(self, service: str) -> str:
+        return services_catalog(self._hass).get(service, service)
+
+    def request_message(self, req: TimeRequest) -> str:
+        """Texte de la notification envoyée aux parents."""
+        cfg = self._require_config()
+        # L'écran « Demandes » affiche aussi les demandes d'un enfant retiré entre-temps.
+        kid = self._kid_name(req.kid_id)
+        resource = None
+        if req.resource_id is not None:
+            try:
+                resource = cfg.resource(req.resource_id).name
+            except KeyError:
+                resource = req.resource_id
+        on = f" sur {resource}" if resource is not None else ""
+        if req.kind == RequestKind.HOMEWORK:
+            return f"{kid} dit avoir terminé ses devoirs"
+        if req.kind == RequestKind.BONUS:
+            return f"{kid} demande un bonus de {duration_label(req.proposed)}{on}"
+        if req.kind == RequestKind.TIMER:
+            return f"{kid} demande un minuteur de {duration_label(req.proposed)}"
+        duration = "" if req.proposed is None else f" {duration_label(req.proposed)}"
+        if req.service is not None:
+            service = self._service_label(req.service)
+            what = f"{duration} de {service}" if duration else f" {service}"
+        else:
+            what = duration
+        if req.proposed is None:
+            if req.service is None and resource is not None:
+                what = f" {resource}"
+                on = ""
+            return f"{kid} demande{what}{on} jusqu'au prochain changement"
+        return f"{kid} demande{what}{on}"
+
+    async def request_time(
+        self,
+        kind: RequestKind,
+        kid_id: str,
+        *,
+        resource_id: str | None = None,
+        service: str | None = None,
+        proposed: int | None = None,
+        options: Sequence[int | None] = (),
+        replace: Sequence[str] = (),
+    ) -> str:
+        """Enregistre une demande et prévient les parents ; renvoie son identifiant."""
+        cfg = self._require_config()
+        if not cfg.request_notify:
+            raise _invalid("requests_disabled")
+        self._check_kid(cfg, kid_id)
+        if resource_id is not None:
+            resource = self._check_resource(cfg, resource_id)
+            if kid_id not in resource.owners:
+                raise _invalid("invalid_target")
+        # Une demande impossible à appliquer est refusée dès l'envoi (mêmes règles
+        # que les actions parentales), pas à la réponse du parent.
+        if kind == RequestKind.OPEN:
+            self._check_target(
+                cfg,
+                Target(
+                    resource_id=resource_id,
+                    kid_id=None if resource_id else kid_id,
+                    service=service,
+                ),
+            )
+            # Le service vient de la tablette et s'affiche chez les parents : seuls
+            # les services de loisir ou sur demande de la cible sont admis.
+            if service is not None:
+                if resource_id is not None:
+                    allowed = cfg.managed_services_for_resource(resource_id)
+                else:
+                    allowed = cfg.leisure_for(kid_id) | cfg.on_demand_for(kid_id)
+                if service not in allowed:
+                    raise _invalid("invalid_target")
+        elif kind == RequestKind.BONUS:
+            if resource_id is not None:
+                self._bonus_by_grant(cfg, resource_id)
+        elif resource_id is not None:
+            raise _invalid("invalid_request")  # minuteur et devoirs visent l'enfant
+        try:
+            req = self._requests.create(
+                kind,
+                kid_id,
+                resource_id=resource_id,
+                service=service,
+                proposed=proposed,
+                options=options,
+                replace=replace,
+                now=dt_util.now(),
+            )
+        except RequestError as err:
+            raise _invalid(err.key) from err
+        message = self.request_message(req)
+        if self._decisions.simulation:
+            message = SIMULATION_PREFIX + message
+        data = {
+            "tag": request_tag(req.id),
+            # Toucher la notification ouvre l'écran « Demandes » (iOS : `url`, Android : `clickAction`).
+            "url": f"/{REQUESTS_PANEL_PATH}",
+            "clickAction": f"/{REQUESTS_PANEL_PATH}",
+            "actions": [
+                {"action": f"PARENTAL_REQ:{req.id}:{req.token}:{choice}", "title": title}
+                for choice, title in action_choices(req)
+            ],
+        }
+        for target in cfg.request_notify:
+            self._schedule(self._send_notify(target, message, data))
+        async_dispatcher_send(self._hass, SIGNAL_UPDATE)
+        return req.id
+
+    def clear_request_notification(self, req: TimeRequest) -> None:
+        """Retire la notification de la demande chez tous les parents (sans attendre)."""
+        cfg = self._config
+        if cfg is None:
+            return
+        for target in cfg.request_notify:
+            self._schedule(
+                self._send_notify(
+                    target, "clear_notification", {"tag": request_tag(req.id)}, title=None
+                )
+            )
+
+    def _kid_name(self, kid_id: str) -> str:
+        """Nom de l'enfant, ou son id s'il n'est plus dans la config."""
+        if self._config is not None:
+            try:
+                return self._config.kid(kid_id).name
+            except KeyError:
+                pass
+        return kid_id
+
+    async def answer_request(
+        self, request_id: str, token: str, choice: str, user_id: str
+    ) -> RequestStatus | None:
+        """Applique la réponse d'un parent (déjà authentifié) ; `None` si elle est ignorée.
+
+        Seule la première réponse au bon jeton, avant l'échéance, est retenue.
+        """
+        user = await self._hass.auth.async_get_user(user_id)
+        answered_by = user.name if user is not None and user.name else user_id
+        req = self._requests.claim(request_id, token, dt_util.now())
+        if req is None:
+            return None
+        status, granted, reason = RequestStatus.FAILED, None, "Action impossible"
+        try:
+            status, granted, reason = await self._apply_answer(req, choice)
+        finally:
+            # Toujours un statut définitif : la réservation (`claim`) ne doit pas rester.
+            self._requests.finish(
+                req, status, dt_util.now(),
+                granted=granted, reason=reason, answered_by=answered_by,
+            )
+            self.clear_request_notification(req)
+            name = self._kid_name(req.kid_id)
+            if status == RequestStatus.REFUSED:
+                line = f"Demande de {name} refusée par {answered_by}"
+            elif status == RequestStatus.FAILED:
+                line = f"Demande de {name} acceptée par {answered_by}, mais impossible : {reason}"
+            else:
+                line = f"Demande de {name} acceptée par {answered_by}"
+                if req.kind != RequestKind.HOMEWORK:
+                    line += " : " + (
+                        "jusqu'au prochain changement"
+                        if granted is None
+                        else duration_label(granted)
+                    )
+            async_log_entry(self._hass, "Contrôle parental", line, domain=DOMAIN)
+            async_dispatcher_send(self._hass, SIGNAL_UPDATE)
+        return status
+
+    async def _apply_answer(
+        self, req: TimeRequest, choice: str
+    ) -> tuple[RequestStatus, int | None, str | None]:
+        """Statut, durée accordée et raison d'échec de la réponse `choice`."""
+        if choice == "refuse":
+            return RequestStatus.REFUSED, None, None
+        if req.kind == RequestKind.HOMEWORK:
+            if choice != "accept":
+                return RequestStatus.FAILED, None, "Choix inconnu"
+            minutes = None
+        else:
+            # Comparaison de chaînes : ni « 01 », ni chiffres d'autres écritures.
+            indexes = {str(i): i for i in range(len(req.options))}
+            if choice not in indexes:
+                return RequestStatus.FAILED, None, "Choix inconnu"
+            minutes = req.options[indexes[choice]]
+        kid_id = None if req.resource_id else req.kid_id
+        try:
+            if req.kind == RequestKind.OPEN:
+                target = Target(
+                    resource_id=req.resource_id, kid_id=kid_id, service=req.service
+                )
+                # Cible revérifiée avant toute annulation : un échec ne retire rien.
+                self._check_target(self._require_config(), target)
+                # `replace` vient de la tablette : seules les exceptions de la même
+                # cible sont remplacées (annuler une autre fermeture demande le code).
+                for exc_id in req.replace:
+                    if any(
+                        e.id == exc_id and e.target == target
+                        for e in self._decisions.exceptions
+                    ):
+                        await self.cancel_exception(exc_id)
+                    else:
+                        _LOGGER.debug(
+                            "Demande %s : exception %s ignorée (absente ou autre cible)",
+                            req.id, exc_id,
+                        )
+                await self.add_exception(target, True, minutes)
+            elif req.kind == RequestKind.BONUS:
+                assert minutes is not None  # garanti par `normalize_options`
+                await self.add_bonus(minutes, kid_id=kid_id, resource_id=req.resource_id)
+            elif req.kind == RequestKind.TIMER:
+                assert minutes is not None
+                await self.start_timer(req.kid_id, minutes)
+            else:
+                await self.homework_done(req.kid_id)
+        except ServiceValidationError as err:
+            return RequestStatus.FAILED, None, str(err) or err.translation_key
+        except (KeyError, ValueError):
+            return RequestStatus.FAILED, None, "Action impossible"
+        return RequestStatus.ACCEPTED, minutes, None
+
+    def _expire_requests(self, now: datetime) -> None:
+        expired = self._requests.expire(now)
+        for req in expired:
+            self.clear_request_notification(req)
+            async_log_entry(
+                self._hass,
+                "Contrôle parental",
+                f"Demande de {self._kid_name(req.kid_id)} sans réponse",
+                domain=DOMAIN,
+            )
+        if expired:
+            async_dispatcher_send(self._hass, SIGNAL_UPDATE)
 
     # ------------------------------------------------------------------ validation
 
@@ -518,6 +786,17 @@ class ParentalEngine:
         if not any(r.has(ResourceKind.ADGUARD) for r in scope):
             raise _invalid("invalid_target")
 
+    def _bonus_by_grant(self, cfg: Config, resource_id: str) -> bool:
+        """Un bonus sur la ressource passe par l'appareil (Nintendo : `True`) ou par le
+        temps mesuré (`False`) ; sinon la ressource n'accepte pas de bonus."""
+        resource = self._check_resource(cfg, resource_id)
+        adapter = self._adapters.get(resource_id)
+        if adapter is not None and adapter.inner.nintendo is not None:
+            return True
+        if resource.measured:
+            return False
+        raise _invalid("invalid_target")
+
     # ------------------------------------------------------------------ actions
 
     async def homework_done(self, kid_id: str) -> None:
@@ -538,17 +817,13 @@ class ParentalEngine:
             self._decisions.bonuses.append(Bonus(today, minutes, kid_id=kid_id))
         else:
             assert resource_id is not None
-            resource = self._check_resource(cfg, resource_id)
-            adapter = self._adapters.get(resource_id)
-            if adapter is not None and adapter.inner.nintendo is not None:
+            if self._bonus_by_grant(cfg, resource_id):
                 # Via l'enveloppe : en simulation, rien n'est accordé.
-                await adapter.grant(minutes)
-            elif resource.measured:
+                await self._adapters[resource_id].grant(minutes)
+            else:
                 self._decisions.bonuses.append(
                     Bonus(today, minutes, resource_id=resource_id)
                 )
-            else:
-                raise _invalid("invalid_target")
         await self.async_evaluate("bonus")
 
     async def add_exception(
