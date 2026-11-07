@@ -49,6 +49,52 @@ export function needsCode(hass, action) {
   return ["open", "bonus", "homework", "timer"].includes(action);
 }
 
+// Un compte non admin peut envoyer une demande de temps quand le moteur l'a activée.
+export function canRequest(hass, state) {
+  return !hass?.user?.is_admin && !!state?.requests_enabled;
+}
+
+// Demande qui correspond à la cible, la plus récente (même délai pour toutes : `expires` le plus loin).
+export function findRequest(state, { kind, kid_id, resource_id = null, service = null }) {
+  let best = null;
+  for (const r of state?.requests ?? []) {
+    if (r.kind !== kind || r.kid_id !== kid_id) continue;
+    if ((r.resource_id ?? null) !== resource_id || (r.service ?? null) !== service) continue;
+    if (!best || new Date(r.expires) > new Date(best.expires)) best = r;
+  }
+  return best;
+}
+
+// Demandes d'un enfant (`{kid_id}`) ou d'une ressource (`{resource_id}`).
+export function requestsFor(state, { kid_id, resource_id }) {
+  return (state?.requests ?? []).filter((r) => (resource_id ? r.resource_id === resource_id : r.kid_id === kid_id));
+}
+
+// Enfants propriétaires d'une ressource, en choix `{value, label}` pour « Qui demande ? ».
+export function ownerChoices(state, owners) {
+  return (owners ?? []).map((id) => ({ value: id, label: state?.kids?.[id]?.name ?? id }));
+}
+
+// Durée d'une demande, comme `duration_label` du moteur : « 15 min », « 1 h », « 1 h 30 ».
+function requestDuration(minutes) {
+  if (minutes == null) return "jusqu'au prochain changement";
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m} min`;
+  return m ? `${h} h ${pad(m)}` : `${h} h`;
+}
+
+// Ligne d'état d'une demande, affichée sous les pastilles de la carte.
+export function requestLine(req) {
+  switch (req.status) {
+    case "pending": return "Demande envoyée · en attente";
+    case "accepted": return req.kind === "homework" ? "Accepté" : `Accepté : ${requestDuration(req.granted)}`;
+    case "refused": return "Refusé";
+    case "expired": return "Pas de réponse";
+    default: return `Impossible : ${req.reason ?? ""}`;
+  }
+}
+
 function scopeOf(target) {
   if (target.resource_id) return "resource";
   if (target.kid_id) return "kid";

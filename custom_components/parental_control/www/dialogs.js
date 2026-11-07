@@ -1,6 +1,8 @@
 // Fenêtre d'action des cartes (« Autoriser… », saisie du code) : un <dialog> natif dans le
 // shadow DOM de la carte, affiché en surimpression (couche supérieure du navigateur).
-import { esc, needsCode, bonusLabel, keypadInput } from "./lib.js";
+import {
+  esc, needsCode, bonusLabel, keypadInput, canRequest, findRequest, ownerChoices, bonusMinutes,
+} from "./lib.js";
 import { callAction } from "./connection.js";
 
 const DIALOG_CSS = `
@@ -38,11 +40,14 @@ const pickPills = (name, items, selected) => items
 // - choices / durations : listes `{value, label}` à choisir (« Quoi », « Pendant »), ou null pour omettre ;
 // - needCode : affiche un pavé numérique tactile ; le code saisi est vidé après chaque appel ;
 // - onSubmit({choice, duration, code}) -> Promise<{ok} | {ok:false, error}> : la fenêtre se ferme sur
-//   succès, affiche l'erreur sinon.
+//   succès, affiche l'erreur sinon ;
+// - request : `{kids, pending, onRequest({choice, duration, kid})}` ou null. Ajoute « Demander »
+//   (compte non admin), sans code : `kids` ([{value, label}], ou null) ajoute « Qui demande ? » ;
+//   `pending` désactive le bouton (« En attente… »). Même retour que `onSubmit`.
 // Renvoie `{close}`.
-export function openActionDialog(root, { title, choices = null, durations = null, needCode = false, submitLabel = "Valider", onSubmit }) {
+export function openActionDialog(root, { title, choices = null, durations = null, needCode = false, submitLabel = "Valider", request = null, onSubmit }) {
   root.querySelector("dialog.parental")?.close();
-  const sel = { choice: choices ? 0 : null, duration: null };
+  const sel = { choice: choices ? 0 : null, duration: null, kid: request?.kids?.length === 1 ? 0 : null };
   let busy = false;
 
   const dlg = document.createElement("dialog");
@@ -51,6 +56,7 @@ export function openActionDialog(root, { title, choices = null, durations = null
     <div class="title">${esc(title)}</div>
     ${choices ? `<div class="dlg-label">Quoi</div><div class="pills">${pickPills("choice", choices, sel.choice)}</div>` : ""}
     ${durations ? `<div class="dlg-label">Pendant</div><div class="pills">${pickPills("duration", durations, sel.duration)}</div>` : ""}
+    ${request?.kids ? `<div class="dlg-label">Qui demande ?</div><div class="pills">${pickPills("kid", request.kids, sel.kid)}</div>` : ""}
     ${needCode ? `<div class="dlg-label">Code parent</div>
       <div class="dlg-code" aria-label="Code parent saisi"></div>
       <div class="keypad">
@@ -61,6 +67,7 @@ export function openActionDialog(root, { title, choices = null, durations = null
       </div>` : ""}
     <div class="error"></div>
     <div class="dlg-actions">
+      ${request ? `<button type="button" class="pill" data-btn="request">${request.pending ? "En attente…" : "Demander"}</button>` : ""}
       <button type="button" class="pill" data-btn="cancel">Annuler</button>
       <button type="button" class="pill bleu" data-btn="ok">${esc(submitLabel)}</button>
     </div>`;
@@ -75,6 +82,7 @@ export function openActionDialog(root, { title, choices = null, durations = null
   };
   const okBtn = dlg.querySelector('[data-btn="ok"]');
   const errEl = dlg.querySelector(".error");
+  const requestBtn = dlg.querySelector('[data-btn="request"]');
 
   const refresh = () => {
     for (const b of dlg.querySelectorAll("[data-pick]")) {
@@ -83,22 +91,29 @@ export function openActionDialog(root, { title, choices = null, durations = null
     }
     const ready = (!durations || sel.duration !== null) && (!codeEl || code.length >= 4);
     okBtn.disabled = busy || !ready;
+    if (requestBtn) {
+      // la demande n'attend pas le code : il suffit d'avoir choisi la durée et l'enfant
+      requestBtn.disabled = busy || request.pending || (durations && sel.duration === null) || (request.kids && sel.kid === null);
+    }
     dlg.querySelector('[data-btn="cancel"]').disabled = busy;
     for (const k of dlg.querySelectorAll("[data-key]")) k.disabled = busy;
   };
 
-  const submit = async () => {
-    if (okBtn.disabled) return;
+  const pickedChoice = () => (choices ? choices[sel.choice].value : null);
+  const pickedDuration = () => (durations ? durations[sel.duration].value : null);
+  const sendSubmit = () => onSubmit({ choice: pickedChoice(), duration: pickedDuration(), code: codeEl ? code : null });
+  const sendRequest = () => request.onRequest({
+    choice: pickedChoice(), duration: pickedDuration(), kid: request.kids ? request.kids[sel.kid].value : null,
+  });
+
+  const submit = async (btn, run) => {
+    if (btn.disabled) return;
     busy = true;
     errEl.textContent = "";
     refresh();
     let res;
     try {
-      res = await onSubmit({
-        choice: choices ? choices[sel.choice].value : null,
-        duration: durations ? durations[sel.duration].value : null,
-        code: codeEl ? code : null,
-      });
+      res = await run();
     } finally {
       // Le code n'est jamais gardé : vidé dès la réponse du moteur.
       setCode("");
@@ -129,13 +144,14 @@ export function openActionDialog(root, { title, choices = null, durations = null
     const btn = ev.target.closest("[data-btn]");
     if (!btn || btn.disabled) return;
     if (btn.dataset.btn === "cancel") dlg.close();
-    else submit();
+    else if (btn.dataset.btn === "request") submit(requestBtn, sendRequest);
+    else submit(okBtn, sendSubmit);
   });
   // Clavier physique (ordinateur) : chiffres, retour arrière, Entrée.
   dlg.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
       ev.preventDefault();
-      submit();
+      submit(okBtn, sendSubmit);
       return;
     }
     if (!codeEl || busy) return;
@@ -159,13 +175,31 @@ export function openActionDialog(root, { title, choices = null, durations = null
 }
 
 // Bonus nintendo : admin -> `call` direct (déjà confirmé par deux appuis) ; sinon fenêtre de saisie du code.
-export function runBonus(root, hass, { resource_id, minutes, title, call }) {
+export function runBonus(root, hass, { resource_id, minutes, title, call, request = null }) {
   const data = { resource_id, minutes };
   if (!needsCode(hass, "bonus")) return call("ajouter_bonus", data);
   openActionDialog(root, {
     title: `${bonusLabel(minutes)} · ${title}`,
     needCode: true,
     submitLabel: "Ajouter",
+    request,
     onSubmit: ({ code }) => callAction(hass, "ajouter_bonus", data, code),
   });
+}
+
+// Option `request` d'un bonus sur une ressource (cartes appareil et Switch) : « Demander » pour un
+// compte non admin, au nom d'un des propriétaires ; null sinon. L'état « en attente » n'est connu
+// que s'il n'y a qu'un propriétaire (sinon l'enfant n'est pas encore choisi).
+export function bonusRequest(hass, state, config, resource_id, minutes) {
+  if (!canRequest(hass, state)) return null;
+  const owners = state.resources?.[resource_id]?.owners ?? [];
+  const pending = owners.length === 1
+    && findRequest(state, { kind: "bonus", kid_id: owners[0], resource_id })?.status === "pending";
+  return {
+    kids: ownerChoices(state, owners),
+    pending,
+    onRequest: ({ kid }) => callAction(hass, "demander", {
+      kind: "bonus", kid_id: kid, resource_id, minutes, options: bonusMinutes(config),
+    }),
+  };
 }
