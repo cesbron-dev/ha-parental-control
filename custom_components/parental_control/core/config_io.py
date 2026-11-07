@@ -31,9 +31,6 @@ _REQUIRED_OPTIONS = {
     ResourceKind.ADGUARD: ("device_id",),
     ResourceKind.NINTENDO: ("device_id", "limit_entity", "remaining_entity", "used_entity"),
 }
-# Version 1 : ressource plate, ses options sont les clés hors de celles-ci.
-_RESOURCE_BASE_KEYS = {"id", "name", "kind", "owners", "quota_minutes"}
-
 
 class ConfigError(ValueError):
     """Configuration invalide ; le message cite le chemin fautif."""
@@ -170,13 +167,6 @@ def _parse_integration(kind_raw: Any, options: dict, kind_path: str, path: str) 
     return Integration(kind, options)
 
 
-def _parse_devices_v1(raw: dict, path: str) -> tuple[PhysicalDevice, ...]:
-    """Ressource plate : un appareil physique du même nom, une intégration du même type."""
-    options = {k: v for k, v in raw.items() if k not in _RESOURCE_BASE_KEYS}
-    integration = _parse_integration(raw.get("kind"), options, f"{path}.kind", path)
-    return (PhysicalDevice(_str(raw.get("name"), f"{path}.name"), (integration,)),)
-
-
 def _parse_devices(raw: Any, path: str) -> tuple[PhysicalDevice, ...]:
     devices: list[PhysicalDevice] = []
     for j, device in enumerate(_expect_list(raw, path)):
@@ -198,14 +188,9 @@ def _parse_devices(raw: Any, path: str) -> tuple[PhysicalDevice, ...]:
     return tuple(devices)
 
 
-def _parse_resource(raw: Any, path: str, version: int) -> Resource:
+def _parse_resource(raw: Any, path: str) -> Resource:
     raw = _expect_dict(raw, path)
-    if version == 1:
-        devices = _parse_devices_v1(raw, path)
-        icon = None
-    else:
-        devices = _parse_devices(raw.get("devices"), f"{path}.devices")
-        icon = _opt_str(raw.get("icon"), f"{path}.icon")
+    devices = _parse_devices(raw.get("devices"), f"{path}.devices")
     quotas_raw = _expect_dict(raw.get("quota_minutes", {}), f"{path}.quota_minutes")
     quotas = {
         _enum(DayType, day, f"{path}.quota_minutes.{day}"): _int(
@@ -219,23 +204,22 @@ def _parse_resource(raw: Any, path: str, version: int) -> Resource:
         owners=tuple(_str_list(raw.get("owners"), f"{path}.owners")),
         devices=devices,
         quota_minutes=quotas,
-        icon=icon,
+        icon=_opt_str(raw.get("icon"), f"{path}.icon"),
     )
 
 
 def parse_config(data: dict) -> Config:
     """Valide le JSON de configuration et construit le modèle."""
     data = _expect_dict(data, "config")
-    # Sans `version`, c'est une config d'avant la version 2.
-    version = data.get("version", 1)
-    if isinstance(version, bool) or version not in (1, CONFIG_VERSION):
+    version = data.get("version")
+    if isinstance(version, bool) or version != CONFIG_VERSION:
         raise _fail("version", f"version non prise en charge : {version!r}")
 
     kids = tuple(
         _parse_kid(k, f"kids[{i}]") for i, k in enumerate(_expect_list(data.get("kids", []), "kids"))
     )
     resources = tuple(
-        _parse_resource(r, f"resources[{i}]", version)
+        _parse_resource(r, f"resources[{i}]")
         for i, r in enumerate(_expect_list(data.get("resources", []), "resources"))
     )
 

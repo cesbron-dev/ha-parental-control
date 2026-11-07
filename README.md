@@ -45,7 +45,7 @@ accepte pas).
 
 ```jsonc
 {
-  "version": 2,                       // 2 (la version 1 est convertie, voir « Appareils logiques »)
+  "version": 2,                       // toujours 2
   "default_leisure": ["youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch"],
   "calendar_map": {                   // mot (sans accent ni casse) -> type de journée
     "pédagogique": "conge_peda",
@@ -272,17 +272,6 @@ regroupe pas »). Son fonctionnement ne change pas (bonus, pas d'exception).
 **Intégration absente.** Un lecteur, un client AdGuard ou une console introuvable dans Home
 Assistant (un Chromecast débranché, par exemple) est signalé une fois dans les journaux et
 ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
-
-**Anciennes configurations.** Une configuration en version 1 (ressources plates avec `kind`) est
-acceptée et convertie à la lecture : chaque ressource devient un appareil logique avec un seul
-appareil physique (même nom) et une seule intégration. Le stockage est réécrit en version 2 au
-premier enregistrement. Le comportement ne change pas, sauf pour le quota de repli : une télé
-sans `quota_minutes` pour le type de journée, illimitée en version 1, prend maintenant le quota
-de temps d'écran le plus généreux des enfants concernés (voir **Quota** ci-dessus) ; donnez-lui
-un `quota_minutes` pour fixer sa propre limite. Le moteur ne devine pas que `tv_adguard` va avec `tv` : on les regroupe dans le panneau
-« Règles », onglet Appareils, avec **Déplacer vers…** sur l'appareil physique. La ressource
-ainsi vidée est supprimée à l'enregistrement, avec ses autorisations en cours et le temps du jour
-qui lui étaient rattachés ; les modes qui la citent sont retirés.
 
 ### Charger la configuration
 

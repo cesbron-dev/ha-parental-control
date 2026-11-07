@@ -8,7 +8,7 @@ import pytest
 
 from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.model import Config
-from tests.fixtures import EX
+from tests.fixtures import EX, integration_of
 
 TZ = ZoneInfo("America/Toronto")
 
@@ -52,7 +52,9 @@ def family_config_dict() -> dict:
     tv["owners"] = ["hugo", "zoe", "alice"]
     switch["owners"] = ["hugo", "zoe", "alice"]
     iphone_zoe = copy.deepcopy(iphone_hugo)
-    iphone_zoe.update(id="iphone_zoe", name="iPhone Zoé", owners=["zoe"], client="iphone_zoe")
+    iphone_zoe.update(id="iphone_zoe", name="iPhone Zoé", owners=["zoe"])
+    iphone_zoe["devices"][0]["name"] = "iPhone Zoé"
+    integration_of(iphone_zoe)["device_id"] = "adguard_iphone_zoe"
     d["resources"] = [tv, iphone_hugo, iphone_zoe, switch]
     return d
 
@@ -89,19 +91,8 @@ def weekend_cfg(make_cfg) -> Config:
     return make_cfg(weekend_quota)
 
 
-_V1_RESOURCE_KEYS = ("id", "name", "owners", "quota_minutes")
-
-
 def mixed_tv(d: dict) -> None:
-    """Passe la config en version 2 ; la TV devient un appareil logique mixte : son
-    lecteur plus un client AdGuard sur un second appareil physique."""
-    d["version"] = 2
-    resources = []
-    for flat in d["resources"]:
-        res = {k: flat[k] for k in _V1_RESOURCE_KEYS if k in flat}
-        integration = {k: v for k, v in flat.items() if k not in _V1_RESOURCE_KEYS}
-        res["devices"] = [{"name": flat["name"], "integrations": [integration]}]
-        resources.append(res)
-    resources[0]["devices"].append({"name": "Google TV", "integrations": [
+    """La TV devient un appareil logique mixte : son lecteur plus un client AdGuard sur un second
+    appareil physique."""
+    d["resources"][0]["devices"].append({"name": "Google TV", "integrations": [
         {"kind": "adguard_services", "device_id": "adguard_google_tv"}]})
-    d["resources"] = resources

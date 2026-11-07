@@ -413,8 +413,10 @@ async def test_accept_with_invalid_target_cancels_nothing(make_env, julie, julie
     (iphone,) = [r for r in cfg["resources"] if r["id"] == "iphone_hugo"]
     iphone.clear()
     iphone.update(
-        id="iphone_hugo", name="iPhone Hugo", kind="media_player", owners=["hugo"],
-        entity_id="media_player.iphone_hugo", notify_service=None,
+        id="iphone_hugo", name="iPhone Hugo", owners=["hugo"],
+        devices=[{"name": "iPhone Hugo", "integrations": [
+            {"kind": "media_player", "entity_id": "media_player.iphone_hugo",
+             "notify_service": None}]}],
     )
     await env.engine.set_config(parse_config(cfg))
     assert any(e.id == closing for e in env.engine.decisions.exceptions)
