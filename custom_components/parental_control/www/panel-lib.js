@@ -97,8 +97,8 @@ export function emptyConfig() {
   return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], kids: [], resources: [] };
 }
 
-// Ressource au format v2 (appareils physiques) ? Une ressource v1 collée dans l'onglet JSON n'en
-// a pas : le moteur la convertit à l'enregistrement.
+// Ressource avec son arbre d'appareils physiques ? Un JSON mal formé collé dans l'onglet JSON peut
+// ne pas en avoir : le moteur le refusera à l'enregistrement.
 export function hasDevices(resource) {
   return Array.isArray(resource?.devices);
 }
@@ -154,13 +154,12 @@ export function removeIntegration(device, index) {
   device.integrations.splice(index, 1);
 }
 
-// Une ressource v1 (collée dans l'onglet JSON) n'a pas d'appareils : son seul type est `kind`.
 const kindsOf = (resource) => (hasDevices(resource)
   ? resource.devices.flatMap((d) => d.integrations?.map((i) => i.kind) ?? [])
-  : resource?.kind ? [resource.kind] : []);
+  : []);
 
 // Types ajoutables à la ressource : une Nintendo doit rester seule dans sa ressource ; rien dans une
-// ressource v1 (le moteur la convertit à l'enregistrement).
+// ressource sans arbre d'appareils.
 export function integrationKindsAllowed(resource) {
   if (!hasDevices(resource)) return [];
   const kinds = kindsOf(resource);

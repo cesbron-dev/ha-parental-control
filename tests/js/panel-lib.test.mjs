@@ -236,7 +236,7 @@ test("emptyConfig : brouillon v2 d'une nouvelle installation, prêt à recevoir 
   assert.notEqual(emptyConfig(), emptyConfig()); // une copie neuve à chaque appel
 });
 
-test("hasDevices : une ressource v1 collée en JSON n'a pas d'arbre", () => {
+test("hasDevices : une ressource collée en JSON sans arbre", () => {
   assert.equal(hasDevices(draft().resources[0]), true);
   assert.equal(hasDevices({ id: "tv", kind: "media_player", entity_id: "media_player.tv" }), false);
   assert.equal(hasDevices({ id: "tv", devices: null }), false);
@@ -491,10 +491,10 @@ test("removeCommonService retire aussi les exemptions des enfants pour ce servic
   assert.deepEqual(old.default_on_demand, []);
 });
 
-test("brouillon mêlant une ressource v1 : moveTargets, integrationKindsAllowed et moveDevice ne plantent pas", () => {
+test("brouillon mêlant une ressource sans arbre : moveTargets, integrationKindsAllowed et moveDevice ne plantent pas", () => {
   const cfg = draft();
   cfg.resources.push({ id: "vieux", name: "Vieux", kind: "media_player", entity_id: "media_player.x", owners: [] });
-  assert.deepEqual(moveTargets(cfg, 0, 0), [1]); // pas vers la Nintendo ni vers la ressource v1
+  assert.deepEqual(moveTargets(cfg, 0, 0), [1]); // pas vers la Nintendo ni vers la ressource sans arbre
   assert.deepEqual(moveTargets(cfg, 3, 0), []);
   assert.deepEqual(integrationKindsAllowed(cfg.resources[3]), []);
   assert.equal(moveDevice(cfg, 0, 0, 3), null);

@@ -254,7 +254,7 @@
       "fields": {
         "config": {
           "name": "Configuration",
-          "description": "Objet de configuration (format JSON, version 1)."
+          "description": "Objet de configuration (format JSON, version 2)."
         }
       }
     },

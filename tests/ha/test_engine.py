@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from collections import Counter
 from datetime import date, datetime, time, timedelta
@@ -23,7 +24,7 @@ from custom_components.parental_control.core.decisions import Target, Timer
 from custom_components.parental_control.core.model import DayType
 from custom_components.parental_control.engine import ParentalEngine
 from custom_components.parental_control.store import ParentalStore
-from tests.fixtures import EX
+from tests.fixtures import EX, integration_of
 from tests.ha.fake_adguard import FakeAdGuard
 
 TZ = ZoneInfo("America/Toronto")
@@ -115,12 +116,12 @@ def config_for(services: Services | None) -> dict:
     """Config d'exemple pointant sur l'appareil AdGuard simulé (s'il existe)."""
     if services is None:
         return EX
-    resources = [
-        {**r, "device_id": services.adguard.device_id}
-        if r["kind"] == "adguard_services" else r
-        for r in EX["resources"]
-    ]
-    return {**EX, "resources": resources}
+    config = copy.deepcopy(EX)
+    for resource in config["resources"]:
+        integration = integration_of(resource)
+        if integration["kind"] == "adguard_services":
+            integration["device_id"] = services.adguard.device_id
+    return config
 
 
 def set_nintendo(hass: HomeAssistant, used: str = "42", remaining: str = "18") -> None:
@@ -590,8 +591,8 @@ async def test_add_exception_rejects_invalid_target(
 
 async def test_set_config_rebuilds_adapters(hass, freezer, services, hass_storage) -> None:
     _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
-    raw = {**EX, "resources": [{**EX["resources"][0], "entity_id": "media_player.autre"},
-                               *EX["resources"][1:]]}
+    raw = copy.deepcopy(EX)
+    integration_of(raw["resources"][0])["entity_id"] = "media_player.autre"
     await engine.set_config(parse_config(raw))
     assert engine.config.resource("tv").integrations[0].options["entity_id"] == "media_player.autre"
     hass.states.async_set("media_player.autre", "on")
@@ -968,66 +969,6 @@ async def test_simulation_warns_only_when_device_can_warn(hass, freezer, service
     await engine.set_simulation(True)
     await tick(hass, freezer)  # 15:55 : avertissements (TV sans notify_service)
     assert [m for m in logbook_messages(entries) if "afficherait" in m] == []
-
-
-async def test_v1_stored_config_upgrades_without_behavior_change(
-    hass, freezer, services, hass_storage
-) -> None:
-    from homeassistant.helpers import entity_registry as er
-
-    from custom_components.parental_control.core.config_io import dump_config
-
-    v1 = config_for(services)
-    assert v1["version"] == 1
-    hass_storage["parental_control.config"] = {
-        "version": 1, "minor_version": 1, "key": "parental_control.config", "data": v1,
-    }
-    # État enregistré avant la mise à jour : une exception active et l'usage du jour.
-    hass_storage["parental_control.state"] = {
-        "version": 1, "minor_version": 1, "key": "parental_control.state",
-        "data": {
-            "exceptions": [{
-                "id": "e1", "target": {"resource_id": "iphone_gabin", "kid_id": None,
-                                       "service": "youtube"},
-                "open": False, "created": at(TUESDAY, 16, 0).isoformat(),
-                "until": at(TUESDAY, 20, 0).isoformat(), "signature": None,
-            }],
-            "resource_usage": [
-                {"resource_id": "tv", "day": TUESDAY.isoformat(), "minutes": 25},
-            ],
-        },
-    }
-    services.adguard.set_blocked([])
-    hass.states.async_set(TV, "on")
-    freezer.move_to(at(TUESDAY, 16, 30))
-    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
-    entry.add_to_hass(hass)
-    _, engine = await setup(hass, freezer, entry=entry)
-
-    assert [e.id for e in engine.decisions.exceptions] == ["e1"]
-    assert engine.decisions.exceptions[0].target == Target(
-        resource_id="iphone_gabin", service="youtube")
-    assert engine.decisions.resource_usage[("tv", TUESDAY)] >= 25
-    assert not engine.simulation
-
-    ids = ["tv", "iphone_gabin", "switch"]
-    assert [r.id for r in engine.config.resources] == ids
-    assert list(engine.snapshot.resources) == ids
-    prefix = f"{entry.entry_id}_resource_"
-    unique_ids = [e.unique_id for e in
-                  er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)]
-    assert all(any(u.startswith(f"{prefix}{rid}_") for u in unique_ids) for rid in ids)
-    # Mardi 16:30, devoirs à faire : tout reste fermé comme avec la config v1.
-    assert not engine.snapshot.resources["tv"].open
-    assert not engine.snapshot.resources["iphone_gabin"].open
-    assert services.entities("media_player", "turn_off") == [TV]
-    assert services.adguard.blocks() == LEISURE
-
-    # `parental_control/config/get` renvoie `dump_config(engine.config)` : du v2.
-    out = dump_config(engine.config)
-    assert out["version"] == 2
-    assert out["resources"][0]["devices"] == [{"name": "Télé salon", "integrations": [
-        {"kind": "media_player", "entity_id": TV, "notify_service": None}]}]
 
 
 # --- appareil logique à plusieurs intégrations -----------------------------------
