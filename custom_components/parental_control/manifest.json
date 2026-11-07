@@ -1,13 +1,26 @@
 {
   "domain": "parental_control",
   "name": "Contrôle parental",
-  "version": "0.1.0",
+  "after_dependencies": [
+    "calendar",
+    "frontend",
+    "http",
+    "logbook",
+    "media_player",
+    "mobile_app",
+    "notify",
+    "panel_custom",
+    "switch"
+  ],
+  "codeowners": [
+    "@cesbron-dev"
+  ],
   "config_flow": true,
-  "iot_class": "calculated",
-  "integration_type": "service",
   "dependencies": [],
-  "after_dependencies": ["calendar", "frontend", "http", "logbook", "media_player", "mobile_app", "notify", "panel_custom", "switch"],
+  "documentation": "https://github.com/cesbron-dev/ha-parental-control",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/cesbron-dev/ha-parental-control/issues",
   "requirements": [],
-  "codeowners": ["@cesbron-dev"],
-  "documentation": "https://github.com/cesbron-dev/ha-parental-control"
+  "version": "0.1.0"
 }
