@@ -571,6 +571,15 @@ class ParentalEngine:
                     service=service,
                 ),
             )
+            # Le service vient de la tablette et s'affiche chez les parents : seuls
+            # les services de loisir ou sur demande de la cible sont admis.
+            if service is not None:
+                if resource_id is not None:
+                    allowed = cfg.managed_services_for_resource(resource_id)
+                else:
+                    allowed = cfg.leisure_for(kid_id) | cfg.on_demand_for(kid_id)
+                if service not in allowed:
+                    raise _invalid("invalid_target")
         elif kind == RequestKind.BONUS:
             if resource_id is not None:
                 self._bonus_by_grant(cfg, resource_id)
@@ -683,14 +692,25 @@ class ParentalEngine:
         kid_id = None if req.resource_id else req.kid_id
         try:
             if req.kind == RequestKind.OPEN:
-                for exc_id in req.replace:
-                    if any(e.id == exc_id for e in self._decisions.exceptions):
-                        await self.cancel_exception(exc_id)
-                await self.add_exception(
-                    Target(resource_id=req.resource_id, kid_id=kid_id, service=req.service),
-                    True,
-                    minutes,
+                target = Target(
+                    resource_id=req.resource_id, kid_id=kid_id, service=req.service
                 )
+                # Cible revérifiée avant toute annulation : un échec ne retire rien.
+                self._check_target(self._require_config(), target)
+                # `replace` vient de la tablette : seules les exceptions de la même
+                # cible sont remplacées (annuler une autre fermeture demande le code).
+                for exc_id in req.replace:
+                    if any(
+                        e.id == exc_id and e.target == target
+                        for e in self._decisions.exceptions
+                    ):
+                        await self.cancel_exception(exc_id)
+                    else:
+                        _LOGGER.debug(
+                            "Demande %s : exception %s ignorée (absente ou autre cible)",
+                            req.id, exc_id,
+                        )
+                await self.add_exception(target, True, minutes)
             elif req.kind == RequestKind.BONUS:
                 assert minutes is not None  # garanti par `normalize_options`
                 await self.add_bonus(minutes, kid_id=kid_id, resource_id=req.resource_id)

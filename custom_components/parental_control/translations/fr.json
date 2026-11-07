@@ -118,6 +118,9 @@
     "request_pending": {
       "message": "Une demande identique est déjà en attente."
     },
+    "too_many_requests": {
+      "message": "Trop de demandes en attente."
+    },
     "invalid_request": {
       "message": "Demande invalide."
     }
