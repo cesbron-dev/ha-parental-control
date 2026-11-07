@@ -1,4 +1,4 @@
-"""API WebSocket : configuration et état, pour la carte du tableau de bord."""
+"""API WebSocket : configuration et état, pour les cartes ; demandes, pour l'écran « Demandes »."""
 
 from __future__ import annotations
 
@@ -12,8 +12,10 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_config
+from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
-from .serialize import serialize_snapshot
+from .request_listener import parent_user_ids
+from .serialize import serialize_requests, serialize_snapshot
 
 _REGISTERED = f"{DOMAIN}_websocket_registered"
 
@@ -29,6 +31,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_services_catalog)
     websocket_api.async_register_command(hass, ws_state)
     websocket_api.async_register_command(hass, ws_state_subscribe)
+    websocket_api.async_register_command(hass, ws_requests_subscribe)
+    websocket_api.async_register_command(hass, ws_requests_answer)
 
 
 def _engine(
@@ -113,3 +117,69 @@ def ws_state_subscribe(
     connection.subscriptions[msg_id] = async_dispatcher_connect(hass, SIGNAL_UPDATE, push)
     connection.send_result(msg_id)
     push()
+
+
+def _is_parent(hass: HomeAssistant, engine: ParentalEngine, user_id: str) -> bool:
+    """Même règle que la réponse par notification : propriétaire d'un téléphone de la liste."""
+    cfg = engine.config
+    return cfg is not None and user_id in parent_user_ids(hass, cfg.request_notify)
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/requests/subscribe"})
+@callback
+def ws_requests_subscribe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    if _engine(hass, connection, msg) is None:
+        return
+    msg_id = msg["id"]
+    user_id = connection.user.id
+
+    @callback
+    def push() -> None:
+        entries = hass.config_entries.async_loaded_entries(DOMAIN)
+        if not entries:
+            return
+        engine = entries[0].runtime_data
+        # Recalculé à chaque envoi : la liste des téléphones a pu changer.
+        payload = serialize_requests(engine, can_answer=_is_parent(hass, engine, user_id))
+        connection.send_message(websocket_api.event_message(msg_id, payload))
+
+    connection.subscriptions[msg_id] = async_dispatcher_connect(hass, SIGNAL_UPDATE, push)
+    connection.send_result(msg_id)
+    push()
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): f"{DOMAIN}/requests/answer",
+        vol.Required("request_id"): str,
+        vol.Required("choice"): str,
+    }
+)
+@websocket_api.async_response
+async def ws_requests_answer(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Réponse depuis l'écran : réservée aux parents, comme celle de la notification."""
+    if (engine := _engine(hass, connection, msg)) is None:
+        return
+    user_id = connection.user.id
+    if not _is_parent(hass, engine, user_id):
+        connection.send_error(
+            msg["id"], "unauthorized", "Seul un parent de la liste des demandes peut répondre"
+        )
+        return
+    req = engine.requests.get(msg["request_id"])
+    if req is None or req.status != RequestStatus.PENDING:
+        connection.send_error(msg["id"], "not_pending", "Demande déjà traitée ou expirée")
+        return
+    # Un choix inconnu ne doit pas consommer la demande (le moteur la marquerait « impossible »).
+    if msg["choice"] not in dict(action_choices(req)):
+        connection.send_error(msg["id"], "invalid_choice", "Choix inconnu")
+        return
+    status = await engine.answer_request(req.id, req.token, msg["choice"], user_id)
+    if status is None:  # expirée ou prise par l'autre parent entre-temps
+        connection.send_error(msg["id"], "not_pending", "Demande déjà traitée ou expirée")
+        return
+    connection.send_result(msg["id"], {"status": status.value})

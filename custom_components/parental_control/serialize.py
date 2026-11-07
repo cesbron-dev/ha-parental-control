@@ -12,6 +12,7 @@ from homeassistant.util import dt as dt_util
 from .core.decisions import ManualException
 from .core.display import exception_end, kid_timeline
 from .core.model import ResourceKind
+from .core.requests import RequestStatus, action_choices
 
 if TYPE_CHECKING:
     from .engine import ParentalEngine
@@ -128,3 +129,28 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
         for r in engine.requests.visible(now)
     ]
     state["now"] = now.isoformat()
+
+
+def serialize_requests(engine: ParentalEngine, *, can_answer: bool) -> dict[str, Any]:
+    """Demandes pour l'écran « Demandes » : texte, choix des boutons, jamais le jeton."""
+    now = dt_util.now()
+    requests = []
+    for r in engine.requests.visible(now) if engine.config is not None else ():
+        pending = r.status == RequestStatus.PENDING
+        requests.append(
+            {
+                "id": r.id,
+                "kind": r.kind.value,
+                "kid_id": r.kid_id,
+                "message": engine.request_message(r),
+                "status": r.status.value,
+                "created": _value(r.created),
+                "expires": _value(r.expires),
+                "granted": r.granted,
+                "reason": r.reason,
+                "answered_by": r.answered_by,
+                # Mêmes boutons que la notification ; seul l'identifiant du choix est exposé.
+                "choices": [list(c) for c in action_choices(r)] if pending else [],
+            }
+        )
+    return {"can_answer": can_answer, "requests": requests, "now": now.isoformat()}

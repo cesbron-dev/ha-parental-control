@@ -95,6 +95,35 @@ export function requestLine(req) {
   }
 }
 
+// Temps restant avant l'expiration d'une demande en attente, pour l'écran « Demandes ».
+export function requestRemaining(expires, now) {
+  const minutes = Math.ceil((new Date(expires) - now) / 60000);
+  if (!(minutes > 0)) return "Expire maintenant";
+  return minutes === 1 ? "Expire dans 1 min" : `Expire dans ${minutes} min`;
+}
+
+// Issue d'une demande traitée, pour l'écran « Demandes » : qui a répondu et ce qui a été accordé.
+export function requestOutcome(req) {
+  const by = req.answered_by ? ` par ${req.answered_by}` : "";
+  switch (req.status) {
+    case "accepted":
+      return req.kind === "homework" ? `Acceptée${by}` : `Acceptée${by} : ${requestDuration(req.granted)}`;
+    case "refused": return `Refusée${by}`;
+    case "expired": return "Expirée sans réponse";
+    default: return `Acceptée${by}, mais impossible : ${req.reason ?? ""}`;
+  }
+}
+
+// Demandes de l'écran : en attente (la plus ancienne d'abord) puis récentes (la plus récente d'abord).
+export function requestsScreen(requests) {
+  const list = requests ?? [];
+  const byCreated = (a, b) => new Date(a.created) - new Date(b.created);
+  return {
+    pending: list.filter((r) => r.status === "pending").sort(byCreated),
+    recent: list.filter((r) => r.status !== "pending").sort((a, b) => byCreated(b, a)),
+  };
+}
+
 function scopeOf(target) {
   if (target.resource_id) return "resource";
   if (target.kid_id) return "kid";

@@ -441,9 +441,17 @@ téléphones des parents (clé `request_notify`, par exemple `notify.mobile_app_
 Sans cette liste, les demandes sont désactivées. Cette liste est distincte de `notify`, qui sert
 aux avertissements de fermeture destinés aux enfants.
 
+**Écran « Demandes ».** Toucher la notification ouvre l'écran `/parental-control-requests`,
+créé par l'intégration (aucun tableau de bord à configurer, pas d'entrée dans la barre
+latérale). Il liste les demandes en attente avec le temps restant et les mêmes boutons que la
+notification, puis les réponses des 5 dernières minutes (qui a répondu, ce qui a été accordé).
+Il se met à jour en direct. Tout utilisateur peut l'ouvrir, mais seuls les parents définis
+ci-dessous y voient les boutons, et le moteur revérifie chaque réponse. Sur iPhone, un appui
+long sur la notification permet aussi de répondre sans ouvrir l'app.
+
 **Qui peut répondre.** Une réponse n'est acceptée que si elle vient de l'**utilisateur
-propriétaire d'un téléphone de la liste** et porte le **jeton secret** propre à la demande :
-être administrateur ne suffit pas. Si deux appareils `mobile_app` portent le même nom, aucun
+propriétaire d'un téléphone de la liste**, depuis la notification (qui porte en plus le **jeton
+secret** propre à la demande) ou depuis l'écran « Demandes » : être administrateur ne suffit pas. Si deux appareils `mobile_app` portent le même nom, aucun
 des deux ne peut répondre (un avertissement est journalisé) : donnez-leur des noms distincts.
 
 **Règles.**

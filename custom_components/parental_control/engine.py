@@ -45,7 +45,7 @@ from .adapters import build_adapter
 from .adapters.simulation import SimulatedAdapter
 from .calendar_source import fetch_all_day_events
 from .catalog import services_catalog
-from .const import DOMAIN, EVENT_WARNING, SIGNAL_UPDATE, TICK_SECONDS
+from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TICK_SECONDS
 from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
@@ -513,7 +513,8 @@ class ParentalEngine:
     def request_message(self, req: TimeRequest) -> str:
         """Texte de la notification envoyée aux parents."""
         cfg = self._require_config()
-        kid = cfg.kid(req.kid_id).name
+        # L'écran « Demandes » affiche aussi les demandes d'un enfant retiré entre-temps.
+        kid = self._kid_name(req.kid_id)
         resource = None
         if req.resource_id is not None:
             try:
@@ -603,6 +604,9 @@ class ParentalEngine:
             message = SIMULATION_PREFIX + message
         data = {
             "tag": request_tag(req.id),
+            # Toucher la notification ouvre l'écran « Demandes » (iOS : `url`, Android : `clickAction`).
+            "url": f"/{REQUESTS_PANEL_PATH}",
+            "clickAction": f"/{REQUESTS_PANEL_PATH}",
             "actions": [
                 {"action": f"PARENTAL_REQ:{req.id}:{req.token}:{choice}", "title": title}
                 for choice, title in action_choices(req)
