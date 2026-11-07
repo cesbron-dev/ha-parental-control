@@ -269,6 +269,7 @@ def parse_config(data: dict) -> Config:
         calendar_map=calendar_map,
         notify=tuple(_str_list(data.get("notify", []), "notify")),
         default_on_demand=tuple(_str_list(data.get("default_on_demand", []), "default_on_demand")),
+        request_notify=tuple(_str_list(data.get("request_notify", []), "request_notify")),
     )
 
 
@@ -328,6 +329,7 @@ def dump_config(cfg: Config) -> dict:
         "default_on_demand": list(cfg.default_on_demand),
         "calendar_map": {word: day.value for word, day in cfg.calendar_map.items()},
         "notify": list(cfg.notify),
+        "request_notify": list(cfg.request_notify),
         "kids": [_dump_kid(k) for k in cfg.kids],
         "resources": [_dump_resource(r) for r in cfg.resources],
     }

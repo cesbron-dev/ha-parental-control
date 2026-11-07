@@ -3,11 +3,12 @@
 import {
   esc, needsCode, resourceView, exceptionsForResource, formatPill, serviceLabel,
   reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge, serviceToggles,
+  canRequest, findRequest, ownerChoices,
 } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
-import { BASE_CSS, pill, ConfirmState, ErrorNotice, bonusPills } from "./style.js";
-import { openActionDialog, runBonus } from "./dialogs.js";
+import { BASE_CSS, pill, ConfirmState, ErrorNotice, bonusPills, requestLines } from "./style.js";
+import { openActionDialog, runBonus, bonusRequest } from "./dialogs.js";
 import { createEditor } from "./editor.js";
 
 const KIND_ICONS = {
@@ -150,6 +151,7 @@ class ParentalResourceCard extends StateCard {
         <div class="muted">Utilisé ${quota.text}</div></div>` : ""}
       <div class="pills">${pills.join("")}</div>
       ${this._servicesBlock()}
+      ${requestLines(this._state, { resource_id: id })}
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
@@ -189,8 +191,10 @@ class ParentalResourceCard extends StateCard {
     if (action.startsWith("cancel:")) return this._call("annuler_exception", { exception_id: action.slice(7) });
     if (action.startsWith("bonus:")) {
       const title = this._config.name || this._view().name || resource_id;
+      const minutes = Number(action.slice(6));
       return runBonus(this.shadowRoot, this._hass, {
-        resource_id, minutes: Number(action.slice(6)), title, call: (s, d) => this._call(s, d),
+        resource_id, minutes, title, call: (s, d) => this._call(s, d),
+        request: bonusRequest(this._hass, this._state, this._config, resource_id, minutes),
       });
     }
   }
@@ -212,6 +216,13 @@ class ParentalResourceCard extends StateCard {
       durations: DURATIONS,
       needCode: needsCode(this._hass, "open"),
       submitLabel: "Autoriser",
+      // Choix libre : pas d'état « en attente » ; le moteur refuse un doublon et la fenêtre l'affiche.
+      request: this._request(v.owners, (kid, { choice, duration }) => {
+        const data = { kind: "open", kid_id: kid, resource_id, options: DURATIONS.map((d) => d.value) };
+        if (choice) data.service = choice;
+        if (duration) data.minutes = duration;
+        return data;
+      }),
       onSubmit: ({ choice, duration, code }) => {
         const data = { resource_id, open: true };
         if (choice) data.service = choice;
@@ -243,13 +254,33 @@ class ParentalResourceCard extends StateCard {
       this._error.set(res.ok ? "" : res.error || "Action refusée");
       return this._render();
     }
+    const owners = this._view().owners;
     openActionDialog(this.shadowRoot, {
       title: `Autoriser · ${t.label}`,
       durations: DURATIONS,
       needCode: needsCode(this._hass, "open"),
       submitLabel: "Autoriser",
+      request: this._request(owners, (kid, { duration }) => {
+        const data = {
+          kind: "open", kid_id: kid, resource_id, service,
+          options: DURATIONS.map((d) => d.value), replace: t.exceptions,
+        };
+        if (duration) data.minutes = duration;
+        return data;
+      }, owners.length === 1 && findRequest(this._state, { kind: "open", kid_id: owners[0], resource_id, service })?.status === "pending"),
       onSubmit: ({ duration, code }) => replace(code, true, duration),
     });
+  }
+
+  // Option « Demander » d'une fenêtre (compte non admin) : au nom d'un propriétaire de l'appareil.
+  // `build(kid, {choice, duration})` donne les données du service `demander`.
+  _request(owners, build, pending = false) {
+    if (!canRequest(this._hass, this._state)) return null;
+    return {
+      kids: ownerChoices(this._state, owners),
+      pending,
+      onRequest: (picked) => callAction(this._hass, "demander", build(picked.kid, picked)),
+    };
   }
 
   // Actions sans fenêtre (Arrêter, ✕, bonus admin) : l'erreur s'affiche sous les pilules.

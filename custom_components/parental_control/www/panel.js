@@ -1,6 +1,6 @@
 // Panneau « Règles » (barre latérale, admins) : édite la configuration du moteur en brouillon,
 // l'écrit avec `parental_control/config/set` ; le moteur valide et cite le chemin fautif.
-import { esc } from "./lib.js";
+import { esc, pendingCount } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import * as L from "./panel-lib.js";
 import { CSS, opt } from "./panel-style.js";
@@ -39,6 +39,7 @@ class ParentalControlPanel extends HTMLElement {
     this._message = null; // {kind: "error" | "ok", text}
     this._saving = false;
     this._simulation = false;
+    this._requests = null; // {enabled, pending} : bouton « Demandes » ; null tant que l'état n'est pas reçu
     this._unsub = null;
     this._subConn = null;
     this._armed = null;
@@ -92,7 +93,8 @@ class ParentalControlPanel extends HTMLElement {
     this._unsubscribe();
   }
 
-  // Suit seulement `simulation` ; le bandeau est mis à jour sur place pour ne pas effacer une saisie en cours.
+  // Suit `simulation` et les demandes en attente ; bandeau et bouton sont mis à jour sur place pour ne
+  // pas effacer une saisie en cours.
   _subscribe() {
     const conn = this._hass?.connection;
     if (!this.isConnected || !conn || this._subConn === conn) return;
@@ -102,6 +104,12 @@ class ParentalControlPanel extends HTMLElement {
     this._subToken = token;
     subscribeState(this._hass, (msg) => {
       if (this._subToken !== token) return;
+      const requests = { enabled: !!msg?.requests_enabled, pending: pendingCount(msg) };
+      if (requests.enabled !== this._requests?.enabled || requests.pending !== this._requests?.pending) {
+        this._requests = requests;
+        const slot = this.shadowRoot.querySelector(".req-slot");
+        if (slot) slot.innerHTML = this._requestsButton();
+      }
       const sim = !!msg?.simulation;
       if (sim === this._simulation) return;
       this._simulation = sim;
@@ -127,6 +135,16 @@ class ParentalControlPanel extends HTMLElement {
       const el = this.shadowRoot.querySelector(".sim-slot");
       if (el) el.innerHTML = "";
     }
+  }
+
+  // Bouton vers l'écran « Demandes », avec le nombre de demandes en attente.
+  _requestsButton() {
+    if (!this._requests?.enabled) return "";
+    const n = this._requests.pending;
+    return this._btn("requests", n ? `Demandes (${n})` : "Demandes", {
+      cls: `btn${n ? " pending" : ""}`, icon: "mdi:hand-back-right", title: "Demandes de temps des enfants",
+      confirmKey: "requests",
+    });
   }
 
   _simBanner() {
@@ -217,6 +235,12 @@ class ParentalControlPanel extends HTMLElement {
       case "tab": this._tab = arg; this._closeAll(); break;
       case "save": this._commitPending(); this._save(); return;
       case "revert": if (!this._confirm("revert")) return; this._load(); return;
+      case "requests":
+        // Quitter le panneau perd le brouillon : confirmation en deux appuis s'il y en a un.
+        if (this._dirty() && !this._confirm("requests")) return;
+        history.pushState(null, "", "/parental-control-requests");
+        window.dispatchEvent(new CustomEvent("location-changed", { detail: { replace: false } }));
+        return;
       case "kid": this._kid = Number(arg); this._closeAll(); break;
       case "res": this._res = Number(arg); this._closeAll(); break;
       case "day": this._day = arg; break;
@@ -258,7 +282,7 @@ class ParentalControlPanel extends HTMLElement {
       }
       case "set-mode": L.setMode(kid, el.dataset.res, arg); break;
       case "kid-svc": L.toggleKidService(d, kid, list, arg); break;
-      case "add-kid-svc": case "add-common": case "add-notify":
+      case "add-kid-svc": case "add-common": case "add-notify": case "add-request-notify":
         if (!this._commitPill(el)) return;
         this._focus = `[data-input="${el.dataset.input}"]`; // pour en ajouter plusieurs d'affilée
         break;
@@ -287,6 +311,7 @@ class ParentalControlPanel extends HTMLElement {
       }
       case "del-cal": delete d.calendar_map[arg]; break;
       case "del-notify": L.toggleListValue(d.notify, arg); break;
+      case "del-request-notify": L.toggleListValue(d.request_notify, arg); break;
       case "apply-json": {
         const text = this.shadowRoot.querySelector("textarea").value;
         try {
@@ -316,6 +341,10 @@ class ParentalControlPanel extends HTMLElement {
       case "add-notify":
         if (!d.notify.includes(value)) d.notify.push(value);
         return true;
+      case "add-request-notify":
+        d.request_notify ??= [];
+        if (!d.request_notify.includes(value)) d.request_notify.push(value);
+        return true;
       default: return false;
     }
   }
@@ -333,6 +362,7 @@ class ParentalControlPanel extends HTMLElement {
       if (kind === "kid" && kid) el.innerHTML = this._kidChips(kid, list);
       else if (kind === "common") el.innerHTML = this._commonChips(list);
       else if (kind === "notify") el.innerHTML = this._notifyChips();
+      else if (kind === "request_notify") el.innerHTML = this._notifyChips("request_notify");
     }
   }
 
@@ -536,6 +566,7 @@ class ParentalControlPanel extends HTMLElement {
       ? `<nav class="tabs">${TABS.map((t) => `<button type="button" class="${t.id === this._tab ? "on" : ""}" data-act="tab" data-arg="${t.id}">${t.label}</button>`).join("")}</nav>`
       : "";
     return `<h1>Règles</h1><span class="sim-slot">${this._simBanner()}</span>${tabs}<span class="sp"></span>
+      <span class="req-slot">${this._requestsButton()}</span>
       ${dirty ? `<span class="dirty">Modifications non enregistrées</span>` : msg?.kind === "ok" ? `<span class="ok">${esc(msg.text)}</span>` : ""}
       ${this._btn("revert", "Annuler", { cls: "btn", title: "Annuler les modifications", disabled: !dirty || this._saving, confirmKey: "revert" })}
       ${this._btn("save", this._saving ? "Enregistrement…" : "Enregistrer", { cls: "btn primary", disabled: !dirty || this._saving })}`;
@@ -577,10 +608,6 @@ class ParentalControlPanel extends HTMLElement {
       case "json": return this._json();
       default: return this._kids();
     }
-  }
-
-  _datalist(id, values) {
-    return `<datalist id="${id}">${values.map((v) => `<option value="${esc(v)}"></option>`).join("")}</datalist>`;
   }
 
   _entities(prefix, deviceId = null) {
@@ -633,14 +660,21 @@ class ParentalControlPanel extends HTMLElement {
     return L.serviceLabel(this._catalog, service).known ? service : `${service} : inconnu d'AdGuard, à retirer`;
   }
 
-  _notifyChips() {
-    const chips = (this._draft.notify ?? []).map((s) => `<button type="button" class="pill own" data-act="del-notify" data-arg="${esc(s)}" title="Retirer">${esc(s)}<span class="x">✕</span></button>`).join("");
-    return `${chips}<input class="pill-in" style="width:220px" data-input="notify" data-enter="add-notify" list="notifs" placeholder="+ notify.mobile_app_…" title="Service de notification">`;
+  // Destinataires (`notify` ou `request_notify`) : pastilles au nom de l'appareil, puis menu des
+  // services pas encore pris ; les demandes n'acceptent que les téléphones de l'application.
+  _notifyChips(key = "notify") {
+    const act = key === "notify" ? "notify" : "request-notify";
+    const taken = this._draft[key] ?? [];
+    const devices = this._devices;
+    const chips = taken.map((s) => `<button type="button" class="pill own" data-act="del-${act}" data-arg="${esc(s)}" title="Retirer ${esc(s)}">${esc(L.notifyLabel(s, devices))}<span class="x">✕</span></button>`).join("");
+    const services = Object.keys(this._hass?.services?.notify ?? {});
+    const options = L.notifyOptions(services, devices, taken, key === "request_notify");
+    return `${chips}<select class="pill-in" data-input="${key}" data-enter="add-${act}" title="Ajouter un destinataire" ${options.length ? "" : "disabled"}>
+      <option value="">+ Ajouter…</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
   }
 
   _general() {
     const d = this._draft;
-    const notifyServices = Object.keys(this._hass?.services?.notify ?? {}).map((s) => `notify.${s}`);
     const cal = Object.entries(d.calendar_map ?? {});
     return `<div class="general">
       <div>${this._commonList("leisure")}<div style="height:16px"></div>${this._commonList("on_demand")}</div>
@@ -659,8 +693,12 @@ class ParentalControlPanel extends HTMLElement {
         <div style="height:16px"></div>
         <div class="card"><h2>Notifications</h2>
           <div class="lz" data-chips="notify">${this._notifyChips()}</div>
-          ${this._datalist("notifs", notifyServices)}
-          <div class="mut help">Services prévenus des avertissements (fin de plage, etc.).</div>
+          <div class="mut help">Services prévenus des avertissements (fin de plage, etc.), par exemple les appareils des enfants.</div>
+        </div>
+        <div style="height:16px"></div>
+        <div class="card"><h2>Demandes de temps (parents)</h2>
+          <div class="lz" data-chips="request_notify">${this._notifyChips("request_notify")}</div>
+          <div class="mut help">Téléphones des parents (application Home Assistant) qui reçoivent les demandes et y répondent.</div>
         </div>
       </div>
     </div>`;

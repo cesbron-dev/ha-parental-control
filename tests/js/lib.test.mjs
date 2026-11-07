@@ -28,6 +28,15 @@ const {
   exceptionSpans,
   bonusMinutes,
   switchGauge,
+  canRequest,
+  findRequest,
+  requestsFor,
+  requestLine,
+  ownerChoices,
+  requestRemaining,
+  requestOutcome,
+  requestsScreen,
+  pendingCount,
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
@@ -449,4 +458,96 @@ test("kid card: services over the kid's AdGuard devices, its exceptions, homewor
   const user = { user: { is_admin: false } };
   assert.equal(needsCode(user, "homework"), true);
   assert.equal(needsCode(user, "timer"), true);
+});
+
+const req = (id, extra = {}) => ({
+  id, kind: "open", kid_id: "gabin", resource_id: null, service: null, proposed: 30,
+  status: "pending", granted: null, reason: null, expires: "2026-10-30T15:10:00-04:00", ...extra,
+});
+
+test("canRequest : faux pour un admin ou sans requests_enabled, vrai sinon", () => {
+  const user = { user: { is_admin: false } };
+  assert.equal(canRequest(user, { requests_enabled: true }), true);
+  assert.equal(canRequest(user, { requests_enabled: false }), false);
+  assert.equal(canRequest(user, {}), false);
+  assert.equal(canRequest(user, undefined), false);
+  assert.equal(canRequest({ user: { is_admin: true } }, { requests_enabled: true }), false);
+});
+
+test("findRequest distingue service et ressource, et renvoie la plus récente", () => {
+  const s = { requests: [
+    req("a", { service: "youtube", expires: "2026-10-30T15:05:00-04:00" }),
+    req("b", { service: "youtube", expires: "2026-10-30T15:09:00-04:00" }),
+    req("c", { service: "tiktok" }),
+    req("d", { resource_id: "tv" }),
+    req("e", { kind: "bonus" }),
+  ] };
+  assert.equal(findRequest(s, { kind: "open", kid_id: "gabin", service: "youtube" }).id, "b");
+  assert.equal(findRequest(s, { kind: "open", kid_id: "gabin", service: "tiktok" }).id, "c");
+  assert.equal(findRequest(s, { kind: "open", kid_id: "gabin", resource_id: "tv" }).id, "d");
+  assert.equal(findRequest(s, { kind: "open", kid_id: "gabin" }), null);
+  assert.equal(findRequest(s, { kind: "bonus", kid_id: "gabin" }).id, "e");
+  assert.equal(findRequest(s, { kind: "open", kid_id: "lea", service: "youtube" }), null);
+  assert.equal(findRequest({}, { kind: "open", kid_id: "gabin" }), null);
+});
+
+test("requestLine : un libellé par statut", () => {
+  assert.equal(requestLine(req("a")), "Demande envoyée · en attente");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 30 })), "Accepté : 30 min");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 60 })), "Accepté : 1 h");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 90 })), "Accepté : 1 h 30");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 65 })), "Accepté : 1 h 05");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: null })), "Accepté : jusqu'au prochain changement");
+  assert.equal(requestLine(req("a", { kind: "homework", status: "accepted" })), "Accepté");
+  assert.equal(requestLine(req("a", { status: "refused" })), "Refusé");
+  assert.equal(requestLine(req("a", { status: "expired" })), "Pas de réponse");
+  assert.equal(requestLine(req("a", { status: "failed", reason: "Déjà ouvert" })), "Impossible : Déjà ouvert");
+});
+
+test("requestsFor filtre par enfant ou par ressource", () => {
+  const s = { requests: [req("a"), req("b", { kid_id: "lea" }), req("c", { resource_id: "tv", kid_id: "lea" })] };
+  assert.deepEqual(requestsFor(s, { kid_id: "gabin" }).map((r) => r.id), ["a"]);
+  assert.deepEqual(requestsFor(s, { kid_id: "lea" }).map((r) => r.id), ["b", "c"]);
+  assert.deepEqual(requestsFor(s, { resource_id: "tv" }).map((r) => r.id), ["c"]);
+  assert.deepEqual(requestsFor({}, { kid_id: "gabin" }), []);
+});
+
+test("ownerChoices : nom de l'enfant, à défaut son id", () => {
+  assert.deepEqual(ownerChoices({ kids: { gabin: { name: "Gabin" } } }, ["gabin", "zoe"]),
+    [{ value: "gabin", label: "Gabin" }, { value: "zoe", label: "zoe" }]);
+  assert.deepEqual(ownerChoices({}, undefined), []);
+});
+
+test("requestRemaining : minutes avant l'expiration, arrondies au-dessus", () => {
+  assert.equal(requestRemaining("2026-10-30T15:12:00-04:00", NOW), "Expire dans 12 min");
+  assert.equal(requestRemaining("2026-10-30T15:00:20-04:00", NOW), "Expire dans 1 min");
+  assert.equal(requestRemaining("2026-10-30T15:00:00-04:00", NOW), "Expire maintenant");
+  assert.equal(requestRemaining(null, NOW), "Expire maintenant");
+});
+
+test("requestOutcome : qui a répondu et ce qui a été accordé", () => {
+  const r = (extra) => ({ kind: "open", answered_by: "Manou", ...extra });
+  assert.equal(requestOutcome(r({ status: "accepted", granted: 30 })), "Acceptée par Manou : 30 min");
+  assert.equal(requestOutcome(r({ status: "accepted", granted: null })), "Acceptée par Manou : jusqu'au prochain changement");
+  assert.equal(requestOutcome(r({ kind: "homework", status: "accepted" })), "Acceptée par Manou");
+  assert.equal(requestOutcome(r({ status: "refused" })), "Refusée par Manou");
+  assert.equal(requestOutcome(r({ status: "expired", answered_by: null })), "Expirée sans réponse");
+  assert.equal(requestOutcome(r({ status: "failed", reason: "Déjà ouvert" })), "Acceptée par Manou, mais impossible : Déjà ouvert");
+  assert.equal(requestOutcome(r({ status: "refused", answered_by: null })), "Refusée");
+});
+
+test("requestsScreen : en attente d'abord (plus ancienne en tête), puis récentes", () => {
+  const r = (id, status, created) => ({ id, status, created: `2026-10-30T${created}:00-04:00` });
+  const view = requestsScreen([
+    r("a", "pending", "14:50"), r("b", "accepted", "14:40"), r("c", "pending", "14:45"), r("d", "expired", "14:55"),
+  ]);
+  assert.deepEqual(view.pending.map((x) => x.id), ["c", "a"]);
+  assert.deepEqual(view.recent.map((x) => x.id), ["d", "b"]);
+  assert.deepEqual(requestsScreen(undefined), { pending: [], recent: [] });
+});
+
+test("pendingCount : demandes en attente seulement", () => {
+  const s = { requests: [{ status: "pending" }, { status: "accepted" }, { status: "pending" }] };
+  assert.equal(pendingCount(s), 2);
+  assert.equal(pendingCount(undefined), 0);
 });

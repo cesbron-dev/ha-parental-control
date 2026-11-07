@@ -94,7 +94,7 @@ export function setPath(obj, path, value) {
 // Brouillon d'une nouvelle installation (aucune config enregistrée) : au format v2, celui que
 // produisent `addResource`/`addIntegration`.
 export function emptyConfig() {
-  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], kids: [], resources: [] };
+  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], kids: [], resources: [] };
 }
 
 // Ressource au format v2 (appareils physiques) ? Une ressource v1 collée dans l'onglet JSON n'en
@@ -419,6 +419,28 @@ export function serviceOptions(catalog, taken) {
   return Object.entries(catalog ?? {})
     .filter(([id]) => !skip.has(id))
     .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base" }));
+}
+
+// Nom lisible d'un service de notification : l'appareil de l'application Home Assistant dont il
+// porte le nom (`notify.mobile_app_<nom en slug>`), sinon le service lui-même.
+export function notifyLabel(service, devices) {
+  const slug = String(service ?? "").replace(/^notify\.mobile_app_/, "");
+  if (slug === service) return service;
+  const dev = (devices ?? []).find((d) => (d.identifiers ?? []).some(([dom]) => dom === "mobile_app")
+    && slugify(d.name) === slug);
+  return dev ? dev.name_by_user || dev.name : service;
+}
+
+// Choix d'un menu de notification : services `notify.*` pas encore pris, triés par libellé ;
+// `mobileOnly` ne garde que les téléphones de l'application (seuls à pouvoir répondre aux demandes).
+export function notifyOptions(services, devices, taken, mobileOnly = false) {
+  const skip = new Set(taken);
+  return (services ?? [])
+    .filter((s) => !mobileOnly || s.startsWith("mobile_app_"))
+    .map((s) => `notify.${s}`)
+    .filter((value) => !skip.has(value))
+    .map((value) => ({ value, label: notifyLabel(value, devices) }))
     .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base" }));
 }
 

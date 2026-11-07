@@ -53,6 +53,7 @@ export const CSS = `
   .btn { padding: 8px 16px; border-radius: 18px; border: 1px solid var(--pc-line); color: var(--pc-muted); font-size: 13px; }
   .btn:not(:disabled):hover { color: var(--pc-text); border-color: color-mix(in srgb, var(--pc-text) 25%, transparent); }
   .btn.primary { background: var(--pc-pri); color: #fff; border-color: transparent; }
+  .btn.pending { color: var(--pc-amber); border-color: color-mix(in srgb, var(--pc-amber) 55%, transparent); }
   .btn.primary:not(:disabled):hover { color: #fff; filter: brightness(1.08); }
   .link { color: var(--pc-pri); font-size: 13.5px; }
   .link:hover { text-decoration: underline; }

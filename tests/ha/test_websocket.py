@@ -90,7 +90,8 @@ async def test_state_and_not_loaded(hass, entry, hass_ws_client) -> None:
     client = await _client(hass, hass_ws_client, admin=False)
     await client.send_json_auto_id({"type": "parental_control/state"})
     result = (await client.receive_json())["result"]
-    assert set(result) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now"}
+    assert set(result) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
+        "requests", "requests_enabled"}
     assert "gabin" in result["kids"]
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -112,7 +113,8 @@ async def test_state_subscribe_pushes_on_update(hass, entry, hass_ws_client) -> 
     await hass.async_block_till_done()
     pushed = await client.receive_json()
     assert pushed["type"] == "event"
-    assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now"}
+    assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
+        "requests", "requests_enabled"}
 
 
 async def test_state_subscribe_survives_entry_reload(hass, entry, hass_ws_client) -> None:
@@ -240,3 +242,11 @@ async def test_services_catalog_empty_and_admin_only(hass, entry, hass_ws_client
     user = await _client(hass, hass_ws_client, admin=False)
     await user.send_json_auto_id({"type": "parental_control/services/catalog"})
     assert not (await user.receive_json())["success"]
+
+
+async def test_state_requests_hidden_until_enabled(hass, entry, hass_ws_client) -> None:
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    res = (await client.receive_json())["result"]
+    assert res["requests_enabled"] is False
+    assert res["requests"] == []

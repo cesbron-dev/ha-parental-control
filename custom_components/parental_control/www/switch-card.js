@@ -3,8 +3,8 @@
 import { esc, simulationBadge, resourceView, reasonLine, stateBadge, fmtDuration, bonusMinutes, switchGauge } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
-import { BASE_CSS, ConfirmState, ErrorNotice, bonusPills } from "./style.js";
-import { runBonus } from "./dialogs.js";
+import { BASE_CSS, ConfirmState, ErrorNotice, bonusPills, requestLines } from "./style.js";
+import { runBonus, bonusRequest } from "./dialogs.js";
 import { createEditor } from "./editor.js";
 
 const CSS = `
@@ -137,6 +137,7 @@ class ParentalSwitchCard extends StateCard {
           <div class="pills">${bonusPills(this._hass, bonusMinutes(this._config), this._confirm.armed).join("")}</div>
         </div>
       </div>
+      ${requestLines(this._state, { resource_id: id })}
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
@@ -151,9 +152,11 @@ class ParentalSwitchCard extends StateCard {
     }
     if (!action.startsWith("bonus:")) return;
     const resource_id = this._config.resource;
+    const minutes = Number(action.slice(6));
     runBonus(this.shadowRoot, this._hass, {
       resource_id,
-      minutes: Number(action.slice(6)),
+      minutes,
+      request: bonusRequest(this._hass, this._state, this._config, resource_id, minutes),
       title: this._config.title || this._view().name || resource_id,
       call: (s, d) => this._call(s, d),
     });
