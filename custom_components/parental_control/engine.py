@@ -54,6 +54,7 @@ from .core.requests import (
     RequestBook,
     RequestError,
     RequestKind,
+    RequestStatus,
     TimeRequest,
     action_choices,
     duration_label,
@@ -599,19 +600,104 @@ class ParentalEngine:
                 )
             )
 
+    def _kid_name(self, kid_id: str) -> str:
+        """Nom de l'enfant, ou son id s'il n'est plus dans la config."""
+        if self._config is not None:
+            try:
+                return self._config.kid(kid_id).name
+            except KeyError:
+                pass
+        return kid_id
+
+    async def answer_request(
+        self, request_id: str, token: str, choice: str, user_id: str
+    ) -> RequestStatus | None:
+        """Applique la réponse d'un parent (déjà authentifié) ; `None` si elle est ignorée.
+
+        Seule la première réponse au bon jeton, avant l'échéance, est retenue.
+        """
+        user = await self._hass.auth.async_get_user(user_id)
+        answered_by = user.name if user is not None and user.name else user_id
+        req = self._requests.claim(request_id, token, dt_util.now())
+        if req is None:
+            return None
+        status, granted, reason = RequestStatus.FAILED, None, "Action impossible"
+        try:
+            status, granted, reason = await self._apply_answer(req, choice)
+        finally:
+            # Toujours un statut définitif : la réservation (`claim`) ne doit pas rester.
+            self._requests.finish(
+                req, status, dt_util.now(),
+                granted=granted, reason=reason, answered_by=answered_by,
+            )
+            self.clear_request_notification(req)
+            name = self._kid_name(req.kid_id)
+            if status == RequestStatus.REFUSED:
+                line = f"Demande de {name} refusée par {answered_by}"
+            elif status == RequestStatus.FAILED:
+                line = f"Demande de {name} acceptée par {answered_by}, mais impossible : {reason}"
+            else:
+                line = f"Demande de {name} acceptée par {answered_by}"
+                if req.kind != RequestKind.HOMEWORK:
+                    line += " : " + (
+                        "jusqu'au prochain changement"
+                        if granted is None
+                        else duration_label(granted)
+                    )
+            async_log_entry(self._hass, "Contrôle parental", line, domain=DOMAIN)
+            async_dispatcher_send(self._hass, SIGNAL_UPDATE)
+        return status
+
+    async def _apply_answer(
+        self, req: TimeRequest, choice: str
+    ) -> tuple[RequestStatus, int | None, str | None]:
+        """Statut, durée accordée et raison d'échec de la réponse `choice`."""
+        if choice == "refuse":
+            return RequestStatus.REFUSED, None, None
+        if req.kind == RequestKind.HOMEWORK:
+            if choice != "accept":
+                return RequestStatus.FAILED, None, "Choix inconnu"
+            minutes = None
+        else:
+            # Comparaison de chaînes : ni « 01 », ni chiffres d'autres écritures.
+            indexes = {str(i): i for i in range(len(req.options))}
+            if choice not in indexes:
+                return RequestStatus.FAILED, None, "Choix inconnu"
+            minutes = req.options[indexes[choice]]
+        kid_id = None if req.resource_id else req.kid_id
+        try:
+            if req.kind == RequestKind.OPEN:
+                for exc_id in req.replace:
+                    if any(e.id == exc_id for e in self._decisions.exceptions):
+                        await self.cancel_exception(exc_id)
+                await self.add_exception(
+                    Target(resource_id=req.resource_id, kid_id=kid_id, service=req.service),
+                    True,
+                    minutes,
+                )
+            elif req.kind == RequestKind.BONUS:
+                assert minutes is not None  # garanti par `normalize_options`
+                await self.add_bonus(minutes, kid_id=kid_id, resource_id=req.resource_id)
+            elif req.kind == RequestKind.TIMER:
+                assert minutes is not None
+                await self.start_timer(req.kid_id, minutes)
+            else:
+                await self.homework_done(req.kid_id)
+        except ServiceValidationError as err:
+            return RequestStatus.FAILED, None, str(err) or err.translation_key
+        except (KeyError, ValueError):
+            return RequestStatus.FAILED, None, "Action impossible"
+        return RequestStatus.ACCEPTED, minutes, None
+
     def _expire_requests(self, now: datetime) -> None:
         expired = self._requests.expire(now)
-        cfg = self._config
         for req in expired:
             self.clear_request_notification(req)
-            name = req.kid_id
-            if cfg is not None:
-                try:
-                    name = cfg.kid(req.kid_id).name
-                except KeyError:
-                    pass
             async_log_entry(
-                self._hass, "Contrôle parental", f"Demande de {name} sans réponse", domain=DOMAIN
+                self._hass,
+                "Contrôle parental",
+                f"Demande de {self._kid_name(req.kid_id)} sans réponse",
+                domain=DOMAIN,
             )
         if expired:
             async_dispatcher_send(self._hass, SIGNAL_UPDATE)
