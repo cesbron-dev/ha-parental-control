@@ -16,6 +16,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from ..core.evaluator import ResourceState
+from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ class AdGuardAdapter:
         entity_id = self._sensor_entity()
         state = self.hass.states.get(entity_id) if entity_id else None
         if state is None:
-            if not self._missing_logged:
+            if not self._missing_logged and ha_started(self.hass):
                 self._missing_logged = True
                 _LOGGER.warning(
                     "%s : capteur AdGuard introuvable pour l'appareil %s, ignoré",

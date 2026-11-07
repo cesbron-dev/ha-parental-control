@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 
 from ..core.evaluator import ResourceState
+from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class MediaPlayerAdapter:
 
     def _state(self) -> State | None:
         state = self.hass.states.get(self._entity_id)
-        if state is None and not self._missing_logged:
+        if state is None and not self._missing_logged and ha_started(self.hass):
             self._missing_logged = True
             _LOGGER.warning("%s : entité introuvable", self.label)
         return state

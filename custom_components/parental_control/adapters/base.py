@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from homeassistant.core import CoreState, HomeAssistant
+
 from ..core.evaluator import ResourceState
+
+
+def ha_started(hass: HomeAssistant) -> bool:
+    """HA a fini de démarrer : une entité encore absente l'est vraiment.
+
+    Avant, une entité d'une autre intégration peut ne pas être encore créée ; l'avertissement
+    « introuvable » attend donc le démarrage complet."""
+    return hass.state is CoreState.running
 
 
 class Adapter(Protocol):
