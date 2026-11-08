@@ -284,6 +284,24 @@ async def test_import_ignores_forged_owners(make_env) -> None:
     }
 
 
+async def test_import_remove_bound_phone_keeps_orphan_owner_ignored(make_env) -> None:
+    """Configuration exportée puis téléphone retiré de `request_notify` seulement : acceptée,
+    la clé orpheline est ignorée, puis le téléphone rajouté prend le propriétaire actuel."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    await env.bind_parent()
+    new = dump_config(env.engine.config)
+    new["request_notify"].remove(PARENT_PHONE)
+    assert new["request_notify_owners"] == {PARENT_PHONE: env.parent.id}
+    await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    assert env.engine.config.request_notify == ()
+    assert env.engine.config.request_notify_owners == {}
+    [phone] = env.hass.config_entries.async_entries("mobile_app")
+    env.hass.config_entries.async_update_entry(phone, data={**phone.data, "user_id": env.kid.id})
+    new["request_notify"].append(PARENT_PHONE)
+    await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    assert env.engine.config.request_notify_owners == {PARENT_PHONE: env.kid.id}
+
+
 async def test_import_missing_device_rejected_config_unchanged(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     before = env.engine.config

@@ -11,7 +11,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
-from .core.config_io import ConfigError, dump_config, parse_config
+from .core.config_io import ConfigError, dump_config, parse_client_config
 from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
 from .parents import bind_owners, is_parent, phone_status, trusted_phone_owners
@@ -118,7 +118,7 @@ async def ws_config_set(
         return
     try:
         # Propriétaires des téléphones déterminés par le serveur, jamais repris du client.
-        cfg = bind_owners(hass, parse_config(msg["config"]), engine.config, msg["rebind"])
+        cfg = bind_owners(hass, parse_client_config(msg["config"]), engine.config, msg["rebind"])
     except ConfigError as err:
         connection.send_error(msg["id"], "invalid_config", str(err))
         return
