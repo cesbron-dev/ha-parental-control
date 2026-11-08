@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Branche `feat/parents-non-admin` ; messages de commit en français, terminés par `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Tests Python : `.venv/bin/pytest` (toute la suite doit rester verte). Tests JS : `node --test tests/js/`.
+- Tests Python : `.venv/bin/pytest` (toute la suite doit rester verte). Tests JS : `node --test tests/js/*.mjs`.
 - Chaque contrôle se fait **côté serveur** ; cacher un bouton n'est jamais une protection.
 - Le propriétaire d'un téléphone est **déterminé par le serveur** ; une valeur `request_notify_owners` envoyée par un client (WebSocket, service d'import) est ignorée.
 - Un téléphone ne donne de droits que si le propriétaire **actuel** de l'appareil `mobile_app` de ce nom est **unique** et **égal** au propriétaire mémorisé — pour les droits de parent **et** pour la réponse aux demandes.
@@ -46,7 +46,7 @@
 - [ ] **Step 1: Tests** — `test_request_notify_owners_round_trip` (parse puis dump conserve `{"notify.mobile_app_ipad": "u1"}`), `test_request_notify_owners_absent_defaults_empty` (ancien JSON sans la clé ⇒ `{}`), `test_request_notify_owners_unknown_target_rejected` (clé absente de `request_notify` ⇒ `ConfigError` dont le chemin commence par `request_notify_owners`), `test_request_notify_owners_empty_user_rejected` (valeur `""` ⇒ `ConfigError`).
 - [ ] **Step 2:** `.venv/bin/pytest tests/core/test_config_io.py -k owners -v` → FAIL.
 - [ ] **Step 3:** Ajouter le champ (après `request_notify`), le parser avec les helpers existants (`_expect_dict`, `_str`, `_fail`), le sérialiser dans `dump_config` après `request_notify`. Mettre à jour le gabarit vide de `www/panel-lib.js` (`request_notify_owners: {}`).
-- [ ] **Step 4:** `.venv/bin/pytest tests/core -v` et `node --test tests/js/` → PASS.
+- [ ] **Step 4:** `.venv/bin/pytest tests/core -v` et `node --test tests/js/*.mjs` → PASS.
 - [ ] **Step 5:** Commit `feat: propriétaires mémorisés des téléphones de demandes dans la configuration`.
 
 ### Task 2: Module `parents.py` — qui est parent
@@ -134,7 +134,7 @@
   - `card-base.js` : propriété `this._parent` (booléen, `false` tant que inconnu), re-rendu quand elle change ; toutes les cartes passent `this._parent` à `needsCode`/`canRequest`.
 
 - [ ] **Step 1: Tests** — `needsCode` (admin, parent, enfant × actions), `canRequest` (parent ⇒ false même si `requests_enabled`), `fetchWhoami` (une seule requête pour deux appels sur la même connexion ; erreur ⇒ `null`).
-- [ ] **Step 2:** FAIL. **Step 3:** implémenter. **Step 4:** `node --test tests/js/` et `.venv/bin/pytest` PASS.
+- [ ] **Step 2:** FAIL. **Step 3:** implémenter. **Step 4:** `node --test tests/js/*.mjs` et `.venv/bin/pytest` PASS.
 - [ ] **Step 5:** Commit `feat: les cartes reconnaissent les parents non administrateurs`.
 
 ### Task 6: Panneau « Règles » — accès, statut des téléphones, réassociation
@@ -151,7 +151,7 @@
 - Comportement : au chargement, `whoami` ; non-parent ⇒ seul le message « Réservé aux parents » (aucun appel `config/get` ni `services/catalog`). Parent ⇒ panneau actuel ; chaque pastille de `request_notify` affiche `phoneBadge` ; un bouton « Réassocier » sur les statuts autres que `ok` ajoute la cible à `draft.rebind` (envoyé à `config/set`, jamais stocké dans la configuration) ; avant « Enregistrer », si `losesParentOnSave` ⇒ confirmation « Vous ne serez plus parent après l'enregistrement. Continuer ? ».
 
 - [ ] **Step 1: Tests** de `phoneBadge` (5 statuts) et `losesParentOnSave` (admin ⇒ false ; dernier téléphone retiré ⇒ true ; autre téléphone `ok` restant ⇒ false ; téléphone restant `changed` ⇒ true).
-- [ ] **Step 2:** FAIL. **Step 3:** implémenter. **Step 4:** `node --test tests/js/` PASS.
+- [ ] **Step 2:** FAIL. **Step 3:** implémenter. **Step 4:** `node --test tests/js/*.mjs` PASS.
 - [ ] **Step 5:** Commit `feat: panneau Règles ouvert aux parents et statut des téléphones`.
 
 ### Task 7: Documentation et version
@@ -160,5 +160,5 @@
 - Modify: `README.md` (« Le code parent », « Panneau Règles », « Demandes de temps » — le passage « le panneau Règles leur est fermé » —, tableaux « administrateur seulement », section bouton « Devoirs terminés » et interrupteurs), `custom_components/parental_control/manifest.json` (`"version": "0.3.0"`)
 
 - [ ] **Step 1:** Rédiger : qui est parent, propriétaire mémorisé, réassociation après réinstallation de l'app, entrée « Règles » visible de tous mais réservée, migration automatique à la mise à jour.
-- [ ] **Step 2:** `.venv/bin/pytest` et `node --test tests/js/` PASS.
+- [ ] **Step 2:** `.venv/bin/pytest` et `node --test tests/js/*.mjs` PASS.
 - [ ] **Step 3:** Commit `docs: parents non administrateurs`.
