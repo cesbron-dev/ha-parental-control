@@ -15,7 +15,7 @@ from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 
 from .const import CONF_CODE, CONF_CODE_HASH, DOMAIN
-from .core.config_io import ConfigError, parse_config
+from .core.config_io import ConfigError, parse_client_config
 from .core.decisions import Target
 from .core.requests import RequestKind
 from .parents import bind_owners, is_parent
@@ -171,7 +171,7 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
             raise Unauthorized(context=call.context)
         try:
             # Propriétaires des téléphones déterminés ici, jamais repris du fichier importé.
-            cfg = bind_owners(hass, parse_config(call.data[ATTR_CONFIG]), engine.config)
+            cfg = bind_owners(hass, parse_client_config(call.data[ATTR_CONFIG]), engine.config)
         except ConfigError as err:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,

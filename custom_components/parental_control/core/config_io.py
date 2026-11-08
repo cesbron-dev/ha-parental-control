@@ -266,6 +266,18 @@ def parse_config(data: dict) -> Config:
     )
 
 
+def parse_client_config(data: dict) -> Config:
+    """`parse_config` d'une configuration reçue d'un client (panneau, import).
+
+    `request_notify_owners` est retiré avant validation : les propriétaires sont déterminés par
+    le serveur (`parents.bind_owners`), une valeur envoyée par le client est donc ignorée —
+    y compris la clé d'un téléphone que le client vient de retirer de `request_notify`. La
+    validation stricte de `parse_config` reste celle du chargement depuis le stockage.
+    """
+    data = _expect_dict(data, "config")
+    return parse_config({k: v for k, v in data.items() if k != "request_notify_owners"})
+
+
 def _dump_segment(segment: Segment) -> dict:
     out: dict[str, Any] = {"start": segment.start.strftime("%H:%M"), "type": segment.type.value}
     if segment.warn_minutes != DEFAULT_WARN_MINUTES:

@@ -525,9 +525,10 @@ export function losesParentOnSave(draft, phones, userId, isAdmin) {
 }
 
 // Message `config/set` : `rebind` (téléphones à réassocier) voyage à côté de la configuration,
-// jamais dedans ; seuls les téléphones encore listés sont réassociés.
+// jamais dedans ; seuls les téléphones encore listés sont réassociés. `request_notify_owners`
+// n'est pas envoyé : le serveur détermine les propriétaires (et ignore toute valeur reçue).
 export function saveMessage(draft) {
-  const { rebind = [], ...config } = draft;
+  const { rebind = [], request_notify_owners: _owners, ...config } = draft;
   const listed = new Set(config.request_notify ?? []);
   return { type: "parental_control/config/set", config, rebind: rebind.filter((t) => listed.has(t)) };
 }

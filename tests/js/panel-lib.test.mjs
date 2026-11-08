@@ -593,3 +593,13 @@ test("saveMessage: rebind sent beside the configuration, never inside it", () =>
     type: "parental_control/config/set", config: { request_notify: [] }, rebind: [],
   });
 });
+
+test("saveMessage: request_notify_owners never sent (the server determines owners)", () => {
+  const draft = {
+    request_notify: ["notify.mobile_app_b"],
+    request_notify_owners: { "notify.mobile_app_a": "u1", "notify.mobile_app_b": "u2" },
+  };
+  const msg = lib.saveMessage(draft);
+  assert.deepEqual(msg.config, { request_notify: ["notify.mobile_app_b"] });
+  assert.ok(draft.request_notify_owners, "draft untouched");
+});

@@ -377,6 +377,40 @@ async def test_config_set_rebind(hass, entry, parent, users, hass_ws_client) -> 
     assert "rebind" not in dump_config(entry.runtime_data.config)
 
 
+async def test_config_set_remove_bound_phone_as_returned_by_get(
+    hass, entry, parent, users, hass_ws_client
+) -> None:
+    """« ✕ » ne retire la cible que de `request_notify` : la clé orpheline renvoyée par
+    `config/get` est ignorée, téléphone et propriétaire sont retirés."""
+    client = await _client_for(hass, hass_ws_client, users.admin)
+    cfg = (await _send(client, GET))["result"]["config"]
+    assert cfg["request_notify_owners"] == {PARENT_PHONE: parent.id}
+    cfg["request_notify"].remove(PARENT_PHONE)
+    resp = await _send(client, {"type": "parental_control/config/set", "config": cfg})
+    assert resp["success"], resp
+    assert entry.runtime_data.config.request_notify == ()
+    assert entry.runtime_data.config.request_notify_owners == {}
+    assert resp["result"]["config"]["request_notify_owners"] == {}
+
+
+async def test_config_set_remove_then_readd_binds_current_owner(
+    hass, entry, parent, users, hass_ws_client
+) -> None:
+    """Retiré puis rajouté (deux enregistrements) : le propriétaire actuel est associé."""
+    julie2 = await hass.auth.async_create_user("Julie 2", group_ids=["system-users"])
+    client = await _client_for(hass, hass_ws_client, users.admin)
+    msg = {"type": "parental_control/config/set"}
+    cfg = (await _send(client, GET))["result"]["config"]
+    cfg["request_notify"].remove(PARENT_PHONE)
+    assert (await _send(client, {**msg, "config": cfg}))["success"]
+    [phone] = hass.config_entries.async_entries("mobile_app")
+    hass.config_entries.async_update_entry(phone, data={**phone.data, "user_id": julie2.id})
+    cfg = (await _send(client, GET))["result"]["config"]
+    cfg["request_notify"].append(PARENT_PHONE)
+    assert (await _send(client, {**msg, "config": cfg}))["success"]
+    assert entry.runtime_data.config.request_notify_owners == {PARENT_PHONE: julie2.id}
+
+
 async def test_config_get_includes_phone_status(hass, entry, parent, users, hass_ws_client) -> None:
     client = await _client_for(hass, hass_ws_client, users.admin)
     result = (await _send(client, GET))["result"]
