@@ -92,11 +92,13 @@ async def is_parent(hass: HomeAssistant, cfg: Config | None, user_id: str | None
     return user.is_admin or user_id in trusted_phone_owners(hass, cfg)
 
 
-def phone_status(hass: HomeAssistant, cfg: Config) -> dict[str, dict]:
+async def phone_status(hass: HomeAssistant, cfg: Config) -> dict[str, dict]:
     """État de chaque téléphone `mobile_app` de la liste, pour le panneau.
 
     `unbound` : aucun propriétaire mémorisé ; `missing` : aucun appareil de ce nom ;
     `ambiguous` : plusieurs appareils ; `changed` : appareil d'un autre compte ; `ok` sinon.
+    `owner_name` : nom HA du propriétaire mémorisé (un parent non administrateur ne peut pas
+    lister les utilisateurs), `None` s'il n'y en a pas ou s'il n'existe plus.
     """
     result: dict[str, dict] = {}
     for target, current in current_phone_owners(hass, cfg.request_notify).items():
@@ -111,7 +113,12 @@ def phone_status(hass: HomeAssistant, cfg: Config) -> dict[str, dict]:
             status = "changed"
         else:
             status = "ok"
-        result[target] = {"owner": owner, "status": status}
+        user = await hass.auth.async_get_user(owner) if owner else None
+        result[target] = {
+            "owner": owner,
+            "owner_name": user.name if user else None,
+            "status": status,
+        }
     return result
 
 
