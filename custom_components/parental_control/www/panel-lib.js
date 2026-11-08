@@ -517,6 +517,15 @@ export function phoneBadge(status) {
   return PHONE_BADGES[status] ?? { label: String(status ?? ""), tone: "warn" };
 }
 
+// « Réassocier » d'un téléphone de demandes : proposé seulement pour `unbound` et `changed` (pour
+// `missing` et `ambiguous`, le serveur refuserait). `current` : propriétaire actuel de l'appareil,
+// celui qui deviendra parent (à montrer, il diffère du mémorisé) ; `null` s'il est inconnu.
+export function phoneRebind(phone) {
+  if (phone?.status !== "unbound" && phone?.status !== "changed") return null;
+  const current = phone.current_name ?? null;
+  return { current, label: current ? `Réassocier à ${current}` : "Réassocier" };
+}
+
 // Vrai si l'utilisateur, non administrateur, n'aura plus aucun téléphone `ok` à son nom dans les
 // destinataires des demandes une fois le brouillon enregistré : il ne sera plus parent.
 export function losesParentOnSave(draft, phones, userId, isAdmin) {

@@ -99,6 +99,8 @@ async def phone_status(hass: HomeAssistant, cfg: Config) -> dict[str, dict]:
     `ambiguous` : plusieurs appareils ; `changed` : appareil d'un autre compte ; `ok` sinon.
     `owner_name` : nom HA du propriétaire mémorisé (un parent non administrateur ne peut pas
     lister les utilisateurs), `None` s'il n'y en a pas ou s'il n'existe plus.
+    `current_name` : nom HA du propriétaire actuel de l'unique appareil de ce nom — celui qui
+    deviendrait parent en réassociant —, `None` sans appareil, avec plusieurs, ou inconnu.
     """
     result: dict[str, dict] = {}
     for target, current in current_phone_owners(hass, cfg.request_notify).items():
@@ -114,9 +116,12 @@ async def phone_status(hass: HomeAssistant, cfg: Config) -> dict[str, dict]:
         else:
             status = "ok"
         user = await hass.auth.async_get_user(owner) if owner else None
+        unique = current[0] if len(current) == 1 and current[0] else None
+        current_user = await hass.auth.async_get_user(unique) if unique else None
         result[target] = {
             "owner": owner,
             "owner_name": user.name if user else None,
+            "current_name": current_user.name if current_user else None,
             "status": status,
         }
     return result

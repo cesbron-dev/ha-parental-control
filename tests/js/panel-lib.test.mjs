@@ -603,3 +603,18 @@ test("saveMessage: request_notify_owners never sent (the server determines owner
   assert.deepEqual(msg.config, { request_notify: ["notify.mobile_app_b"] });
   assert.ok(draft.request_notify_owners, "draft untouched");
 });
+
+test("phoneRebind: offered only for unbound and changed, naming who will become parent", () => {
+  assert.deepEqual(lib.phoneRebind({ status: "unbound", owner_name: null, current_name: "Manou" }),
+    { current: "Manou", label: "Réassocier à Manou" });
+  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Manou", current_name: "Tablette" }),
+    { current: "Tablette", label: "Réassocier à Tablette" });
+  // Propriétaire actuel inconnu de HA : bouton sans nom.
+  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Manou", current_name: null }),
+    { current: null, label: "Réassocier" });
+  for (const status of ["ok", "missing", "ambiguous"]) {
+    assert.equal(lib.phoneRebind({ status, owner_name: "Manou", current_name: "Manou" }), null);
+  }
+  assert.equal(lib.phoneRebind(undefined), null);
+});
+

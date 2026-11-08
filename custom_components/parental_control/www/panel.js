@@ -725,18 +725,22 @@ class ParentalControlPanel extends HTMLElement {
   }
 
   // Téléphone de demandes : nom, propriétaire mémorisé (qui est parent grâce à lui), statut, et
-  // « Réassocier » quand il ne donne pas de droits. Un téléphone ajouté n'a de statut qu'enregistré.
+  // « Réassocier à <propriétaire actuel> » quand il est à associer ou a changé de compte. Un
+  // téléphone ajouté n'a de statut qu'enregistré.
   _phoneChip(target) {
     const phone = this._phones[target];
     const queued = (this._draft.rebind ?? []).includes(target);
     const badge = phone && L.phoneBadge(phone.status);
+    const re = L.phoneRebind(phone);
     const owner = phone?.owner_name ? ` · ${esc(phone.owner_name)}` : "";
-    const title = phone?.owner_name ? `${target} — téléphone de ${phone.owner_name}` : target;
-    const rebind = phone && phone.status !== "ok"
+    const current = re?.current ? ` · appareil de ${esc(re.current)}` : "";
+    const title = [target, phone?.owner_name && `téléphone de ${phone.owner_name}`,
+      re?.current && `appareil actuellement au compte ${re.current}`].filter(Boolean).join(" — ");
+    const rebind = re
       ? `<button type="button" data-act="rebind" data-arg="${esc(target)}" title="${queued
-        ? "Annuler la réassociation" : "Associer au compte actuel de l'appareil (à l'enregistrement)"}">${queued ? "Réassociation prévue" : "Réassocier"}</button>`
+        ? "Annuler la réassociation" : "Associer au compte actuel de l'appareil (à l'enregistrement)"}">${esc(queued ? (re.current ? `Réassociation à ${re.current} prévue` : "Réassociation prévue") : re.label)}</button>`
       : "";
-    return `<span class="pill split own" title="${esc(title)}">${esc(L.notifyLabel(target, this._devices))}${owner}
+    return `<span class="pill split own" title="${esc(title)}">${esc(L.notifyLabel(target, this._devices))}${owner}${current}
       ${badge ? `<span class="badge tone-${badge.tone}">${esc(badge.label)}</span>` : ""}${rebind}
       <button type="button" data-act="del-request-notify" data-arg="${esc(target)}" title="Retirer ${esc(target)}">✕</button></span>`;
   }
