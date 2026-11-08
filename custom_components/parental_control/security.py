@@ -13,6 +13,8 @@ from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 
 from .const import DOMAIN
+from .core.model import Config
+from .parents import is_parent
 
 _ITERATIONS = 200_000
 _PREFIX = "pbkdf2"
@@ -106,17 +108,19 @@ def _locked_error(seconds: int) -> ServiceValidationError:
 
 
 async def check_unlock(
-    hass: HomeAssistant, context: Context, code: str | None, stored_hash: str
+    hass: HomeAssistant,
+    context: Context,
+    code: str | None,
+    stored_hash: str,
+    cfg: Config | None,
 ) -> None:
     """Autorise une action qui débloque, ou lève `ServiceValidationError`.
 
-    Sans `user_id` (automatisation, système) ou pour un administrateur : pas de code.
-    Sinon le code est exigé et vérifié, avec verrouillage après échecs répétés.
+    Sans `user_id` (automatisation, système) ou pour un parent (`parents.is_parent`, évalué
+    sur `cfg`, la configuration courante) : pas de code. Sinon le code est exigé et vérifié,
+    avec verrouillage après échecs répétés.
     """
-    if context.user_id is None:
-        return
-    user = await hass.auth.async_get_user(context.user_id)
-    if user is not None and user.is_admin:
+    if context.user_id is None or await is_parent(hass, cfg, context.user_id):
         return
     if code is not None:
         code = str(code)  # un code saisi en YAML peut arriver en entier

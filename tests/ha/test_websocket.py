@@ -1,9 +1,10 @@
-"""API WebSocket : configuration (lecture/écriture admin) et état (abonnement)."""
+"""API WebSocket : droits, configuration (lecture/écriture parents) et état (abonnement)."""
 
 from __future__ import annotations
 
 import copy
 import json
+from types import SimpleNamespace
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -15,6 +16,7 @@ from custom_components.parental_control.core.config_io import dump_config, parse
 from custom_components.parental_control.security import hash_code
 from custom_components.parental_control.store import ParentalStore
 from tests.fixtures import EX
+from tests.ha.conftest import PARENT_PHONE, add_phone, bind_parent_phone
 from tests.ha.test_engine import TUESDAY, at
 
 # Avertissement tiers du composant `http` de HA (requis par websocket_api), fatal sous `-W error`.
@@ -35,14 +37,47 @@ async def entry(hass: HomeAssistant, freezer) -> MockConfigEntry:
     return entry
 
 
+async def _client_for(hass, hass_ws_client, user):
+    token = await hass.auth.async_create_refresh_token(user, "https://example.com")
+    access = hass.auth.async_create_access_token(token)
+    return await hass_ws_client(hass, access)
+
+
 async def _client(hass, hass_ws_client, admin: bool):
     # Le premier utilisateur devient propriétaire : on le crée d'abord.
     await hass.auth.async_create_user("Propriétaire", group_ids=["system-admin"])
     group = "system-admin" if admin else "system-users"
     user = await hass.auth.async_create_user("U", group_ids=[group])
-    token = await hass.auth.async_create_refresh_token(user, "https://example.com")
-    access = hass.auth.async_create_access_token(token)
-    return await hass_ws_client(hass, access)
+    return await _client_for(hass, hass_ws_client, user)
+
+
+@pytest.fixture
+async def users(hass):
+    """Administrateur, parent non admin (téléphone pas encore lié) et enfant."""
+    await hass.auth.async_create_user("Propriétaire", group_ids=["system-admin"])
+    return SimpleNamespace(
+        admin=await hass.auth.async_create_user("Olivier", group_ids=["system-admin"]),
+        parent=await hass.auth.async_create_user("Manou", group_ids=["system-users"]),
+        kid=await hass.auth.async_create_user("Tablette", group_ids=["system-users"]),
+    )
+
+
+@pytest.fixture
+async def parent(hass, entry, users):
+    """Manou, non admin, devenue parent : son téléphone est dans la liste."""
+    await bind_parent_phone(hass, entry.runtime_data, users.parent)
+    return users.parent
+
+
+async def _send(client, msg: dict) -> dict:
+    await client.send_json_auto_id(msg)
+    return await client.receive_json()
+
+
+def _assert_unauthorized(resp: dict) -> None:
+    assert not resp["success"]
+    assert "result" not in resp
+    assert resp["error"] == {"code": "unauthorized", "message": "Réservé aux parents"}
 
 
 async def test_config_get_set_round_trip(hass, entry, hass_ws_client) -> None:
@@ -64,7 +99,7 @@ async def test_config_get_set_round_trip(hass, entry, hass_ws_client) -> None:
 
 async def test_config_get_and_set_non_admin_rejected(hass, entry, hass_ws_client) -> None:
     client = await _client(hass, hass_ws_client, admin=False)
-    # La config expose les appareils et les cibles de notification : admin seulement.
+    # La config expose les appareils et les cibles de notification : parents seulement.
     await client.send_json_auto_id({"type": "parental_control/config/get"})
     resp = await client.receive_json()
     assert not resp["success"]
@@ -250,3 +285,112 @@ async def test_state_requests_hidden_until_enabled(hass, entry, hass_ws_client) 
     res = (await client.receive_json())["result"]
     assert res["requests_enabled"] is False
     assert res["requests"] == []
+
+
+# --- parents non administrateurs -------------------------------------------------
+
+GET = {"type": "parental_control/config/get"}
+CATALOG = {"type": "parental_control/services/catalog"}
+
+
+async def test_config_get_set_and_catalog_parent_non_admin(
+    hass, entry, parent, hass_ws_client
+) -> None:
+    client = await _client_for(hass, hass_ws_client, parent)
+    got = (await _send(client, GET))["result"]["config"]
+    assert got["request_notify"] == [PARENT_PHONE]
+    got["kids"][0]["name"] = "Renommé"
+    resp = await _send(client, {"type": "parental_control/config/set", "config": got})
+    assert resp["success"]
+    assert entry.runtime_data.config.kid("gabin").name == "Renommé"
+    assert (await _send(client, CATALOG))["result"] == {"services": {}}
+
+
+async def test_config_get_non_parent_gets_no_config(
+    hass, entry, parent, users, hass_ws_client
+) -> None:
+    """L'enfant non admin, même avec un parent dans la liste, ne reçoit rien de la config."""
+    client = await _client_for(hass, hass_ws_client, users.kid)
+    resp = await _send(client, GET)
+    _assert_unauthorized(resp)
+    assert PARENT_PHONE not in json.dumps(resp)
+    _assert_unauthorized(await _send(client, CATALOG))
+    before = entry.runtime_data.config
+    resp = await _send(
+        client, {"type": "parental_control/config/set", "config": dump_config(parse_config(EX))}
+    )
+    _assert_unauthorized(resp)
+    assert entry.runtime_data.config == before
+
+
+async def test_parent_loses_config_access_when_phone_removed(
+    hass, entry, parent, hass_ws_client
+) -> None:
+    client = await _client_for(hass, hass_ws_client, parent)
+    assert (await _send(client, GET))["success"]
+    await entry.runtime_data.set_config(parse_config(EX))
+    _assert_unauthorized(await _send(client, GET))
+
+
+async def test_config_set_ignores_forged_owners(hass, entry, parent, users, hass_ws_client) -> None:
+    """Le client prétend que le téléphone de Manou est à la tablette : ignoré."""
+    tablet = "notify.mobile_app_tablette"
+    add_phone(hass, "Tablette", users.kid.id)
+    client = await _client_for(hass, hass_ws_client, users.admin)
+    cfg = (await _send(client, GET))["result"]["config"]
+    cfg["request_notify"].append(tablet)
+    cfg["request_notify_owners"] = {PARENT_PHONE: users.kid.id, tablet: users.admin.id}
+    resp = await _send(client, {"type": "parental_control/config/set", "config": cfg})
+    assert resp["success"]
+    owners = {PARENT_PHONE: parent.id, tablet: users.kid.id}
+    assert entry.runtime_data.config.request_notify_owners == owners
+    assert resp["result"]["config"]["request_notify_owners"] == owners
+
+
+async def test_config_set_missing_device_rejected_config_unchanged(
+    hass, entry, parent, hass_ws_client
+) -> None:
+    client = await _client_for(hass, hass_ws_client, parent)
+    before = entry.runtime_data.config
+    cfg = (await _send(client, GET))["result"]["config"]
+    cfg["request_notify"].append("notify.mobile_app_inconnu")
+    resp = await _send(client, {"type": "parental_control/config/set", "config": cfg})
+    assert not resp["success"]
+    assert resp["error"]["code"] == "invalid_config"
+    assert "notify.mobile_app_inconnu" in resp["error"]["message"]
+    assert entry.runtime_data.config == before
+
+
+async def test_config_set_rebind(hass, entry, parent, users, hass_ws_client) -> None:
+    """App réinstallée : l'appareil de ce nom appartient à un autre compte de Manou."""
+    manou2 = await hass.auth.async_create_user("Manou 2", group_ids=["system-users"])
+    [phone] = hass.config_entries.async_entries("mobile_app")
+    hass.config_entries.async_update_entry(phone, data={**phone.data, "user_id": manou2.id})
+    client = await _client_for(hass, hass_ws_client, users.admin)
+    cfg = (await _send(client, GET))["result"]["config"]
+    msg = {"type": "parental_control/config/set", "config": cfg}
+    assert (await _send(client, msg))["success"]
+    assert entry.runtime_data.config.request_notify_owners == {PARENT_PHONE: parent.id}
+    assert (await _send(client, {**msg, "rebind": [PARENT_PHONE]}))["success"]
+    assert entry.runtime_data.config.request_notify_owners == {PARENT_PHONE: manou2.id}
+    # `rebind` est un champ du message, jamais une clé de la configuration.
+    assert "rebind" not in dump_config(entry.runtime_data.config)
+
+
+async def test_config_get_includes_phone_status(hass, entry, parent, users, hass_ws_client) -> None:
+    client = await _client_for(hass, hass_ws_client, users.admin)
+    result = (await _send(client, GET))["result"]
+    assert result["phones"] == {PARENT_PHONE: {"owner": parent.id, "status": "ok"}}
+
+
+async def test_whoami(hass, entry, parent, users, hass_ws_client) -> None:
+    expected = {
+        users.admin.id: {"admin": True, "parent": True},
+        parent.id: {"admin": False, "parent": True},
+        users.kid.id: {"admin": False, "parent": False},
+    }
+    for user_id, rights in expected.items():
+        user = await hass.auth.async_get_user(user_id)
+        client = await _client_for(hass, hass_ws_client, user)
+        resp = await _send(client, {"type": "parental_control/whoami"})
+        assert resp["result"] == {**rights, "user_id": user_id}

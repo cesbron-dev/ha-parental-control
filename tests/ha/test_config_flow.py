@@ -24,6 +24,13 @@ from custom_components.parental_control.security import (
 )
 from custom_components.parental_control.store import ParentalStore
 from tests.fixtures import EX
+from tests.ha.conftest import PARENT_PHONE, add_phone
+
+
+def _with_phone(owner: str):
+    return parse_config(
+        {**EX, "request_notify": [PARENT_PHONE], "request_notify_owners": {PARENT_PHONE: owner}}
+    )
 
 
 async def test_config_flow_creates_entry_with_hashed_code(hass: HomeAssistant) -> None:
@@ -123,12 +130,12 @@ async def test_check_unlock_admin_needs_no_code(hass: HomeAssistant) -> None:
     await hass.auth.async_create_user("Propriétaire", group_ids=["system-admin"])
     admin = await hass.auth.async_create_user("Parent", group_ids=["system-admin"])
     assert not admin.is_owner
-    await check_unlock(hass, Context(user_id=admin.id), None, stored)
-    await check_unlock(hass, Context(user_id=admin.id), "0000", stored)
+    await check_unlock(hass, Context(user_id=admin.id), None, stored, None)
+    await check_unlock(hass, Context(user_id=admin.id), "0000", stored, None)
 
 
 async def test_check_unlock_automation_needs_no_code(hass: HomeAssistant) -> None:
-    await check_unlock(hass, Context(), None, hash_code("1234"))
+    await check_unlock(hass, Context(), None, hash_code("1234"), None)
 
 
 async def test_check_unlock_non_admin_requires_code(hass: HomeAssistant) -> None:
@@ -140,25 +147,53 @@ async def test_check_unlock_non_admin_requires_code(hass: HomeAssistant) -> None
     ctx = Context(user_id=kid.id)
 
     with pytest.raises(ServiceValidationError) as err:
-        await check_unlock(hass, ctx, None, stored)
+        await check_unlock(hass, ctx, None, stored, None)
     assert err.value.translation_domain == DOMAIN
     assert err.value.translation_key == "code_required"
 
     with pytest.raises(ServiceValidationError) as err:
-        await check_unlock(hass, ctx, "", stored)
+        await check_unlock(hass, ctx, "", stored, None)
     assert err.value.translation_key == "code_required"
 
     with pytest.raises(ServiceValidationError) as err:
-        await check_unlock(hass, ctx, "9999", stored)
+        await check_unlock(hass, ctx, "9999", stored, None)
     assert err.value.translation_key == "code_invalid"
 
-    await check_unlock(hass, ctx, "1234", stored)
-    await check_unlock(hass, ctx, 1234, stored)  # type: ignore[arg-type]
+    await check_unlock(hass, ctx, "1234", stored, None)
+    await check_unlock(hass, ctx, 1234, stored, None)  # type: ignore[arg-type]
+
+
+async def test_check_unlock_parent_needs_no_code(hass: HomeAssistant) -> None:
+    """Parent non admin : son téléphone est dans la liste et mémorisé comme le sien."""
+    stored = hash_code("1234")
+    await hass.auth.async_create_user("Propriétaire", group_ids=["system-admin"])
+    manou = await hass.auth.async_create_user("Manou", group_ids=["system-users"])
+    kid = await hass.auth.async_create_user("Tablette", group_ids=["system-users"])
+    add_phone(hass, "iPad de Manou", manou.id)
+    cfg = _with_phone(manou.id)
+    await check_unlock(hass, Context(user_id=manou.id), None, stored, cfg)
+    with pytest.raises(ServiceValidationError) as err:
+        await check_unlock(hass, Context(user_id=kid.id), None, stored, cfg)
+    assert err.value.translation_key == "code_required"
+    # Sans configuration, seuls les administrateurs sont parents.
+    with pytest.raises(ServiceValidationError):
+        await check_unlock(hass, Context(user_id=manou.id), None, stored, None)
+
+
+async def test_check_unlock_parent_loses_right_when_phone_removed(hass: HomeAssistant) -> None:
+    stored = hash_code("1234")
+    await hass.auth.async_create_user("Propriétaire", group_ids=["system-admin"])
+    manou = await hass.auth.async_create_user("Manou", group_ids=["system-users"])
+    add_phone(hass, "iPad de Manou", manou.id)
+    await check_unlock(hass, Context(user_id=manou.id), None, stored, _with_phone(manou.id))
+    with pytest.raises(ServiceValidationError) as err:
+        await check_unlock(hass, Context(user_id=manou.id), None, stored, parse_config(EX))
+    assert err.value.translation_key == "code_required"
 
 
 async def test_check_unlock_unknown_user_requires_code(hass: HomeAssistant) -> None:
     with pytest.raises(ServiceValidationError):
-        await check_unlock(hass, Context(user_id="inconnu"), None, hash_code("1234"))
+        await check_unlock(hass, Context(user_id="inconnu"), None, hash_code("1234"), None)
 
 
 async def test_store_load_empty(hass: HomeAssistant) -> None:
@@ -199,5 +234,5 @@ async def test_check_unlock_error_message_is_translated(hass: HomeAssistant) -> 
     await hass.async_block_till_done()
 
     with pytest.raises(ServiceValidationError) as err:
-        await check_unlock(hass, Context(user_id="inconnu"), "0000", hash_code("1234"))
+        await check_unlock(hass, Context(user_id="inconnu"), "0000", hash_code("1234"), None)
     assert str(err.value) == "Invalid parent code"
