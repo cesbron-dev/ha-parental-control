@@ -138,6 +138,8 @@ class Config:
     default_on_demand: tuple[str, ...] = ()
     # Services notify des parents : reçoivent les demandes de temps et y répondent.
     request_notify: tuple[str, ...] = ()
+    # Propriétaire mémorisé de chaque téléphone de demandes : cible notify complète -> user_id.
+    request_notify_owners: Mapping[str, str] = field(default_factory=dict)
 
     def kid(self, kid_id: str) -> Kid:
         for kid in self.kids:
