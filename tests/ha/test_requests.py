@@ -527,6 +527,8 @@ async def test_answer_from_recreated_device_refused(
         assert req.status == "pending"
     assert env.engine.decisions.exceptions == []
     assert f"Réponse à la demande {req_id} ignorée" in caplog.text
+    # Manou a toujours son téléphone dans la liste : c'est la reconnaissance qui échoue.
+    assert "n'est pas le propriétaire reconnu d'un téléphone de la liste des demandes" in caplog.text
 
 
 async def test_answer_after_config_removed_kid(make_env, manou, manou_user) -> None:

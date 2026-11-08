@@ -276,9 +276,11 @@ ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
 ### Charger la configuration
 
 - Service **`parental_control.importer_configuration`** (réservé aux parents : refusé aux autres
-  comptes) avec le champ `config` contenant l'objet JSON. Comme l'enregistrement du panneau, il
-  détermine le propriétaire de chaque téléphone de `request_notify` : un import qui ajoute un
-  téléphone sans appareil `mobile_app` unique échoue. Outils de développement, Actions, mode YAML :
+  comptes ; un appel sans utilisateur, depuis une automatisation ou un script, passe aussi) avec
+  le champ `config` contenant l'objet JSON. Comme l'enregistrement du panneau, il détermine le
+  propriétaire de chaque téléphone de `request_notify` (la clé `request_notify_owners` du fichier
+  est ignorée) : un import qui ajoute un téléphone sans appareil `mobile_app` unique échoue.
+  Outils de développement, Actions, mode YAML :
 
   ```yaml
   action: parental_control.importer_configuration
@@ -454,26 +456,41 @@ aux avertissements de fermeture destinés aux enfants.
 
 **Propriétaire d'un téléphone.** À l'enregistrement (ou à l'import), le serveur cherche l'appareil
 `mobile_app` du même nom que chaque téléphone et mémorise l'utilisateur à qui il appartient
-(clé `request_notify_owners`, écrite par le serveur : une valeur envoyée par le client est
-ignorée). Ce propriétaire est un parent tant que l'appareil lui appartient encore, de façon unique.
-Chaque téléphone du panneau affiche un statut, le nom du propriétaire et un bouton
-« Réassocier » :
+(clé `request_notify_owners`, écrite par le serveur : une valeur envoyée par le client, panneau
+ou import, est ignorée). Ce propriétaire est un parent tant que l'appareil lui appartient encore,
+de façon unique. Chaque téléphone enregistré affiche dans le panneau un statut et le nom du
+propriétaire mémorisé ; un téléphone qui vient d'être ajouté n'a de statut qu'après
+l'enregistrement :
 
 | Statut | Sens |
 |---|---|
 | Associé | Propriétaire mémorisé, appareil toujours à lui. |
-| À associer | Aucun propriétaire mémorisé : cliquer « Réassocier ». |
+| À associer | Aucun propriétaire mémorisé : « Réassocier à <nom> ». |
 | Appareil introuvable | Aucun appareil `mobile_app` de ce nom. |
-| Changé de compte | L'appareil appartient maintenant à un autre utilisateur. |
+| Changé de compte | L'appareil appartient maintenant à un autre utilisateur : « Réassocier à <nom> ». |
 | Nom en double | Plusieurs appareils portent ce nom : les renommer. |
 
-« Réassocier » est nécessaire après une **réinstallation de l'app** Home Assistant sur le
-téléphone (l'appareil est recréé). Retirer son propre dernier téléphone demande confirmation
-(« Vous ne serez plus parent après l'enregistrement. Continuer ? »).
+Le bouton « Réassocier à <nom> » n'existe que pour « À associer » et « Changé de compte » ; il
+nomme le compte actuel de l'appareil, qui deviendra parent à l'enregistrement. Retirer son propre
+dernier téléphone demande confirmation (« Vous ne serez plus parent après l'enregistrement.
+Continuer ? »).
 
-**Mise à jour.** Au premier démarrage après la mise à jour, chaque téléphone listé dont le
-propriétaire actuel est unique est associé automatiquement (ligne dans les journaux) ; les autres
-restent « À associer » jusqu'à « Réassocier ».
+**Réinstallation de l'app** Home Assistant sur un téléphone (l'appareil `mobile_app` est
+recréé) :
+
+- même compte, ancien appareil supprimé de Home Assistant : le téléphone reste « Associé », rien
+  à faire ;
+- ancien appareil conservé : « Nom en double » ; supprimer (ou renommer) l'ancien appareil dans
+  Paramètres → Appareils et services → Mobile App ;
+- nouvel appareil nommé avec un suffixe (`iPhone de Manou 2`, par exemple) : l'ancien téléphone
+  passe « Appareil introuvable » ; retirer cette cible et ajouter la nouvelle ;
+- autre compte sur le même nom d'appareil : « Changé de compte », puis « Réassocier à <nom> » si
+  ce compte doit être parent.
+
+**Mise à jour.** L'association automatique a lieu une seule fois, au premier démarrage de la
+0.3.0 : chaque téléphone listé dont le propriétaire actuel est unique est associé (ligne dans les
+journaux). Les autres restent « À associer » jusqu'à « Réassocier », même si un appareil de ce
+nom apparaît ensuite.
 
 **Écran « Demandes ».** L'intégration crée l'écran `/parental-control-requests` : aucun tableau
 de bord à configurer. Il liste les demandes en attente avec le temps restant et les mêmes boutons
