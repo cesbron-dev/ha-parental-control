@@ -551,3 +551,15 @@ test("pendingCount : demandes en attente seulement", () => {
   assert.equal(pendingCount(s), 2);
   assert.equal(pendingCount(undefined), 0);
 });
+
+test("needsCode / canRequest : un parent non admin n'a ni code ni « Demander »", () => {
+  const user = { user: { is_admin: false } };
+  for (const a of ["open", "bonus", "homework", "timer"]) {
+    assert.equal(needsCode(user, a, true), false);
+    assert.equal(needsCode(user, a, false), true);
+    assert.equal(needsCode(user, a), true);
+  }
+  assert.equal(needsCode({ user: { is_admin: true } }, "open", true), false);
+  assert.equal(canRequest(user, { requests_enabled: true }, true), false);
+  assert.equal(canRequest(user, { requests_enabled: true }, false), true);
+});

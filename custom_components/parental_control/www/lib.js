@@ -43,15 +43,15 @@ export function serviceLabel(id) {
 }
 
 // Le compte non admin doit saisir le code parent pour ouvrir (open, bonus, devoirs, minuteur),
-// pas pour fermer.
-export function needsCode(hass, action) {
-  if (hass?.user?.is_admin) return false;
+// pas pour fermer. Un parent non admin (`parent`) n'en a pas besoin non plus.
+export function needsCode(hass, action, parent = false) {
+  if (hass?.user?.is_admin || parent) return false;
   return ["open", "bonus", "homework", "timer"].includes(action);
 }
 
 // Un compte non admin peut envoyer une demande de temps quand le moteur l'a activée.
-export function canRequest(hass, state) {
-  return !hass?.user?.is_admin && !!state?.requests_enabled;
+export function canRequest(hass, state, parent = false) {
+  return !hass?.user?.is_admin && !parent && !!state?.requests_enabled;
 }
 
 // Demande qui correspond à la cible, la plus récente (même délai pour toutes : `expires` le plus loin).

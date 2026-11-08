@@ -175,9 +175,9 @@ export function openActionDialog(root, { title, choices = null, durations = null
 }
 
 // Bonus nintendo : admin -> `call` direct (déjà confirmé par deux appuis) ; sinon fenêtre de saisie du code.
-export function runBonus(root, hass, { resource_id, minutes, title, call, request = null }) {
+export function runBonus(root, hass, { resource_id, minutes, title, call, request = null, parent = false }) {
   const data = { resource_id, minutes };
-  if (!needsCode(hass, "bonus")) return call("ajouter_bonus", data);
+  if (!needsCode(hass, "bonus", parent)) return call("ajouter_bonus", data);
   openActionDialog(root, {
     title: `${bonusLabel(minutes)} · ${title}`,
     needCode: true,
@@ -190,8 +190,8 @@ export function runBonus(root, hass, { resource_id, minutes, title, call, reques
 // Option `request` d'un bonus sur une ressource (cartes appareil et Switch) : « Demander » pour un
 // compte non admin, au nom d'un des propriétaires ; null sinon. L'état « en attente » n'est connu
 // que s'il n'y a qu'un propriétaire (sinon l'enfant n'est pas encore choisi).
-export function bonusRequest(hass, state, config, resource_id, minutes) {
-  if (!canRequest(hass, state)) return null;
+export function bonusRequest(hass, state, config, resource_id, minutes, parent = false) {
+  if (!canRequest(hass, state, parent)) return null;
   const owners = state.resources?.[resource_id]?.owners ?? [];
   const pending = owners.length === 1
     && findRequest(state, { kind: "bonus", kid_id: owners[0], resource_id })?.status === "pending";

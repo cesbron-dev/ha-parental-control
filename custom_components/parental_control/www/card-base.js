@@ -1,5 +1,5 @@
 // Socle des cartes qui suivent l'état du moteur : souscription WebSocket liée au cycle de vie de l'élément.
-import { subscribeState } from "./connection.js";
+import { subscribeState, fetchWhoami } from "./connection.js";
 import { shouldSubscribe } from "./lib.js";
 import { applyTheme } from "./style.js";
 
@@ -12,6 +12,8 @@ export class StateCard extends HTMLElement {
     this._subConn = null;
     this._failedConn = null; // connexion sur laquelle la souscription vient d'échouer
     this._tick = null;
+    this._parent = false; // parent non admin ; faux tant que inconnu (chargement ou erreur)
+    this._whoamiConn = null;
   }
 
   // À surcharger : dessine la carte.
@@ -26,7 +28,10 @@ export class StateCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     applyTheme(this, hass);
-    if (this.isConnected) this._subscribe();
+    if (this.isConnected) {
+      this._subscribe();
+      this._loadWhoami();
+    }
     this._hassChanged(hass);
   }
 
@@ -35,7 +40,10 @@ export class StateCard extends HTMLElement {
   }
 
   connectedCallback() {
-    if (this._hass) this._subscribe();
+    if (this._hass) {
+      this._subscribe();
+      this._loadWhoami();
+    }
     // Compte à rebours des pilules rafraîchi chaque minute.
     clearInterval(this._tick);
     this._tick = setInterval(() => {
@@ -43,6 +51,7 @@ export class StateCard extends HTMLElement {
         this._failedConn = null;
         this._subscribe();
       }
+      this._loadWhoami(true);
       this._render();
     }, 60000);
     this._render();
@@ -53,6 +62,21 @@ export class StateCard extends HTMLElement {
     this._tick = null;
     this._cleanup();
     this._unsubscribe();
+  }
+
+  // Statut parent du compte (mis en cache par connexion) ; re-rendu seulement s'il change.
+  _loadWhoami(refresh = false) {
+    const conn = this._hass?.connection;
+    if (!conn || (!refresh && conn === this._whoamiConn)) return;
+    this._whoamiConn = conn;
+    fetchWhoami(this._hass).then((who) => {
+      if (this._whoamiConn !== conn) return;
+      const parent = !!who?.parent;
+      if (parent !== this._parent) {
+        this._parent = parent;
+        this._render();
+      }
+    });
   }
 
   _subscribe() {

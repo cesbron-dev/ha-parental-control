@@ -134,9 +134,9 @@ class ParentalResourceCard extends StateCard {
     });
 
     if (v.kind === "nintendo") {
-      pills.push(...bonusPills(this._hass, bonusMinutes(this._config), armed));
+      pills.push(...bonusPills(this._hass, bonusMinutes(this._config), armed, this._parent));
     } else {
-      pills.push(pill({ action: "allow", icon: "mdi:plus", label: "Autoriser…", cls: "bleu", lock: needsCode(this._hass, "open") }));
+      pills.push(pill({ action: "allow", icon: "mdi:plus", label: "Autoriser…", cls: "bleu", lock: needsCode(this._hass, "open", this._parent) }));
       pills.push(pill({ action: "stop", icon: "mdi:power", label: "Arrêter", cls: "rouge", confirm: true, armed: armed === "stop" }));
     }
 
@@ -160,7 +160,7 @@ class ParentalResourceCard extends StateCard {
     if (this._config.show_services === false) return "";
     const toggles = serviceToggles(this._state, this._config.resource, this._config.services);
     if (!toggles.length) return "";
-    const lock = needsCode(this._hass, "open");
+    const lock = needsCode(this._hass, "open", this._parent);
     const pills = toggles.map((t) => {
       const action = `svc:${t.service}`;
       return `<div class="pill ${t.open ? "vert" : "svc-off"}" data-action="${esc(action)}" role="switch" aria-checked="${t.open}"
@@ -194,7 +194,8 @@ class ParentalResourceCard extends StateCard {
       const minutes = Number(action.slice(6));
       return runBonus(this.shadowRoot, this._hass, {
         resource_id, minutes, title, call: (s, d) => this._call(s, d),
-        request: bonusRequest(this._hass, this._state, this._config, resource_id, minutes),
+        request: bonusRequest(this._hass, this._state, this._config, resource_id, minutes, this._parent),
+        parent: this._parent,
       });
     }
   }
@@ -214,7 +215,7 @@ class ParentalResourceCard extends StateCard {
       title: `Autoriser · ${this._config.name || v.name || resource_id}`,
       choices,
       durations: DURATIONS,
-      needCode: needsCode(this._hass, "open"),
+      needCode: needsCode(this._hass, "open", this._parent),
       submitLabel: "Autoriser",
       // Choix libre : pas d'état « en attente » ; le moteur refuse un doublon et la fenêtre l'affiche.
       request: this._request(v.owners, (kid, { choice, duration }) => {
@@ -258,7 +259,7 @@ class ParentalResourceCard extends StateCard {
     openActionDialog(this.shadowRoot, {
       title: `Autoriser · ${t.label}`,
       durations: DURATIONS,
-      needCode: needsCode(this._hass, "open"),
+      needCode: needsCode(this._hass, "open", this._parent),
       submitLabel: "Autoriser",
       request: this._request(owners, (kid, { duration }) => {
         const data = {
@@ -275,7 +276,7 @@ class ParentalResourceCard extends StateCard {
   // Option « Demander » d'une fenêtre (compte non admin) : au nom d'un propriétaire de l'appareil.
   // `build(kid, {choice, duration})` donne les données du service `demander`.
   _request(owners, build, pending = false) {
-    if (!canRequest(this._hass, this._state)) return null;
+    if (!canRequest(this._hass, this._state, this._parent)) return null;
     return {
       kids: ownerChoices(this._state, owners),
       pending,
