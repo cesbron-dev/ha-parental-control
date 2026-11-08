@@ -275,8 +275,10 @@ ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
 
 ### Charger la configuration
 
-- Service **`parental_control.importer_configuration`** (réservé aux administrateurs) avec
-  le champ `config` contenant l'objet JSON. Outils de développement, Actions, mode YAML :
+- Service **`parental_control.importer_configuration`** (réservé aux parents : refusé aux autres
+  comptes) avec le champ `config` contenant l'objet JSON. Comme l'enregistrement du panneau, il
+  détermine le propriétaire de chaque téléphone de `request_notify` : un import qui ajoute un
+  téléphone sans appareil `mobile_app` unique échoue. Outils de développement, Actions, mode YAML :
 
   ```yaml
   action: parental_control.importer_configuration
@@ -288,8 +290,8 @@ ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
   ```
 
 - Ou la commande WebSocket **`parental_control/config/set`** (`{"type": "parental_control/config/set", "config": {...}}`,
-  administrateur seulement). `parental_control/config/get` renvoie la configuration courante
-  (administrateur seulement aussi : elle contient les identifiants d'appareils et les cibles de
+  parents seulement). `parental_control/config/get` renvoie la configuration courante
+  (parents seulement aussi : elle contient les identifiants d'appareils et les cibles de
   notification), `parental_control/state` l'état courant et `parental_control/state/subscribe`
   s'abonne aux changements (pour les cartes).
 
@@ -304,11 +306,11 @@ Quand une configuration retire un enfant ou une ressource, les décisions qui le
 
 ## Services
 
-Le « code » est le code parent. Un utilisateur **administrateur**, ou un appel **sans
-utilisateur** (automatisation, script), n'a pas besoin de le fournir. Un utilisateur non
-administrateur doit le passer dans le champ `code` pour les actions qui débloquent.
+Le « code » est le code parent. Un **parent** (voir « Qui est parent »), ou un appel **sans
+utilisateur** (automatisation, script), n'a pas besoin de le fournir. Un autre utilisateur
+doit le passer dans le champ `code` pour les actions qui débloquent.
 
-| Service | Champs | Code exigé (non admin) |
+| Service | Champs | Code exigé (non parent) |
 |---|---|---|
 | `parental_control.devoirs_termines` | `kid_id` | oui |
 | `parental_control.ajouter_bonus` | `minutes` (1 à 240) et exactement un de `kid_id` ou `resource_id` | oui |
@@ -317,7 +319,7 @@ administrateur doit le passer dans le champ `code` pour les actions qui débloqu
 | `parental_control.demarrer_minuteur` | `kid_id`, `minutes` (1 à 240) | oui |
 | `parental_control.arreter_minuteur` | `kid_id` | non |
 | `parental_control.pause` | `active` | oui pour lever la pause (`active: false`), non pour la poser |
-| `parental_control.importer_configuration` | `config` | réservé aux administrateurs |
+| `parental_control.importer_configuration` | `config` | réservé aux parents (refusé aux autres, avec ou sans code) |
 | `parental_control.demander` | `kind`, `kid_id`, `resource_id`, `service`, `minutes`, `options`, `replace` | non (voir « Demandes de temps ») |
 
 Précisions :
@@ -340,10 +342,10 @@ Chaque enfant, chaque ressource et la pause générale sont des appareils (type 
 | Entité | Détail |
 |---|---|
 | `sensor` Statut, par enfant | États : `autorise`, `bloque`, `attente_devoirs`, `attente_minuteur`, `quota_epuise`, `sur_demande`, `pause`. Les détails de l'instantané (type de journée, segment, fin de plage, temps restant, exceptions) sont en attributs. |
-| `button` Devoirs terminés, par enfant | Équivaut au service `devoirs_termines`, pour un administrateur seulement : un bouton ne transmet pas de code, il est donc refusé à un non-administrateur (utiliser le service avec `code`). |
+| `button` Devoirs terminés, par enfant | Équivaut au service `devoirs_termines`, sans code pour un parent ; un bouton ne transmet pas de code, il est donc refusé à un autre utilisateur (utiliser le service avec `code`). |
 | `binary_sensor` Autorisée, par ressource | Ouverte selon la règle. Pour AdGuard, les services bloqués sont en attribut. |
 | `sensor` Temps utilisé / Temps restant, par ressource | Minutes, seulement pour les appareils avec un lecteur, un interrupteur ou une console Nintendo. |
-| `switch` Pause générale | Ferme toutes les ressources (sur AdGuard, les services de loisirs) et remet la limite du jour Nintendo à 0. N'importe qui peut la poser ; l'éteindre est refusé à un non-administrateur (pas de code possible sur un interrupteur : utiliser le service `pause` avec `code`). |
+| `switch` Pause générale | Ferme toutes les ressources (sur AdGuard, les services de loisirs) et remet la limite du jour Nintendo à 0. N'importe qui peut la poser ; l'éteindre est refusé à un non-parent (pas de code possible sur un interrupteur : utiliser le service `pause` avec `code`). Un parent l'éteint sans code. |
 
 Les identifiants d'entités sont ceux que Home Assistant génère à partir des noms (par
 exemple `sensor.gabin_statut` si l'appareil s'appelle « Gabin »).
@@ -397,7 +399,7 @@ show_services: false          # optionnel : masque les bascules de services
 
 **Bascules de services.** La carte affiche les services sur demande de l'appareil. Toucher un service bloqué ouvre une fenêtre pour choisir
 la durée (15 min à 2 h) ou « jusqu'au prochain changement » de plage, avec le code pour un compte
-non administrateur ; toucher un service
+non parent ; toucher un service
 débloqué le bloque, sans code. Les cartes suivent le thème clair ou sombre de Home Assistant.
 
 ```yaml
@@ -407,7 +409,7 @@ title: Nintendo Switch        # optionnel
 bonus_minutes: [15, 30, 60]   # optionnel
 ```
 
-**Le code parent.** Un compte non administrateur doit saisir le code (petit cadenas sur la
+**Le code parent.** Un compte non parent doit saisir le code (petit cadenas sur la
 pilule) pour **autoriser**, les **bonus**, valider les **devoirs** et lancer un **minuteur**. Il est saisi sur un pavé numérique tactile (pas de clavier
 natif qui recouvre l'écran ; le clavier physique marche aussi), envoyé avec
 l'appel et oublié ; il n'est jamais stocké dans une carte ni dans la configuration du
@@ -415,7 +417,7 @@ tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmatio
 
 ## Panneau « Règles »
 
-L'intégration ajoute un panneau **Règles** dans la barre latérale (administrateurs seulement) pour
+L'intégration ajoute un panneau **Règles** dans la barre latérale pour
 modifier la configuration sans écrire de JSON : enfants et frises par type de jour (segments,
 quotas, avertissements), loisirs, mode par appareil, appareils logiques en arbre (appareils
 physiques, puis intégrations : lecteur, clients AdGuard, console Nintendo, avec une pastille qui
@@ -423,9 +425,21 @@ dit si l'entité ou l'appareil existe dans Home Assistant) et leurs quotas, lois
 modifications restent en brouillon jusqu'à « Enregistrer » ; le moteur valide et, en cas d'erreur,
 indique le champ fautif. Un onglet JSON garde l'accès à la configuration brute.
 
+**Qui est parent.** Peuvent ouvrir et modifier le panneau (onglet JSON et liste des téléphones des
+parents compris), sans code et sans « Demander » :
+
+- les **administrateurs** de Home Assistant ;
+- les utilisateurs non administrateurs **propriétaires d'un téléphone** de la liste « Demandes de
+  temps (parents) » (voir ci-dessous).
+
+L'entrée « Règles » est visible dans la barre latérale de tous les comptes, mais un compte non
+parent n'y lit que « Réservé aux parents. » : le serveur refuse aussi `config/get`, `config/set`
+et `services/catalog` aux non-parents (`unauthorized`). Un compte administrateur désactivé n'est
+plus dispensé du code.
+
 ## Demandes de temps
 
-Un enfant qui n'est pas administrateur peut **demander** du temps plutôt que de le débloquer :
+Un enfant qui n'est pas parent peut **demander** du temps plutôt que de le débloquer :
 les fenêtres des cartes (autorisation, bonus, devoirs, minuteur) ont un bouton « Demander », sans
 code. Les parents reçoivent une notification actionnable dans l'app Home Assistant (« Gabin
 demande 30 min de YouTube sur iPhone Gabin ») avec un bouton par durée proposée et « Refuser ».
@@ -438,6 +452,29 @@ téléphones des parents (clé `request_notify`, par exemple `notify.mobile_app_
 Sans cette liste, les demandes sont désactivées. Cette liste est distincte de `notify`, qui sert
 aux avertissements de fermeture destinés aux enfants.
 
+**Propriétaire d'un téléphone.** À l'enregistrement (ou à l'import), le serveur cherche l'appareil
+`mobile_app` du même nom que chaque téléphone et mémorise l'utilisateur à qui il appartient
+(clé `request_notify_owners`, écrite par le serveur : une valeur envoyée par le client est
+ignorée). Ce propriétaire est un parent tant que l'appareil lui appartient encore, de façon unique.
+Chaque téléphone du panneau affiche un statut, le nom du propriétaire et un bouton
+« Réassocier » :
+
+| Statut | Sens |
+|---|---|
+| Associé | Propriétaire mémorisé, appareil toujours à lui. |
+| À associer | Aucun propriétaire mémorisé : cliquer « Réassocier ». |
+| Appareil introuvable | Aucun appareil `mobile_app` de ce nom. |
+| Changé de compte | L'appareil appartient maintenant à un autre utilisateur. |
+| Nom en double | Plusieurs appareils portent ce nom : les renommer. |
+
+« Réassocier » est nécessaire après une **réinstallation de l'app** Home Assistant sur le
+téléphone (l'appareil est recréé). Retirer son propre dernier téléphone demande confirmation
+(« Vous ne serez plus parent après l'enregistrement. Continuer ? »).
+
+**Mise à jour.** Au premier démarrage après la mise à jour, chaque téléphone listé dont le
+propriétaire actuel est unique est associé automatiquement (ligne dans les journaux) ; les autres
+restent « À associer » jusqu'à « Réassocier ».
+
 **Écran « Demandes ».** L'intégration crée l'écran `/parental-control-requests` : aucun tableau
 de bord à configurer. Il liste les demandes en attente avec le temps restant et les mêmes boutons
 que la notification, puis les réponses des 5 dernières minutes (qui a répondu, ce qui a été
@@ -449,9 +486,9 @@ L'écran n'a pas d'entrée dans la barre latérale, pour que les enfants ne le v
 arrive :
 
 - en touchant la notification d'une demande ;
-- **administrateurs** : par le bouton « Demandes » du panneau « Règles », qui affiche le nombre
-  de demandes en attente ;
-- **parents non administrateurs** (le panneau « Règles » leur est fermé) : la notification ne
+- **parents** (administrateurs ou non) : par le bouton « Demandes » du panneau « Règles », qui
+  affiche le nombre de demandes en attente ;
+- **sans le panneau** (si vous préférez ne pas l'utiliser) : la notification ne
   suffit plus une fois qu'elle a été ignorée ou effacée. Pour revenir à l'écran :
   - dans un navigateur, ouvrir `https://<votre-instance>/parental-control-requests` et l'ajouter
     aux favoris ;
@@ -473,9 +510,9 @@ arrive :
     ```
 
 **Qui peut répondre.** Une réponse n'est acceptée que si elle vient de l'**utilisateur
-propriétaire d'un téléphone de la liste**, depuis la notification (qui porte en plus le **jeton
+propriétaire d'un téléphone de la liste** (propriétaire mémorisé, voir plus haut), depuis la notification (qui porte en plus le **jeton
 secret** propre à la demande) ou depuis l'écran « Demandes » : être administrateur ne suffit
-pas. Si deux appareils `mobile_app` portent le même nom, aucun des deux ne peut répondre (un
+pas, et un parent sans téléphone listé ne peut pas répondre. Si deux appareils `mobile_app` portent le même nom, aucun des deux ne peut répondre (un
 avertissement est journalisé) : donnez-leur des noms distincts.
 
 **Règles.**
@@ -518,8 +555,8 @@ les laisser agir.
 - **Installations.** Une nouvelle installation démarre en simulation ; une installation existante
   reste en mode réel.
 - **Code parent.** **Activer** la simulation relâche tous les appareils : un compte non
-  administrateur doit donc fournir le code parent. Un interrupteur ne transmet pas de code : il est
-  refusé à un non-administrateur, comme pour l'arrêt de la pause. La désactiver n'en demande pas.
+  parent doit donc fournir le code parent. Un interrupteur ne transmet pas de code : il est
+  refusé à un non-parent, comme pour l'arrêt de la pause. Un parent l'active sans code. La désactiver n'en demande pas.
 - **Notifications.** Les notifications aux parents partent toujours, préfixées « [Simulation] ».
 - **Sortie de simulation.** En la quittant, le moteur réapplique tout de suite l'état voulu à
   chaque appareil.
@@ -529,10 +566,10 @@ les laisser agir.
 1. Créer un **utilisateur Home Assistant dédié, non administrateur**, pour la tablette.
 2. Y afficher le tableau de bord. Les [cartes](#cartes) demandent le code pour débloquer ; le bouton « Devoirs
    terminés » et l'arrêt de la pause restent refusés sur la tablette : les parents les
-   utilisent depuis leur téléphone (utilisateur administrateur).
+   utilisent depuis leur téléphone (administrateur, ou parent déclaré dans « Demandes de temps »).
 3. Les actions qui débloquent demandent le **code parent** dans le champ `code` d'un appel
    de service. **N'écrivez jamais le code** dans une action `perform-action` d'un tableau de
-   bord ni dans une automatisation ou un script qu'un non-administrateur peut déclencher.
+   bord ni dans une automatisation ou un script qu'un non-parent peut déclencher.
 4. **Masquez à l'utilisateur de la tablette les entités brutes** AdGuard
    (appareils `adguard_clients`), Nintendo et télé : il pourrait les manipuler directement. Le
    moteur corrige une dérive (service AdGuard débloqué pendant une fermeture, télé rallumée, limite
@@ -546,7 +583,7 @@ les laisser agir.
 
 - **Appels sans utilisateur.** Une automatisation ou un script appelle les services sans
   utilisateur : le code n'est alors pas demandé. Ne créez pas d'automatisation ou de script qui
-  débloque quelque chose et qu'un utilisateur non administrateur peut déclencher
+  débloque quelque chose et qu'un utilisateur non parent peut déclencher
   (`automation.trigger`, `script.turn_on`, etc.), ce serait un contournement du code.
 - **AdGuard.** L'appareil vient de la configuration (`device_id`) ; son capteur « Services
   bloqués » est retrouvé au démarrage du moteur. Un capteur absent ou indisponible est signalé
