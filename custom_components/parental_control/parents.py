@@ -11,12 +11,16 @@ from __future__ import annotations
 import dataclasses
 import logging
 from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
 
 from .core.config_io import ConfigError
 from .core.model import Config
+
+if TYPE_CHECKING:
+    from .engine import ParentalEngine
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -126,3 +130,26 @@ def bind_owners(
             raise ConfigError(f"request_notify : {target} — appareil introuvable ou en double")
         owners[target] = current[0]
     return dataclasses.replace(new, request_notify_owners=owners)
+
+
+async def migrate_phone_owners(hass: HomeAssistant, engine: ParentalEngine) -> None:
+    """Associe, une seule fois, les téléphones existants sans propriétaire mémorisé.
+
+    Un téléphone `mobile_app` sans propriétaire mémorisé et dont l'unique appareil a un
+    `user_id` valide est associé à cet utilisateur. Les autres restent sans propriétaire (et
+    sans droits) ; un téléphone déjà associé n'est jamais touché. N'enregistre que si quelque
+    chose a changé.
+    """
+    cfg = engine.config
+    if cfg is None:
+        return
+    owners = dict(cfg.request_notify_owners)
+    for target, current in current_phone_owners(hass, cfg.request_notify).items():
+        if owners.get(target) or len(current) != 1 or not current[0]:
+            continue
+        owners[target] = current[0]
+        user = await hass.auth.async_get_user(current[0])
+        name = user.name if user else current[0]
+        _LOGGER.info("Téléphone %s associé à l'utilisateur %s", target, name)
+    if owners != dict(cfg.request_notify_owners):
+        await engine.set_config(dataclasses.replace(cfg, request_notify_owners=owners))

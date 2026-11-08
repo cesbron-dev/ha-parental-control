@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -12,6 +14,7 @@ from custom_components.parental_control.parents import (
     bind_owners,
     current_phone_owners,
     is_parent,
+    migrate_phone_owners,
     phone_status,
     trusted_phone_owners,
 )
@@ -205,3 +208,76 @@ async def test_bind_owners_non_mobile_target(hass, users) -> None:
     bound = bind_owners(hass, new, None)
     assert bound.request_notify_owners == {JULIE: users["julie"].id}
     assert bound.request_notify == (OTHER, JULIE)
+
+
+class FakeEngine:
+    """Moteur minimal : `config` et `set_config` suffisent à la migration."""
+
+    def __init__(self, config) -> None:
+        self.config = config
+        self.saved = 0
+
+    async def set_config(self, config) -> None:
+        self.saved += 1
+        self.config = config
+
+
+async def test_migration_binds_unique_owner(
+    hass, users, caplog: pytest.LogCaptureFixture
+) -> None:
+    add_phone(hass, "iPhone de Julie", users["julie"].id)
+    engine = FakeEngine(cfg([JULIE]))
+    with caplog.at_level(logging.INFO):
+        await migrate_phone_owners(hass, engine)
+    assert engine.config.request_notify_owners == {JULIE: users["julie"].id}
+    assert engine.saved == 1
+    assert f"Téléphone {JULIE} associé à l'utilisateur Julie" in caplog.text
+
+
+async def test_migration_logs_user_id_when_user_unknown(
+    hass, users, caplog: pytest.LogCaptureFixture
+) -> None:
+    add_phone(hass, "iPhone de Julie", "inconnu")
+    engine = FakeEngine(cfg([JULIE]))
+    with caplog.at_level(logging.INFO):
+        await migrate_phone_owners(hass, engine)
+    assert engine.config.request_notify_owners == {JULIE: "inconnu"}
+    assert f"Téléphone {JULIE} associé à l'utilisateur inconnu" in caplog.text
+
+
+async def test_migration_skips_ambiguous_and_missing(hass, users) -> None:
+    add_phone(hass, "iPhone de Julie", users["julie"].id)
+    add_phone(hass, "iPhone de Julie", users["kid"].id)
+    add_phone(hass, "Autre", "")
+    engine = FakeEngine(cfg([JULIE, MARC, OTHER, "notify.mobile_app_autre"]))
+    await migrate_phone_owners(hass, engine)
+    assert engine.config.request_notify_owners == {}
+    assert engine.saved == 0
+
+
+async def test_migration_keeps_existing_owner(hass, users) -> None:
+    add_phone(hass, "iPhone de Julie", users["kid"].id)
+    add_phone(hass, "iPhone de Marc", users["admin"].id)
+    engine = FakeEngine(cfg([JULIE, MARC], {JULIE: users["julie"].id}))
+    await migrate_phone_owners(hass, engine)
+    assert engine.config.request_notify_owners == {
+        JULIE: users["julie"].id,
+        MARC: users["admin"].id,
+    }
+
+
+async def test_migration_noop_does_not_save(hass, users) -> None:
+    add_phone(hass, "iPhone de Julie", users["julie"].id)
+    engine = FakeEngine(cfg([JULIE], {JULIE: users["julie"].id}))
+    await migrate_phone_owners(hass, engine)
+    assert engine.saved == 0
+    await migrate_phone_owners(hass, FakeEngine(None))
+
+
+async def test_setup_entry_runs_migration(hass, users, make_env) -> None:
+    add_phone(hass, "iPhone de Julie", users["julie"].id)
+    env = await make_env(
+        datetime(2026, 11, 3, 16, 30, tzinfo=ZoneInfo("America/Toronto")),
+        {**EX, "request_notify": [JULIE]},
+    )
+    assert env.engine.config.request_notify_owners == {JULIE: users["julie"].id}
