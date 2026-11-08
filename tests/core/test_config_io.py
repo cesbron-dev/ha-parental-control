@@ -336,6 +336,8 @@ def test_request_notify_owners_round_trip() -> None:
 
 def test_request_notify_owners_absent_defaults_empty() -> None:
     assert parse_config(EX).request_notify_owners == {}
+    # Toujours écrite, même vide : sa présence marque la migration des téléphones comme faite.
+    assert dump_config(parse_config(EX))["request_notify_owners"] == {}
 
 
 def test_request_notify_owners_unknown_target_rejected() -> None:

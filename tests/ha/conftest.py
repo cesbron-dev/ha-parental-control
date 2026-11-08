@@ -7,9 +7,10 @@ from dataclasses import dataclass
 import pytest
 from homeassistant.auth.models import User
 from homeassistant.core import Context, HomeAssistant
+from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.parental_control.const import DOMAIN
+from custom_components.parental_control.const import DOMAIN, STORE_VERSION
 from custom_components.parental_control.core.config_io import dump_config, parse_config
 from custom_components.parental_control.engine import ParentalEngine
 from custom_components.parental_control.security import hash_code
@@ -98,9 +99,14 @@ async def make_env(hass: HomeAssistant, freezer):
     parent = await hass.auth.async_create_user("Julie", group_ids=["system-users"])
     assert admin.is_admin and not kid.is_admin and not parent.is_admin
 
-    async def _make(moment, config: dict | None = None) -> Env:
+    async def _make(moment, config: dict | None = None, raw: bool = False) -> Env:
+        """`raw` : `config` est écrite telle quelle (ex. ancien format sans
+        `request_notify_owners`) au lieu de passer par `parse_config`/`dump_config`."""
         freezer.move_to(moment)
-        await ParentalStore(hass).save_config(parse_config(EX if config is None else config))
+        if raw:
+            await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_save(config)
+        else:
+            await ParentalStore(hass).save_config(parse_config(EX if config is None else config))
         entry = MockConfigEntry(
             domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code(CODE)}
         )
