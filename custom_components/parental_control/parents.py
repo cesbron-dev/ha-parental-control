@@ -148,15 +148,18 @@ def bind_owners(
 
 
 async def migrate_phone_owners(hass: HomeAssistant, engine: ParentalEngine) -> None:
-    """Associe, une seule fois, les téléphones existants sans propriétaire mémorisé.
+    """Associe, une seule fois, les téléphones de l'ancien format de configuration.
 
-    Un téléphone `mobile_app` sans propriétaire mémorisé et dont l'unique appareil a un
-    `user_id` valide est associé à cet utilisateur. Les autres restent sans propriétaire (et
-    sans droits) ; un téléphone déjà associé n'est jamais touché. N'enregistre que si quelque
-    chose a changé.
+    Ne fait rien si la configuration stockée contenait déjà `request_notify_owners`
+    (`store.owners_migration_pending` faux) : un téléphone non associé le reste jusqu'à
+    « Réassocier », même si un appareil de ce nom apparaît plus tard. Sinon, un téléphone
+    `mobile_app` dont l'unique appareil a un `user_id` valide est associé à cet utilisateur ;
+    les autres restent sans propriétaire (et sans droits). La configuration est toujours
+    réécrite, même si rien n'a été associé : la clé enregistrée empêche toute nouvelle
+    migration.
     """
     cfg = engine.config
-    if cfg is None:
+    if cfg is None or not engine.store.owners_migration_pending:
         return
     owners = dict(cfg.request_notify_owners)
     for target, current in current_phone_owners(hass, cfg.request_notify).items():
@@ -166,5 +169,4 @@ async def migrate_phone_owners(hass: HomeAssistant, engine: ParentalEngine) -> N
         user = await hass.auth.async_get_user(current[0])
         name = user.name if user else current[0]
         _LOGGER.info("Téléphone %s associé à l'utilisateur %s", target, name)
-    if owners != dict(cfg.request_notify_owners):
-        await engine.set_config(dataclasses.replace(cfg, request_notify_owners=owners))
+    await engine.set_config(dataclasses.replace(cfg, request_notify_owners=owners))

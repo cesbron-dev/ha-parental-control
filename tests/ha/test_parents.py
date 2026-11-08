@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
+from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.parental_control.const import DOMAIN, STORE_VERSION
 from custom_components.parental_control.core.config_io import ConfigError, parse_config
 from custom_components.parental_control.parents import (
     bind_owners,
@@ -236,10 +239,14 @@ async def test_bind_owners_non_mobile_target(hass, users) -> None:
 
 
 class FakeEngine:
-    """Moteur minimal : `config` et `set_config` suffisent à la migration."""
+    """Moteur minimal : `config`, `store` et `set_config` suffisent à la migration.
 
-    def __init__(self, config) -> None:
+    `pending` : la configuration stockée était à l'ancien format (sans propriétaires).
+    """
+
+    def __init__(self, config, pending: bool = True) -> None:
         self.config = config
+        self.store = SimpleNamespace(owners_migration_pending=pending)
         self.saved = 0
 
     async def set_config(self, config) -> None:
@@ -277,7 +284,8 @@ async def test_migration_skips_ambiguous_and_missing(hass, users) -> None:
     engine = FakeEngine(cfg([MANOU, OLIVIER, OTHER, "notify.mobile_app_autre"]))
     await migrate_phone_owners(hass, engine)
     assert engine.config.request_notify_owners == {}
-    assert engine.saved == 0
+    # Rien d'associé, mais la configuration est réécrite : la migration ne rejouera pas.
+    assert engine.saved == 1
 
 
 async def test_migration_keeps_existing_owner(hass, users) -> None:
@@ -291,12 +299,52 @@ async def test_migration_keeps_existing_owner(hass, users) -> None:
     }
 
 
-async def test_migration_noop_does_not_save(hass, users) -> None:
-    add_phone(hass, "iPhone de Manou", users["manou"].id)
-    engine = FakeEngine(cfg([MANOU], {MANOU: users["manou"].id}))
+async def test_migration_only_for_old_format(hass, users) -> None:
+    """Configuration déjà au nouveau format : jamais de migration, même pour un téléphone
+    non associé dont l'appareil a un propriétaire unique."""
+    add_phone(hass, "iPhone de Manou", users["kid"].id)
+    engine = FakeEngine(cfg([MANOU]), pending=False)
     await migrate_phone_owners(hass, engine)
+    assert engine.config.request_notify_owners == {}
     assert engine.saved == 0
     await migrate_phone_owners(hass, FakeEngine(None))
+
+
+async def test_setup_migrates_once_then_unbound_phone_stays_unbound(
+    hass, users, make_env
+) -> None:
+    """Migration au premier démarrage ; l'appareil d'un téléphone resté non associé est
+    ensuite recréé par l'enfant : au démarrage suivant, il reste non associé."""
+    add_phone(hass, "iPhone de Olivier", users["admin"].id)
+    env = await make_env(
+        datetime(2026, 11, 3, 16, 30, tzinfo=ZoneInfo("America/Toronto")),
+        {**EX, "request_notify": [OLIVIER, MANOU]},
+        raw=True,
+    )
+    assert env.engine.config.request_notify_owners == {OLIVIER: users["admin"].id}
+    add_phone(hass, "iPhone de Manou", users["kid"].id)
+    assert await hass.config_entries.async_reload(env.entry.entry_id)
+    await hass.async_block_till_done()
+    engine = env.entry.runtime_data
+    assert engine.config.request_notify_owners == {OLIVIER: users["admin"].id}
+    assert users["kid"].id not in trusted_phone_owners(hass, engine.config)
+
+
+async def test_setup_old_format_without_phone_persists_key(hass, users, make_env) -> None:
+    """Ancien format sans téléphone associable : la clé est enregistrée (vide), et un
+    appareil créé ensuite n'est pas associé au démarrage suivant."""
+    env = await make_env(
+        datetime(2026, 11, 3, 16, 30, tzinfo=ZoneInfo("America/Toronto")),
+        {**EX, "request_notify": [MANOU]},
+        raw=True,
+    )
+    assert env.engine.config.request_notify_owners == {}
+    stored = await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_load()
+    assert stored["request_notify_owners"] == {}
+    add_phone(hass, "iPhone de Manou", users["kid"].id)
+    assert await hass.config_entries.async_reload(env.entry.entry_id)
+    await hass.async_block_till_done()
+    assert env.entry.runtime_data.config.request_notify_owners == {}
 
 
 async def test_setup_entry_runs_migration(hass, users, make_env) -> None:
@@ -304,5 +352,6 @@ async def test_setup_entry_runs_migration(hass, users, make_env) -> None:
     env = await make_env(
         datetime(2026, 11, 3, 16, 30, tzinfo=ZoneInfo("America/Toronto")),
         {**EX, "request_notify": [MANOU]},
+        raw=True,
     )
     assert env.engine.config.request_notify_owners == {MANOU: users["manou"].id}
