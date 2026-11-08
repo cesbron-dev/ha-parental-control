@@ -134,7 +134,7 @@ class ParentalSwitchCard extends StateCard {
         <div class="play"><h4>Temps de jeu</h4>${play}</div>
         <div class="side">
           <div class="muted">Temps utilisé : ${fmtDuration(g.used)}</div>
-          <div class="pills">${bonusPills(this._hass, bonusMinutes(this._config), this._confirm.armed).join("")}</div>
+          <div class="pills">${bonusPills(this._hass, bonusMinutes(this._config), this._confirm.armed, this._parent).join("")}</div>
         </div>
       </div>
       ${requestLines(this._state, { resource_id: id })}
@@ -156,7 +156,8 @@ class ParentalSwitchCard extends StateCard {
     runBonus(this.shadowRoot, this._hass, {
       resource_id,
       minutes,
-      request: bonusRequest(this._hass, this._state, this._config, resource_id, minutes),
+      request: bonusRequest(this._hass, this._state, this._config, resource_id, minutes, this._parent),
+      parent: this._parent,
       title: this._config.title || this._view().name || resource_id,
       call: (s, d) => this._call(s, d),
     });

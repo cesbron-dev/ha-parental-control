@@ -144,7 +144,7 @@ class ParentalKidCard extends StateCard {
       return `<div class="section"><div class="label muted">Devoirs</div><div class="ok big">✓ Devoirs validés</div></div>`;
     }
     const action = "homework";
-    const lock = needsCode(this._hass, "homework");
+    const lock = needsCode(this._hass, "homework", this._parent);
     return `<div class="section"><div class="label muted">Devoirs</div><div class="pills">
       ${pill({ action, icon: "mdi:book-check", label: "Devoirs terminés", cls: "vert hero", confirm: !lock, armed: this._confirm.armed === action, lock })}
       </div></div>`;
@@ -161,7 +161,7 @@ class ParentalKidCard extends StateCard {
       body = `<div class="line"><span class="big">Minuteur · ${left} min restantes</span>
         ${pill({ action: "timer-stop", icon: "mdi:stop", label: "Arrêter", cls: "rouge", confirm: true, armed: armed === "timer-stop" })}</div>`;
     } else if (v.timer.canStart) {
-      const lock = needsCode(this._hass, "timer");
+      const lock = needsCode(this._hass, "timer", this._parent);
       body = `<div class="pills">${TIMER_MINUTES.map((m) => {
         const action = `timer:${m}`;
         return pill({ action, icon: "mdi:timer-play", label: `${m} min`, cls: "bleu", confirm: !lock, armed: armed === action, lock });
@@ -177,7 +177,7 @@ class ParentalKidCard extends StateCard {
     if (this._config.show_services === false) return "";
     const toggles = kidServiceToggles(this._state, this._config.kid, this._config.services);
     if (!toggles.length) return "";
-    const lock = needsCode(this._hass, "open");
+    const lock = needsCode(this._hass, "open", this._parent);
     const pills = toggles.map((t) => `<div class="pill ${t.open ? "vert" : "svc-off"}" data-action="${esc(`svc:${t.service}`)}" role="switch" aria-checked="${t.open}"
         title="${esc(t.open ? `${t.label} débloqué : toucher pour bloquer` : `${t.label} bloqué : toucher pour autoriser`)}">`
       + `<ha-icon icon="${t.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(t.label)}`
@@ -200,7 +200,7 @@ class ParentalKidCard extends StateCard {
   // Bonus de temps d'écran : seulement pour un enfant qui a un quota aujourd'hui.
   _bonus(v) {
     if (this._config.show_bonus === false || v.remaining == null) return "";
-    const lock = needsCode(this._hass, "bonus");
+    const lock = needsCode(this._hass, "bonus", this._parent);
     const armed = this._confirm.armed;
     const pills = bonusMinutes(this._config).map((m) => {
       const action = `bonus:${m}`;
@@ -242,10 +242,10 @@ class ParentalKidCard extends StateCard {
 
   // Action protégée : directe pour un admin (déjà confirmée par deux appuis), sinon fenêtre du code.
   _withCode(kind, title, submitLabel, service, data) {
-    if (!needsCode(this._hass, kind)) return this._call(service, data);
+    if (!needsCode(this._hass, kind, this._parent)) return this._call(service, data);
     const kid_id = data.kid_id;
     let request = null;
-    if (canRequest(this._hass, this._state)) {
+    if (canRequest(this._hass, this._state, this._parent)) {
       // « Demander » : l'enfant de la carte, sans code ; le parent répond depuis la notification.
       const extra = kind === "timer" ? { minutes: data.minutes, options: TIMER_MINUTES }
         : kind === "bonus" ? { minutes: data.minutes, options: bonusMinutes(this._config) } : {};
@@ -283,7 +283,7 @@ class ParentalKidCard extends StateCard {
       return this._render();
     }
     let request = null;
-    if (canRequest(this._hass, this._state)) {
+    if (canRequest(this._hass, this._state, this._parent)) {
       request = {
         kids: null,
         pending: findRequest(this._state, { kind: "open", kid_id, service })?.status === "pending",
@@ -297,7 +297,7 @@ class ParentalKidCard extends StateCard {
     openActionDialog(this.shadowRoot, {
       title: `Autoriser ${t.label} · ${name}`,
       durations: DURATIONS,
-      needCode: needsCode(this._hass, "open"),
+      needCode: needsCode(this._hass, "open", this._parent),
       submitLabel: "Autoriser",
       request,
       onSubmit: ({ duration, code }) => replace(code, true, duration),
