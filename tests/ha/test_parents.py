@@ -163,12 +163,22 @@ async def test_phone_status_each_state(hass, users) -> None:
         [ok, unbound, missing, changed, ambiguous, OTHER],
         {ok: julie, missing: julie, changed: julie, ambiguous: julie},
     )
+    # `current_name` : nom du propriétaire actuel unique de l'appareil (qui deviendrait parent
+    # en réassociant), `None` sans appareil ou avec plusieurs.
     assert await phone_status(hass, config) == {
-        ok: {"owner": julie, "owner_name": "Julie", "status": "ok"},
-        unbound: {"owner": None, "owner_name": None, "status": "unbound"},
-        missing: {"owner": julie, "owner_name": "Julie", "status": "missing"},
-        changed: {"owner": julie, "owner_name": "Julie", "status": "changed"},
-        ambiguous: {"owner": julie, "owner_name": "Julie", "status": "ambiguous"},
+        ok: {"owner": julie, "owner_name": "Julie", "current_name": "Julie", "status": "ok"},
+        unbound: {
+            "owner": None, "owner_name": None, "current_name": "Julie", "status": "unbound"
+        },
+        missing: {
+            "owner": julie, "owner_name": "Julie", "current_name": None, "status": "missing"
+        },
+        changed: {
+            "owner": julie, "owner_name": "Julie", "current_name": "Tablette", "status": "changed"
+        },
+        ambiguous: {
+            "owner": julie, "owner_name": "Julie", "current_name": None, "status": "ambiguous"
+        },
     }
 
 
@@ -176,7 +186,20 @@ async def test_phone_status_unknown_owner_has_no_name(hass, users) -> None:
     """Propriétaire mémorisé supprimé de HA : identifiant gardé, pas de nom."""
     add_phone(hass, "iPhone de Julie", users["julie"].id)
     status = await phone_status(hass, cfg([JULIE], {JULIE: "supprime"}))
-    assert status == {JULIE: {"owner": "supprime", "owner_name": None, "status": "changed"}}
+    assert status == {
+        JULIE: {
+            "owner": "supprime", "owner_name": None, "current_name": "Julie", "status": "changed"
+        }
+    }
+
+
+async def test_phone_status_current_owner_unknown_has_no_name(hass, users) -> None:
+    """Appareil d'un utilisateur inexistant (ou sans `user_id`) : pas de nom actuel."""
+    add_phone(hass, "iPhone de Julie", "inconnu")
+    add_phone(hass, "iPhone de Marc", "")
+    status = await phone_status(hass, cfg([JULIE, MARC]))
+    assert status[JULIE]["current_name"] is None
+    assert status[MARC]["current_name"] is None
 
 
 async def test_bind_owners_keeps_old_owner(hass, users) -> None:

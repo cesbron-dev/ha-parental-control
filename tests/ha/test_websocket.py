@@ -415,7 +415,10 @@ async def test_config_get_includes_phone_status(hass, entry, parent, users, hass
     client = await _client_for(hass, hass_ws_client, users.admin)
     result = (await _send(client, GET))["result"]
     assert result["phones"] == {
-        PARENT_PHONE: {"owner": parent.id, "owner_name": parent.name, "status": "ok"}
+        PARENT_PHONE: {
+            "owner": parent.id, "owner_name": parent.name, "current_name": parent.name,
+            "status": "ok",
+        }
     }
 
 
