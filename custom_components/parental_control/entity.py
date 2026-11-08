@@ -64,9 +64,11 @@ class ParentalEntity(Entity):
         )
 
     async def _check_unlock(self) -> None:
-        """Action qui débloque : code exigé d'un non-admin (que l'entité ne reçoit pas)."""
+        """Action qui débloque : code exigé d'un non-parent (que l'entité ne reçoit pas)."""
         context = self._context or Context()
-        await check_unlock(self.hass, context, None, self._entry.data[CONF_CODE_HASH])
+        await check_unlock(
+            self.hass, context, None, self._entry.data[CONF_CODE_HASH], self.engine.config
+        )
 
 
 class KidEntity(ParentalEntity):

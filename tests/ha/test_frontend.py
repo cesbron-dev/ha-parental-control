@@ -90,14 +90,13 @@ async def test_static_path_failure_is_retried(hass: HomeAssistant, http) -> None
     assert sorted(hass.data["frontend_extra_module_url"].urls) == [_URL]
 
 
-async def test_registers_admin_rules_panel_once(hass: HomeAssistant, http) -> None:
+async def test_registers_rules_panel_once(hass: HomeAssistant, http) -> None:
     from homeassistant.components.frontend import DATA_PANELS
 
     await async_register_frontend(hass)
     await async_register_frontend(hass)  # rechargement : pas de second enregistrement (ValueError)
 
     panel = hass.data[DATA_PANELS]["parental-control"]
-    assert panel.require_admin is True
     assert panel.sidebar_title == "Règles"
     assert panel.config["_panel_custom"]["name"] == "parental-control-panel"
     assert panel.config["_panel_custom"]["module_url"] == f"{_BASE}/panel.js"
@@ -114,3 +113,11 @@ async def test_registers_requests_screen_for_everyone_off_sidebar(hass: HomeAssi
     assert panel.sidebar_title is None  # on y arrive par la notification
     assert panel.config["_panel_custom"]["name"] == "parental-control-requests"
     assert panel.config["_panel_custom"]["module_url"] == f"{_BASE}/requests.js"
+
+
+async def test_rules_panel_not_admin_only(hass: HomeAssistant, http) -> None:
+    """Julie, parent non admin, ouvre « Règles » ; le serveur refuse la config aux autres."""
+    from homeassistant.components.frontend import DATA_PANELS
+
+    await async_register_frontend(hass)
+    assert hass.data[DATA_PANELS]["parental-control"].require_admin is False

@@ -1,4 +1,4 @@
-"""Services HA : schémas, code parent, verrouillage après échecs, import admin."""
+"""Services HA : schémas, code parent, verrouillage après échecs, import réservé aux parents."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from homeassistant.util import dt as dt_util
 
 from custom_components.parental_control import security
 from custom_components.parental_control.const import DOMAIN
-from custom_components.parental_control.core.config_io import parse_config
+from custom_components.parental_control.core.config_io import dump_config, parse_config
 from tests.fixtures import EX
-from tests.ha.conftest import CODE
+from tests.ha.conftest import CODE, PARENT_PHONE, add_phone
 from tests.ha.test_engine import SATURDAY, TUESDAY, TV, at
 
 SERVICES = [
@@ -67,6 +67,50 @@ async def test_homework_admin_without_code(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     await env.call("devoirs_termines", {"kid_id": "hugo"}, env.admin_ctx)
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
+
+
+async def test_parent_non_admin_unlocks_without_code(make_env) -> None:
+    """Parent non admin (téléphone dans la liste) : aucune action ne lui demande le code."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    await env.bind_parent()
+    ctx = env.parent_ctx
+    await env.call("devoirs_termines", {"kid_id": "hugo"}, ctx)
+    assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
+    await env.call("exception", {"open": True, "resource_id": "tv"}, ctx)
+    closed = await env.call(
+        "exception", {"open": False, "resource_id": "tv"}, ctx, return_response=True
+    )
+    await env.call("annuler_exception", {"exception_id": closed["id"]}, ctx)
+    await env.call("pause", {"active": True}, ctx)
+    await env.call("pause", {"active": False}, ctx)
+    assert not env.engine.decisions.paused
+
+
+async def test_parent_non_admin_bonus_and_timer_without_code(make_env) -> None:
+    env = await make_env(at(SATURDAY, 10, 0))
+    await env.bind_parent()
+    await env.call("ajouter_bonus", {"kid_id": "hugo", "minutes": 15}, env.parent_ctx)
+    assert [b.minutes for b in env.engine.decisions.bonuses] == [15]
+    await env.call("demarrer_minuteur", {"kid_id": "hugo", "minutes": 20}, env.parent_ctx)
+    assert len(env.engine.decisions.timers) == 1
+
+
+async def test_parent_loses_right_when_phone_removed(make_env) -> None:
+    env = await make_env(at(TUESDAY, 16, 30))
+    await env.bind_parent()
+    await env.call("devoirs_termines", {"kid_id": "hugo"}, env.parent_ctx)
+    await env.engine.set_config(parse_config(EX))
+    await _raises_key(
+        env.call("devoirs_termines", {"kid_id": "hugo"}, env.parent_ctx), "code_required"
+    )
+
+
+async def test_non_parent_still_requires_code_when_parent_exists(make_env) -> None:
+    env = await make_env(at(TUESDAY, 16, 30))
+    await env.bind_parent()
+    await _raises_key(
+        env.call("devoirs_termines", {"kid_id": "hugo"}, env.kid_ctx), "code_required"
+    )
 
 
 async def test_automation_without_code(make_env) -> None:
@@ -209,6 +253,46 @@ async def test_import_configuration_admin_only(make_env) -> None:
     newer = dict(EX, kids=[dict(EX["kids"][0], name="Hugo C.")])
     await env.call("importer_configuration", {"config": newer}, Context())
     assert env.engine.config.kid("hugo").name == "Hugo C."
+
+
+async def test_import_configuration_parent_non_admin(make_env) -> None:
+    env = await make_env(at(TUESDAY, 16, 30))
+    with pytest.raises(Unauthorized):  # pas encore parent : téléphone absent de la liste
+        await env.call("importer_configuration", {"config": EX}, env.parent_ctx)
+    await env.bind_parent()
+    new = dump_config(env.engine.config)
+    new["kids"][0]["name"] = "Hugo B."
+    await env.call("importer_configuration", {"config": new}, env.parent_ctx)
+    assert env.engine.config.kid("hugo").name == "Hugo B."
+    assert env.engine.config.request_notify_owners == {PARENT_PHONE: env.parent.id}
+
+
+async def test_import_ignores_forged_owners(make_env) -> None:
+    """La tablette nomme un appareil comme un téléphone de la liste : rien n'est cru du client."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    await env.bind_parent()
+    forged = "notify.mobile_app_tablette"
+    add_phone(env.hass, "Tablette", env.kid.id)
+    new = dump_config(env.engine.config)
+    new["request_notify"].append(forged)
+    # Le client prétend que le téléphone de Julie et la tablette sont à l'administrateur.
+    new["request_notify_owners"] = {PARENT_PHONE: env.admin.id, forged: env.admin.id}
+    await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    assert env.engine.config.request_notify_owners == {
+        PARENT_PHONE: env.parent.id,
+        forged: env.kid.id,
+    }
+
+
+async def test_import_missing_device_rejected_config_unchanged(make_env) -> None:
+    env = await make_env(at(TUESDAY, 16, 30))
+    before = env.engine.config
+    new = dict(EX, request_notify=["notify.mobile_app_inconnu"])
+    with pytest.raises(ServiceValidationError) as err:
+        await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    assert err.value.translation_key == "invalid_config"
+    assert "notify.mobile_app_inconnu" in err.value.translation_placeholders["error"]
+    assert env.engine.config == before
 
 
 async def test_import_invalid_config_raises_validation_error(make_env) -> None:
