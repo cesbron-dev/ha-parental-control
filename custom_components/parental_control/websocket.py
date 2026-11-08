@@ -14,7 +14,7 @@ from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_config
 from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
-from .request_listener import parent_user_ids
+from .parents import trusted_phone_owners
 from .serialize import serialize_requests, serialize_snapshot
 
 _REGISTERED = f"{DOMAIN}_websocket_registered"
@@ -119,10 +119,10 @@ def ws_state_subscribe(
     push()
 
 
-def _is_parent(hass: HomeAssistant, engine: ParentalEngine, user_id: str) -> bool:
-    """Même règle que la réponse par notification : propriétaire d'un téléphone de la liste."""
-    cfg = engine.config
-    return cfg is not None and user_id in parent_user_ids(hass, cfg.request_notify)
+def _can_answer(hass: HomeAssistant, engine: ParentalEngine, user_id: str) -> bool:
+    """Même règle que la réponse par notification : propriétaire reconnu d'un téléphone de
+    la liste (`parents.trusted_phone_owners`). Être administrateur ne suffit pas."""
+    return user_id in trusted_phone_owners(hass, engine.config)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/requests/subscribe"})
@@ -142,7 +142,7 @@ def ws_requests_subscribe(
             return
         engine = entries[0].runtime_data
         # Recalculé à chaque envoi : la liste des téléphones a pu changer.
-        payload = serialize_requests(engine, can_answer=_is_parent(hass, engine, user_id))
+        payload = serialize_requests(engine, can_answer=_can_answer(hass, engine, user_id))
         connection.send_message(websocket_api.event_message(msg_id, payload))
 
     connection.subscriptions[msg_id] = async_dispatcher_connect(hass, SIGNAL_UPDATE, push)
@@ -165,7 +165,7 @@ async def ws_requests_answer(
     if (engine := _engine(hass, connection, msg)) is None:
         return
     user_id = connection.user.id
-    if not _is_parent(hass, engine, user_id):
+    if not _can_answer(hass, engine, user_id):
         connection.send_error(
             msg["id"], "unauthorized", "Seul un parent de la liste des demandes peut répondre"
         )

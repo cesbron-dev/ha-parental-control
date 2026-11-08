@@ -17,10 +17,8 @@ from pytest_homeassistant_custom_component.common import (
 from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.decisions import Target
 from custom_components.parental_control.core.requests import RequestKind
-from custom_components.parental_control.request_listener import (
-    parent_user_ids,
-    parse_action,
-)
+from custom_components.parental_control.parents import trusted_phone_owners
+from custom_components.parental_control.request_listener import parse_action
 from custom_components.parental_control.serialize import serialize_snapshot
 from tests.fixtures import EX
 from tests.ha.test_engine import (
@@ -220,8 +218,21 @@ def add_phone(hass, device_name: str, user_id: str) -> None:
     ).add_to_hass(hass)
 
 
+def _with_owners(config: dict, env, julie_user) -> dict:
+    """Config où chaque téléphone listé porte son propriétaire mémorisé (Julie, Marc)."""
+    owners = {JULIE: julie_user.id, MARC: env.admin.id}
+    return {
+        **config,
+        "request_notify_owners": {
+            t: owners[t] for t in config["request_notify"] if t in owners
+        },
+    }
+
+
 async def _parents_env(make_env, julie_user, moment=None, config=CONFIG, *, marc=True):
+    """Téléphones de Julie (et de Marc) enregistrés et mémorisés comme les leurs."""
     env = await make_env(moment or at(TUESDAY, 16, 30), config)
+    await env.engine.set_config(parse_config(_with_owners(config, env, julie_user)))
     add_phone(env.hass, "iPhone de Julie", julie_user.id)
     if marc:
         add_phone(env.hass, "iPhone de Marc", env.admin.id)
@@ -418,7 +429,7 @@ async def test_accept_with_invalid_target_cancels_nothing(make_env, julie, julie
             {"kind": "media_player", "entity_id": "media_player.iphone_hugo",
              "notify_service": None}]}],
     )
-    await env.engine.set_config(parse_config(cfg))
+    await env.engine.set_config(parse_config(_with_owners(cfg, env, julie_user)))
     assert any(e.id == closing for e in env.engine.decisions.exceptions)
     await _answer(env, _actions(julie)["0"], julie_user.id)
     req = env.engine.requests.get(req_id)
@@ -495,12 +506,27 @@ async def test_accept_impossible_marks_failed(
 async def test_non_mobile_app_target_ignored(make_env, julie, julie_user) -> None:
     config = {**CONFIG, "request_notify": [*CONFIG["request_notify"], "notify.persistent_notification"]}
     env = await _parents_env(make_env, julie_user, config=config)
-    assert parent_user_ids(env.hass, config["request_notify"]) == {
-        julie_user.id, env.admin.id
-    }
+    assert trusted_phone_owners(env.hass, env.engine.config) == {julie_user.id, env.admin.id}
     req_id = await _ask(env)
     await _answer(env, _actions(julie)["0"], julie_user.id)
     assert env.engine.requests.get(req_id).status == "accepted"
+
+
+async def test_answer_from_recreated_device_refused(
+    make_env, julie, julie_user, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Le téléphone de Julie a disparu ; la tablette enregistre un appareil sous le même nom :
+    la réponse envoyée depuis cet appareil est ignorée."""
+    env = await make_env(at(TUESDAY, 16, 30), CONFIG)
+    await env.engine.set_config(parse_config(_with_owners(CONFIG, env, julie_user)))
+    add_phone(env.hass, "iPhone de Julie", env.kid.id)
+    req_id = await _ask(env)
+    req = env.engine.requests.get(req_id)
+    for user_id in (env.kid.id, julie_user.id):
+        await _answer(env, _actions(julie)["0"], user_id)
+        assert req.status == "pending"
+    assert env.engine.decisions.exceptions == []
+    assert f"Réponse à la demande {req_id} ignorée" in caplog.text
 
 
 async def test_answer_after_config_removed_kid(make_env, julie, julie_user) -> None:
@@ -511,7 +537,7 @@ async def test_answer_after_config_removed_kid(make_env, julie, julie_user) -> N
     for resource in cfg["resources"]:
         resource["owners"] = ["lea"]
     cfg["kids"][0]["resource_modes"] = {}
-    await env.engine.set_config(parse_config(cfg))
+    await env.engine.set_config(parse_config(_with_owners(cfg, env, julie_user)))
     await _answer(env, _actions(julie)["accept"], julie_user.id)
     req = env.engine.requests.get(req_id)
     assert req.status == "failed" and req.reason
@@ -553,7 +579,7 @@ async def test_duplicate_device_name_trusted_for_nobody(
     l'autre ne peut répondre par ce service."""
     env = await _parents_env(make_env, julie_user, marc=False)
     add_phone(env.hass, "iPhone de Julie", env.kid.id)
-    assert parent_user_ids(env.hass, CONFIG["request_notify"]) == set()
+    assert trusted_phone_owners(env.hass, env.engine.config) == set()
     assert "mobile_app_iphone_de_julie" in caplog.text and "plusieurs" in caplog.text
     req_id = await _ask(env)
     req = env.engine.requests.get(req_id)
@@ -566,7 +592,7 @@ async def test_duplicate_device_name_trusted_for_nobody(
 async def test_duplicate_device_name_keeps_other_phones(make_env, julie, julie_user) -> None:
     env = await _parents_env(make_env, julie_user)
     add_phone(env.hass, "iPhone de Julie", env.kid.id)
-    assert parent_user_ids(env.hass, CONFIG["request_notify"]) == {env.admin.id}
+    assert trusted_phone_owners(env.hass, env.engine.config) == {env.admin.id}
 
 
 @pytest.mark.parametrize(

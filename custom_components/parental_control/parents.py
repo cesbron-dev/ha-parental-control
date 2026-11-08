@@ -1,0 +1,128 @@
+"""Qui est parent : un administrateur HA, ou le propriétaire mémorisé d'un téléphone de demandes.
+
+Le nom `notify.mobile_app_<x>` vient du nom de l'appareil, que tout utilisateur choisit. Un
+téléphone de `request_notify` ne donne donc de droits que si le propriétaire **actuel** de
+l'unique appareil de ce nom est le propriétaire **mémorisé** dans la configuration
+(`request_notify_owners`), déterminé par le serveur et jamais reçu du client.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import logging
+from collections.abc import Iterable
+
+from homeassistant.core import HomeAssistant
+from homeassistant.util import slugify
+
+from .core.config_io import ConfigError
+from .core.model import Config
+
+_LOGGER = logging.getLogger(__name__)
+
+MOBILE_APP = "mobile_app"
+MOBILE_APP_SERVICE = "mobile_app_"
+
+
+def _is_mobile_app_target(target: str) -> bool:
+    domain, _, service = target.partition(".")
+    return domain == "notify" and service.startswith(MOBILE_APP_SERVICE)
+
+
+def current_phone_owners(hass: HomeAssistant, targets: Iterable[str]) -> dict[str, list[str]]:
+    """Cible `notify.mobile_app_<x>` → `user_id` des entrées `mobile_app` qui y mènent.
+
+    Les cibles qui ne sont pas des téléphones `mobile_app` sont absentes du résultat ; un
+    téléphone sans appareil a une liste vide. Une entrée sans `user_id` valide compte comme
+    `""` : elle rend le nom ambigu sans jamais désigner personne.
+    """
+    owners: dict[str, list[str]] = {t: [] for t in targets if _is_mobile_app_target(t)}
+    for entry in hass.config_entries.async_entries(MOBILE_APP):
+        device_name = entry.data.get("device_name")
+        if not isinstance(device_name, str):
+            continue
+        target = f"notify.{MOBILE_APP_SERVICE}{slugify(device_name)}"
+        if target in owners:
+            user_id = entry.data.get("user_id")
+            owners[target].append(user_id if isinstance(user_id, str) else "")
+    return owners
+
+
+def trusted_phone_owners(hass: HomeAssistant, cfg: Config | None) -> set[str]:
+    """Propriétaires mémorisés dont le téléphone mène aujourd'hui à eux seuls."""
+    if cfg is None:
+        return set()
+    users: set[str] = set()
+    for target, current in current_phone_owners(hass, cfg.request_notify).items():
+        if len(current) > 1:
+            _LOGGER.warning(
+                "%s : plusieurs appareils mobile_app portent ce nom ; ce téléphone ne donne "
+                "aucun droit de parent ni de réponse aux demandes",
+                target,
+            )
+            continue
+        remembered = cfg.request_notify_owners.get(target)
+        if remembered and current == [remembered]:
+            users.add(remembered)
+    return users
+
+
+async def is_parent(hass: HomeAssistant, cfg: Config | None, user_id: str | None) -> bool:
+    """Administrateur, ou propriétaire reconnu d'un téléphone de demandes.
+
+    `user_id is None` (automatisation, système) ⇒ `False` : à l'appelant de traiter ce cas.
+    """
+    if user_id is None:
+        return False
+    user = await hass.auth.async_get_user(user_id)
+    if user is None or not user.is_active:
+        return False
+    return user.is_admin or user_id in trusted_phone_owners(hass, cfg)
+
+
+def phone_status(hass: HomeAssistant, cfg: Config) -> dict[str, dict]:
+    """État de chaque téléphone `mobile_app` de la liste, pour le panneau.
+
+    `unbound` : aucun propriétaire mémorisé ; `missing` : aucun appareil de ce nom ;
+    `ambiguous` : plusieurs appareils ; `changed` : appareil d'un autre compte ; `ok` sinon.
+    """
+    result: dict[str, dict] = {}
+    for target, current in current_phone_owners(hass, cfg.request_notify).items():
+        owner = cfg.request_notify_owners.get(target) or None
+        if owner is None:
+            status = "unbound"
+        elif not current:
+            status = "missing"
+        elif len(current) > 1:
+            status = "ambiguous"
+        elif current[0] != owner:
+            status = "changed"
+        else:
+            status = "ok"
+        result[target] = {"owner": owner, "status": status}
+    return result
+
+
+def bind_owners(
+    hass: HomeAssistant, new: Config, old: Config | None, rebind: Iterable[str] = ()
+) -> Config:
+    """Propriétaires mémorisés de `new`, déterminés par le serveur.
+
+    Ceux de `new` (envoyés par le client) sont ignorés. Un téléphone déjà présent dans `old`
+    garde son propriétaire mémorisé (ou reste sans propriétaire) ; un téléphone ajouté, ou
+    listé dans `rebind`, prend le propriétaire actuel unique de l'appareil, sinon
+    `ConfigError`. Les cibles qui ne sont pas des téléphones `mobile_app` n'en ont pas.
+    """
+    rebind = set(rebind)
+    kept = set(old.request_notify) if old is not None else set()
+    old_owners = old.request_notify_owners if old is not None else {}
+    owners: dict[str, str] = {}
+    for target, current in current_phone_owners(hass, new.request_notify).items():
+        if target in kept and target not in rebind:
+            if remembered := old_owners.get(target):
+                owners[target] = remembered
+            continue
+        if len(current) != 1 or not current[0]:
+            raise ConfigError(f"request_notify : {target} — appareil introuvable ou en double")
+        owners[target] = current[0]
+    return dataclasses.replace(new, request_notify_owners=owners)
