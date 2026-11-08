@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify
 
+from .const import DOMAIN
 from .core.config_io import ConfigError
 from .core.model import Config
 
@@ -26,6 +27,9 @@ _LOGGER = logging.getLogger(__name__)
 
 MOBILE_APP = "mobile_app"
 MOBILE_APP_SERVICE = "mobile_app_"
+# Cibles déjà signalées comme ambiguës : `is_parent` est appelé à chaque action, on n'avertit
+# qu'une fois par cible et par exécution de HA.
+_AMBIGUOUS_WARNED = f"{DOMAIN}_ambiguous_phones_warned"
 
 
 def _is_mobile_app_target(target: str) -> bool:
@@ -57,8 +61,12 @@ def trusted_phone_owners(hass: HomeAssistant, cfg: Config | None) -> set[str]:
     if cfg is None:
         return set()
     users: set[str] = set()
+    warned: set[str] = hass.data.setdefault(_AMBIGUOUS_WARNED, set())
     for target, current in current_phone_owners(hass, cfg.request_notify).items():
         if len(current) > 1:
+            if target in warned:
+                continue
+            warned.add(target)
             _LOGGER.warning(
                 "%s : plusieurs appareils mobile_app portent ce nom ; ce téléphone ne donne "
                 "aucun droit de parent ni de réponse aux demandes",

@@ -88,6 +88,24 @@ async def test_ambiguous_device_not_trusted(
     assert "mobile_app_iphone_de_manou" in caplog.text and "plusieurs" in caplog.text
 
 
+async def test_ambiguous_warning_logged_once(
+    hass, users, caplog: pytest.LogCaptureFixture
+) -> None:
+    """`is_parent` est appelé à chaque action : l'avertissement ne doit pas inonder le journal."""
+    add_phone(hass, "iPhone de Manou", users["manou"].id)
+    add_phone(hass, "iPhone de Manou", users["kid"].id)
+    add_phone(hass, "iPhone de Olivier", users["admin"].id)
+    add_phone(hass, "iPhone de Olivier", users["kid"].id)
+    config = cfg([MANOU, OLIVIER], {MANOU: users["manou"].id, OLIVIER: users["admin"].id})
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            assert trusted_phone_owners(hass, config) == set()
+            assert not await is_parent(hass, config, users["manou"].id)
+    warnings = [r.getMessage() for r in caplog.records if "plusieurs" in r.getMessage()]
+    assert len(warnings) == 2
+    assert any(MANOU in w for w in warnings) and any(OLIVIER in w for w in warnings)
+
+
 async def test_unbound_phone_not_trusted(hass, users) -> None:
     add_phone(hass, "iPhone de Manou", users["manou"].id)
     config = cfg([MANOU])
