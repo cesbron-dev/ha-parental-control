@@ -546,3 +546,50 @@ test("Notification services: menu choices with mobile_app device names", () => {
     "notify.mobile_app_inconnu", "notify.persistent_notification",
   ]);
 });
+
+test("Phone badge: label and tone for each status", () => {
+  assert.deepEqual(lib.phoneBadge("ok"), { label: "Associé", tone: "ok" });
+  assert.deepEqual(lib.phoneBadge("unbound"), { label: "À associer", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("missing"), { label: "Appareil introuvable", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("changed"), { label: "Changé de compte", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("ambiguous"), { label: "Nom en double", tone: "warn" });
+});
+
+test("losesParentOnSave: warns a non-admin who keeps no phone of their own that is ok", () => {
+  const A = "notify.mobile_app_a";
+  const B = "notify.mobile_app_b";
+  const phones = {
+    [A]: { owner: "julie", status: "ok" },
+    [B]: { owner: "julie", status: "ok" },
+  };
+  // Administrateur : reste parent quoi qu'il arrive.
+  assert.equal(lib.losesParentOnSave({ request_notify: [] }, phones, "julie", true), false);
+  // Dernier téléphone retiré.
+  assert.equal(lib.losesParentOnSave({ request_notify: [] }, { [A]: phones[A] }, "julie", false), true);
+  assert.equal(lib.losesParentOnSave({}, { [A]: phones[A] }, "julie", false), true);
+  // Un autre téléphone `ok` reste.
+  assert.equal(lib.losesParentOnSave({ request_notify: [B] }, phones, "julie", false), false);
+  // Le téléphone restant a changé de compte : plus de droits.
+  const changed = { ...phones, [B]: { owner: "julie", status: "changed" } };
+  assert.equal(lib.losesParentOnSave({ request_notify: [B] }, changed, "julie", false), true);
+  // Téléphone `ok` d'un autre parent : ne compte pas.
+  const other = { [A]: { owner: "marc", status: "ok" } };
+  assert.equal(lib.losesParentOnSave({ request_notify: [A] }, other, "julie", false), true);
+});
+
+test("saveMessage: rebind sent beside the configuration, never inside it", () => {
+  const draft = { version: 2, request_notify: ["notify.mobile_app_a"], rebind: ["notify.mobile_app_a"] };
+  const msg = lib.saveMessage(draft);
+  assert.deepEqual(msg, {
+    type: "parental_control/config/set",
+    config: { version: 2, request_notify: ["notify.mobile_app_a"] },
+    rebind: ["notify.mobile_app_a"],
+  });
+  assert.deepEqual(draft.rebind, ["notify.mobile_app_a"]); // brouillon intact
+  // Réassociation d'un téléphone retiré depuis : rien à envoyer pour lui.
+  const gone = lib.saveMessage({ request_notify: [], rebind: ["notify.mobile_app_a"] });
+  assert.deepEqual(gone, { type: "parental_control/config/set", config: { request_notify: [] }, rebind: [] });
+  assert.deepEqual(lib.saveMessage({ request_notify: [] }), {
+    type: "parental_control/config/set", config: { request_notify: [] }, rebind: [],
+  });
+});

@@ -117,7 +117,7 @@ async def test_non_mobile_app_target_ignored(hass, users) -> None:
     add_phone(hass, "iPhone de Julie", users["julie"].id)
     config = cfg([OTHER, JULIE], {OTHER: users["kid"].id, JULIE: users["julie"].id})
     assert trusted_phone_owners(hass, config) == {users["julie"].id}
-    assert OTHER not in phone_status(hass, config)
+    assert OTHER not in await phone_status(hass, config)
 
 
 async def test_is_parent_admin_without_phone(hass, users) -> None:
@@ -160,13 +160,20 @@ async def test_phone_status_each_state(hass, users) -> None:
         [ok, unbound, missing, changed, ambiguous, OTHER],
         {ok: julie, missing: julie, changed: julie, ambiguous: julie},
     )
-    assert phone_status(hass, config) == {
-        ok: {"owner": julie, "status": "ok"},
-        unbound: {"owner": None, "status": "unbound"},
-        missing: {"owner": julie, "status": "missing"},
-        changed: {"owner": julie, "status": "changed"},
-        ambiguous: {"owner": julie, "status": "ambiguous"},
+    assert await phone_status(hass, config) == {
+        ok: {"owner": julie, "owner_name": "Julie", "status": "ok"},
+        unbound: {"owner": None, "owner_name": None, "status": "unbound"},
+        missing: {"owner": julie, "owner_name": "Julie", "status": "missing"},
+        changed: {"owner": julie, "owner_name": "Julie", "status": "changed"},
+        ambiguous: {"owner": julie, "owner_name": "Julie", "status": "ambiguous"},
     }
+
+
+async def test_phone_status_unknown_owner_has_no_name(hass, users) -> None:
+    """Propriétaire mémorisé supprimé de HA : identifiant gardé, pas de nom."""
+    add_phone(hass, "iPhone de Julie", users["julie"].id)
+    status = await phone_status(hass, cfg([JULIE], {JULIE: "supprime"}))
+    assert status == {JULIE: {"owner": "supprime", "owner_name": None, "status": "changed"}}
 
 
 async def test_bind_owners_keeps_old_owner(hass, users) -> None:

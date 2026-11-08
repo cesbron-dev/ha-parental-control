@@ -503,3 +503,31 @@ export function isIconName(value) {
 export function isDirty(original, draft) {
   return JSON.stringify(original) !== JSON.stringify(draft);
 }
+
+// Statut d'un téléphone de demandes (`config/get` → `phones`) : pastille du panneau.
+const PHONE_BADGES = {
+  ok: { label: "Associé", tone: "ok" },
+  unbound: { label: "À associer", tone: "warn" },
+  missing: { label: "Appareil introuvable", tone: "warn" },
+  changed: { label: "Changé de compte", tone: "warn" },
+  ambiguous: { label: "Nom en double", tone: "warn" },
+};
+
+export function phoneBadge(status) {
+  return PHONE_BADGES[status] ?? { label: String(status ?? ""), tone: "warn" };
+}
+
+// Vrai si l'utilisateur, non administrateur, n'aura plus aucun téléphone `ok` à son nom dans les
+// destinataires des demandes une fois le brouillon enregistré : il ne sera plus parent.
+export function losesParentOnSave(draft, phones, userId, isAdmin) {
+  if (isAdmin) return false;
+  return !(draft?.request_notify ?? []).some((t) => phones?.[t]?.status === "ok" && phones[t].owner === userId);
+}
+
+// Message `config/set` : `rebind` (téléphones à réassocier) voyage à côté de la configuration,
+// jamais dedans ; seuls les téléphones encore listés sont réassociés.
+export function saveMessage(draft) {
+  const { rebind = [], ...config } = draft;
+  const listed = new Set(config.request_notify ?? []);
+  return { type: "parental_control/config/set", config, rebind: rebind.filter((t) => listed.has(t)) };
+}

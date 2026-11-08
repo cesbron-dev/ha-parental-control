@@ -176,6 +176,9 @@ export const CSS = `
   .lz .pill.split button { padding: 6px 6px; color: var(--pc-muted); font-size: 12px; }
   .lz .pill.split button:hover { color: var(--pc-text); }
   .lz .pill.unk { border-color: var(--pc-red); color: var(--pc-red); }
+  .lz .pill .badge { font-size: 11.5px; padding: 1px 7px; border-radius: 10px; }
+  .lz .pill .badge.tone-ok { color: var(--pc-green); background: color-mix(in srgb, var(--pc-green) 12%, transparent); }
+  .lz .pill .badge.tone-warn { color: var(--pc-amber); background: color-mix(in srgb, var(--pc-amber) 12%, transparent); }
   .lz select.pill-in { width: auto; max-width: 200px; cursor: pointer; color: var(--pc-pri); }
   .lz .pill-in { width: 130px; padding: 6px 12px; border-radius: 16px; font-size: 13px;
     background: color-mix(in srgb, var(--pc-pri) 15%, transparent); border: 1px solid transparent; color: var(--pc-text); }

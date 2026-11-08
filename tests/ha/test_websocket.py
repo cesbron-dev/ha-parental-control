@@ -380,7 +380,9 @@ async def test_config_set_rebind(hass, entry, parent, users, hass_ws_client) -> 
 async def test_config_get_includes_phone_status(hass, entry, parent, users, hass_ws_client) -> None:
     client = await _client_for(hass, hass_ws_client, users.admin)
     result = (await _send(client, GET))["result"]
-    assert result["phones"] == {PARENT_PHONE: {"owner": parent.id, "status": "ok"}}
+    assert result["phones"] == {
+        PARENT_PHONE: {"owner": parent.id, "owner_name": parent.name, "status": "ok"}
+    }
 
 
 async def test_whoami(hass, entry, parent, users, hass_ws_client) -> None:

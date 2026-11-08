@@ -95,7 +95,7 @@ async def ws_config_get(
         msg["id"],
         {
             "config": None if cfg is None else dump_config(cfg),
-            "phones": {} if cfg is None else phone_status(hass, cfg),
+            "phones": {} if cfg is None else await phone_status(hass, cfg),
         },
     )
 
