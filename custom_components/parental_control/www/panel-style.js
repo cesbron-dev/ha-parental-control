@@ -265,6 +265,7 @@ export const CSS = `
   .lsw .nm { overflow-wrap: anywhere; }
   .lsw .mut { grid-column: 1; font-size: 12px; }
   .lsw .st { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+  .lsw.bad .nm { color: color-mix(in srgb, var(--pc-red) 75%, var(--pc-text)); }
 
   textarea { width: 100%; min-height: 420px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; margin: 10px 0; }
   .notice, .error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }

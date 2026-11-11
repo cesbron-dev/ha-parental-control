@@ -463,10 +463,22 @@ ne change.
 - **Plusieurs cibles.** L'interrupteur est bloqué dès qu'une cible l'exige.
 - **Cartes.** Un service par label sur demande apparaît en bascule sur la carte de l'enfant ou
   de l'appareil ciblé, comme un service AdGuard, et peut faire l'objet d'une demande.
-- **Cas ignorés.** Un interrupteur est laissé tel quel (avec un avertissement dans le journal
-  et le panneau) s'il n'a aucune cible, si son service n'est ni en loisir ni sur demande d'une
-  cible (service non géré), si le label de service a été supprimé, ou s'il est indisponible
-  (il est piloté dès son retour).
+- **Un label est soit de service, soit de cible**, jamais les deux : le panneau refuse le cumul.
+  Un label de cible ne désigne qu'un seul enfant ou appareil.
+- **Exceptions.** Une autorisation sur un service par label n'ouvre que ses interrupteurs :
+  contrairement à un service AdGuard, elle ne garde pas allumés les lecteurs ou la prise d'un
+  appareil fermé.
+- **Pause.** La pause générale bloque aussi ces services (s'ils sont gérés) ; pendant la pause,
+  seules les exceptions qui ferment s'appliquent, comme pour les appareils.
+- **Pas d'avertissement de fermeture** pour ces services : les avertissements avant fermeture
+  restent réservés aux services AdGuard et aux appareils.
+- **Cas ignorés.** Un interrupteur est laissé tel quel :
+  - sans cible, ou si son label de service a été supprimé : avertissement dans le journal et
+    dans le récapitulatif « Interrupteurs pilotés » du panneau (en rouge) ;
+  - si son service n'est ni en loisir ni sur demande d'une cible (service non géré) : il figure
+    dans le récapitulatif avec l'état « non géré », sans avertissement dans le journal ;
+  - s'il est indisponible : avertissement dans le journal, son état apparaît dans le
+    récapitulatif ; il est piloté dès son retour.
 
 ## Demandes de temps
 

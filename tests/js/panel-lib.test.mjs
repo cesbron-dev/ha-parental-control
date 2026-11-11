@@ -676,3 +676,17 @@ test("setTargetLabel: refuse un label de service ou déjà pris par un autre", (
   assert.equal(lib.setTargetLabel(d.resources[0], "tele", d), true);
   assert.equal(d.resources[0].target_label, "tele");
 });
+
+test("labelSwitchStatus: unmanaged service shown as « non géré », not « autorisé »", async () => {
+  const { labelSwitchStatus } = await import("../../custom_components/parental_control/www/panel-lib.js");
+  assert.equal(labelSwitchStatus({ state: "on", blocked: true }), "on · bloqué");
+  assert.equal(labelSwitchStatus({ state: "off", blocked: false }), "off · autorisé");
+  assert.equal(labelSwitchStatus({ state: "off", blocked: null }), "off · non géré");
+  assert.equal(labelSwitchStatus({ state: null }), "non géré");
+});
+
+test("panel CSS styles label switch problems in red", async () => {
+  const { CSS } = await import("../../custom_components/parental_control/www/panel-style.js");
+  assert.match(CSS, /\.lsw\.bad[^{]*\{[^}]*var\(--pc-red\)/);
+  assert.match(CSS, /\.st\.missing\s*\{[^}]*var\(--pc-red\)/);
+});

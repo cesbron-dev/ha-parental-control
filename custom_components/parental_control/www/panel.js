@@ -805,13 +805,12 @@ class ParentalControlPanel extends HTMLElement {
     const data = this._labelSwitches;
     if (!data) return "";
     const PROBLEMS = { no_target: "sans cible", unknown_label: "label introuvable" };
-    const state = (sw) => `${sw.state ? `${esc(sw.state)} · ` : ""}${sw.blocked ? "bloqué" : "autorisé"}`;
     const rows = (data.switches ?? []).map((sw) => `<div class="lsw">
       <span class="nm">${esc(sw.name || sw.entity_id)}</span>
       <span class="mut">${esc(L.serviceLabel(this._catalog, sw.service).name)} · ${(sw.targets ?? []).map((t) => esc(this._targetName(t))).join(", ")}</span>
-      <span class="st">${state(sw)}</span></div>`).join("");
+      <span class="st">${esc(L.labelSwitchStatus(sw))}</span></div>`).join("");
     const issues = (data.issues ?? []).map((it) => `<div class="lsw bad">
-      <span class="nm">${esc(it.entity_id ? (it.name || it.entity_id) : (it.service_name || it.service))}</span>
+      <span class="nm">${esc(it.entity_id || it.service_name || it.service)}</span>
       <span class="mut">${it.entity_id ? esc(it.service_name || it.service) : "service par label"}</span>
       <span class="st missing">${esc(PROBLEMS[it.problem] ?? it.problem)}</span></div>`).join("");
     if (!rows && !issues) return `<div class="group"><h3>Interrupteurs pilotés</h3><div class="mut">Aucun interrupteur piloté par label.</div></div>`;
