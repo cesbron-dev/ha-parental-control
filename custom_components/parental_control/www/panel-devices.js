@@ -52,6 +52,7 @@ export const devicesView = {
       : `<span class="mut">Aucun enfant.</span>`;
     const quotas = L.DAY_TYPES.map((day) => `<label class="field"><span>${esc(day.short)}</span>
       <input type="number" min="0" data-type="int" data-path="${p}.quota_minutes.${day.value}" value="${esc(res.quota_minutes?.[day.value] ?? "")}" placeholder="—" title="Minutes par jour"></label>`).join("");
+    const target = this._targetLabelField(res, p).replace(' style="margin-top:14px"', "");
     const editable = this._newIds.has(`res:${res.id}`);
     const menu = this._menu === "res" ? `<div class="menu">
         <label class="field"><span>Identifiant${editable ? " (modifiable jusqu'à l'enregistrement)" : " (figé)"}</span>
@@ -67,6 +68,7 @@ export const devicesView = {
         <span class="menu-wrap">${this._btn("menu", "", { arg: "res", icon: "mdi:dots-vertical", cls: "icon-btn", title: "Identifiant, icône, suppression" })}${menu}</span></h2>
       <div class="res-cfg">
         <div><div class="mut label">Enfants concernés</div><div class="kd">${kids}</div></div>
+        ${target && `<div>${target}</div>`}
         <div class="q-wrap"><div class="mut label">Quota de l'appareil (vide : quota le plus généreux des enfants)</div><div class="q">${quotas}</div></div>
       </div>
     </div>`;

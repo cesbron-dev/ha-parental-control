@@ -68,6 +68,7 @@ export const kidsView = {
           <select data-path="${p}.color">${colors}</select></span></label>
       </div>
       <label class="field" style="margin-top:14px"><span>Calendrier scolaire</span><select data-path="${p}.calendar">${calOptions}</select></label>
+      ${this._targetLabelField(kid, p)}
       ${id}
     </div>`;
   },

@@ -421,6 +421,50 @@ export function serviceOptions(catalog, taken) {
     .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base" }));
 }
 
+// --- Services par label HA : un label est soit de service, soit de cible (d'un seul enfant ou appareil).
+export const LABEL_PREFIX = "label:";
+
+export function isLabelService(id) {
+  return typeof id === "string" && id.startsWith(LABEL_PREFIX);
+}
+
+// Labels de cible déjà pris dans le brouillon (enfants et appareils), hors `except`.
+function targetLabels(cfg, except = null) {
+  return [...(cfg.kids ?? []), ...(cfg.resources ?? [])]
+    .filter((e) => e !== except).map((e) => e.target_label).filter(Boolean);
+}
+
+// Déclare ou retire un label de service (allumé = bloqué par défaut) ; faux, sans rien changer,
+// si le label est déjà la cible d'un enfant ou d'un appareil.
+export function toggleLabelService(cfg, labelId) {
+  const i = (cfg.label_services ?? []).findIndex((s) => s.label_id === labelId);
+  if (i >= 0) {
+    cfg.label_services.splice(i, 1);
+    return true;
+  }
+  if (targetLabels(cfg).includes(labelId)) return false;
+  (cfg.label_services ??= []).push({ label_id: labelId, on_means_allowed: false });
+  return true;
+}
+
+export function setLabelInverted(cfg, labelId, inverted) {
+  const service = (cfg.label_services ?? []).find((s) => s.label_id === labelId);
+  if (service) service.on_means_allowed = !!inverted;
+}
+
+// Label de cible d'un enfant ou d'un appareil (`null` : aucun) ; faux, sans rien changer, pour un
+// label de service ou déjà pris par un autre.
+export function setTargetLabel(entity, labelId, cfg) {
+  if (labelId) {
+    if ((cfg.label_services ?? []).some((s) => s.label_id === labelId)) return false;
+    if (targetLabels(cfg, entity).includes(labelId)) return false;
+  }
+  // Sans cible, la clé disparaît (comme dans la configuration du serveur) : le brouillon redevient propre.
+  if (labelId) entity.target_label = labelId;
+  else delete entity.target_label;
+  return true;
+}
+
 // Nom lisible d'un service de notification : l'appareil de l'application Home Assistant dont il
 // porte le nom (`notify.mobile_app_<nom en slug>`), sinon le service lui-même.
 export function notifyLabel(service, devices) {
