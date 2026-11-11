@@ -10,6 +10,7 @@ from .model import (
     DayType,
     Integration,
     Kid,
+    LabelService,
     PhysicalDevice,
     Profile,
     Resource,
@@ -152,6 +153,7 @@ def _parse_kid(raw: Any, path: str) -> Kid:
         on_demand_remove=frozenset(
             _str_list(raw.get("on_demand_remove", []), f"{path}.on_demand_remove")
         ),
+        target_label=_opt_str(raw.get("target_label"), f"{path}.target_label"),
     )
 
 
@@ -205,7 +207,45 @@ def _parse_resource(raw: Any, path: str) -> Resource:
         devices=devices,
         quota_minutes=quotas,
         icon=_opt_str(raw.get("icon"), f"{path}.icon"),
+        target_label=_opt_str(raw.get("target_label"), f"{path}.target_label"),
     )
+
+
+def _parse_label_services(raw: Any, path: str) -> tuple[LabelService, ...]:
+    services: list[LabelService] = []
+    for i, item in enumerate(_expect_list(raw, path)):
+        p = f"{path}[{i}]"
+        item = _expect_dict(item, p)
+        label_id = _str(item.get("label_id"), f"{p}.label_id")
+        if any(s.label_id == label_id for s in services):
+            raise _fail(f"{p}.label_id", f"label en double : {label_id!r}")
+        on_means_allowed = item.get("on_means_allowed", False)
+        if not isinstance(on_means_allowed, bool):
+            raise _fail(f"{p}.on_means_allowed", "booléen attendu")
+        services.append(LabelService(label_id, on_means_allowed))
+    return tuple(services)
+
+
+def _check_labels(
+    label_services: tuple[LabelService, ...], kids: tuple[Kid, ...], resources: tuple[Resource, ...]
+) -> None:
+    """Un label de cible n'est utilisé qu'une fois et n'est pas aussi un label de service."""
+    service_ids = [s.label_id for s in label_services]
+    seen: set[str] = set()
+    targets = [(f"kids[{i}]", k.target_label) for i, k in enumerate(kids)] + [
+        (f"resources[{i}]", r.target_label) for i, r in enumerate(resources)
+    ]
+    for path, label in targets:
+        if label is None:
+            continue
+        if label in service_ids:
+            raise _fail(
+                f"label_services[{service_ids.index(label)}].label_id",
+                f"le label {label!r} est aussi le label de cible de {path}",
+            )
+        if label in seen:
+            raise _fail(f"{path}.target_label", f"label de cible déjà utilisé : {label!r}")
+        seen.add(label)
 
 
 def parse_config(data: dict) -> Config:
@@ -239,6 +279,9 @@ def parse_config(data: dict) -> Config:
             if rid not in resource_ids:
                 raise _fail(f"kids[{i}].resource_modes.{rid}", f"ressource inconnue : {rid!r}")
 
+    label_services = _parse_label_services(data.get("label_services", []), "label_services")
+    _check_labels(label_services, kids, resources)
+
     calendar_raw = _expect_dict(data.get("calendar_map", {}), "calendar_map")
     calendar_map = {
         _str(word, "calendar_map"): _enum(DayType, day, f"calendar_map.{word}")
@@ -263,6 +306,7 @@ def parse_config(data: dict) -> Config:
         default_on_demand=tuple(_str_list(data.get("default_on_demand", []), "default_on_demand")),
         request_notify=request_notify,
         request_notify_owners=request_notify_owners,
+        label_services=label_services,
     )
 
 
@@ -294,7 +338,7 @@ def _dump_profile(profile: Profile) -> dict:
 
 
 def _dump_kid(kid: Kid) -> dict:
-    return {
+    out: dict[str, Any] = {
         "id": kid.id,
         "name": kid.name,
         "emoji": kid.emoji,
@@ -307,6 +351,9 @@ def _dump_kid(kid: Kid) -> dict:
         "resource_modes": {rid: mode.value for rid, mode in kid.resource_modes.items()},
         "profiles": {day.value: _dump_profile(p) for day, p in kid.profiles.items()},
     }
+    if kid.target_label is not None:
+        out["target_label"] = kid.target_label
+    return out
 
 
 def _dump_integration(integration: Integration) -> dict:
@@ -317,6 +364,8 @@ def _dump_resource(resource: Resource) -> dict:
     out: dict[str, Any] = {"id": resource.id, "name": resource.name}
     if resource.icon is not None:
         out["icon"] = resource.icon
+    if resource.target_label is not None:
+        out["target_label"] = resource.target_label
     out["owners"] = list(resource.owners)
     out["quota_minutes"] = {day.value: m for day, m in resource.quota_minutes.items()}
     out["devices"] = [
@@ -336,6 +385,10 @@ def dump_config(cfg: Config) -> dict:
         "notify": list(cfg.notify),
         "request_notify": list(cfg.request_notify),
         "request_notify_owners": dict(cfg.request_notify_owners),
+        "label_services": [
+            {"label_id": s.label_id, "on_means_allowed": s.on_means_allowed}
+            for s in cfg.label_services
+        ],
         "kids": [_dump_kid(k) for k in cfg.kids],
         "resources": [_dump_resource(r) for r in cfg.resources],
     }
