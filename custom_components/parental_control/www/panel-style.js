@@ -175,6 +175,7 @@ export const CSS = `
   .lz .pill.split { padding: 0 4px 0 12px; }
   .lz .pill.split button { padding: 6px 6px; color: var(--pc-muted); font-size: 12px; }
   .lz .pill.split button:hover { color: var(--pc-text); }
+  .lz .pill.label { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--pc-pri) 55%, transparent); }
   .lz .pill.unk { border-color: var(--pc-red); color: var(--pc-red); }
   .lz .pill .badge { font-size: 11.5px; padding: 1px 7px; border-radius: 10px; }
   .lz .pill .badge.tone-ok { color: var(--pc-green); background: color-mix(in srgb, var(--pc-green) 12%, transparent); }
@@ -255,6 +256,15 @@ export const CSS = `
   .cal { display: grid; grid-template-columns: minmax(0, 1fr) 200px 28px; gap: 8px 12px; align-items: center; margin: 10px 0; }
   .cal > span { padding: 6px 0; overflow-wrap: anywhere; }
   .help { margin-top: 4px; }
+  .lbls { display: grid; gap: 2px; margin-bottom: 6px; }
+  .lblrow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 16px; align-items: center; padding: 5px 0; }
+  .lblrow .nm { display: inline-flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+  .lblrow .dot { width: 10px; height: 10px; flex: none; }
+  .unk-text { color: var(--pc-red); }
+  .lsw { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 6px 0; border-top: 1px solid var(--pc-line); font-size: 13px; }
+  .lsw .nm { overflow-wrap: anywhere; }
+  .lsw .mut { grid-column: 1; font-size: 12px; }
+  .lsw .st { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
 
   textarea { width: 100%; min-height: 420px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; margin: 10px 0; }
   .notice, .error { margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }

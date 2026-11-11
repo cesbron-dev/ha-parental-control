@@ -618,3 +618,61 @@ test("phoneRebind: offered only for unbound and changed, naming who will become 
   assert.equal(lib.phoneRebind(undefined), null);
 });
 
+
+// --- Services par label HA -------------------------------------------------------------------
+
+test("isLabelService: préfixe label:", () => {
+  assert.equal(lib.isLabelService("label:youtube"), true);
+  assert.equal(lib.isLabelService("youtube"), false);
+  assert.equal(lib.isLabelService(undefined), false);
+});
+
+test("toggleLabelService: ajoute (allumé = bloqué) puis retire", () => {
+  const d = draft();
+  assert.equal(lib.toggleLabelService(d, "jeux"), true);
+  assert.deepEqual(d.label_services, [{ label_id: "jeux", on_means_allowed: false }]);
+  assert.equal(lib.toggleLabelService(d, "jeux"), true);
+  assert.deepEqual(d.label_services, []);
+});
+
+test("toggleLabelService: refuse un label déjà cible, sans rien changer", () => {
+  const d = draft();
+  d.kids[0].target_label = "hugo";
+  assert.equal(lib.toggleLabelService(d, "hugo"), false);
+  assert.equal(d.label_services, undefined);
+  d.resources[0].target_label = "tele";
+  assert.equal(lib.toggleLabelService(d, "tele"), false);
+  assert.equal(d.label_services, undefined);
+});
+
+test("setLabelInverted: règle « Allumé = autorisé » d'un label de service", () => {
+  const d = draft();
+  lib.toggleLabelService(d, "jeux");
+  lib.setLabelInverted(d, "jeux", true);
+  assert.deepEqual(d.label_services, [{ label_id: "jeux", on_means_allowed: true }]);
+  lib.setLabelInverted(d, "jeux", false);
+  assert.equal(d.label_services[0].on_means_allowed, false);
+  lib.setLabelInverted(d, "absent", true);
+  assert.equal(d.label_services.length, 1);
+});
+
+test("setTargetLabel: pose, remplace et retire (null) la cible", () => {
+  const d = draft();
+  assert.equal(lib.setTargetLabel(d.kids[0], "hugo", d), true);
+  assert.equal(d.kids[0].target_label, "hugo");
+  assert.equal(lib.setTargetLabel(d.kids[0], "hugo", d), true, "même entité : ré-affecter est permis");
+  assert.equal(lib.setTargetLabel(d.kids[0], null, d), true);
+  assert.equal("target_label" in d.kids[0], false, "retirée : la clé disparaît (brouillon propre)");
+});
+
+test("setTargetLabel: refuse un label de service ou déjà pris par un autre", () => {
+  const d = draft();
+  lib.toggleLabelService(d, "jeux");
+  assert.equal(lib.setTargetLabel(d.kids[0], "jeux", d), false);
+  assert.notEqual(d.kids[0].target_label, "jeux");
+  assert.equal(lib.setTargetLabel(d.kids[0], "hugo", d), true);
+  assert.equal(lib.setTargetLabel(d.resources[0], "hugo", d), false);
+  assert.notEqual(d.resources[0].target_label, "hugo");
+  assert.equal(lib.setTargetLabel(d.resources[0], "tele", d), true);
+  assert.equal(d.resources[0].target_label, "tele");
+});

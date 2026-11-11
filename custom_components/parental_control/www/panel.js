@@ -39,7 +39,9 @@ class ParentalControlPanel extends HTMLElement {
     this._phones = {}; // téléphone de demandes → {owner, owner_name, status}
     this._newIds = new Set(); // ids créés depuis le dernier enregistrement : encore modifiables
     this._devices = [];
-    this._catalog = {}; // services AdGuard (id → nom) ; vide : saisie libre
+    this._catalog = {}; // services AdGuard et par label (id → nom) ; vide : saisie libre
+    this._labels = null; // labels HA [{label_id, name, icon, color}] ; null : illisibles (non-parent, erreur)
+    this._labelSwitches = null; // {switches, issues} des interrupteurs pilotés par label ; null : illisibles
     this._message = null; // {kind: "error" | "ok", text}
     this._saving = false;
     this._simulation = false;
@@ -186,12 +188,31 @@ class ParentalControlPanel extends HTMLElement {
     } catch {
       this._devices = [];
     }
+    await this._loadLabelData(true);
+    this._render();
+  }
+
+  // Catalogue des services, labels HA et interrupteurs pilotés par label : un échec (commande
+  // refusée à un non-parent, indisponible) laisse simplement la partie concernée vide.
+  async _loadLabelData(withLabels = false) {
+    const ask = (type) => this._hass.connection.sendMessagePromise({ type: `parental_control/${type}` });
     try {
-      ({ services: this._catalog } = await this._hass.connection.sendMessagePromise({ type: "parental_control/services/catalog" }));
+      ({ services: this._catalog } = await ask("services/catalog"));
     } catch {
       this._catalog = {};
     }
-    this._render();
+    if (withLabels) {
+      try {
+        ({ labels: this._labels } = await ask("labels/list"));
+      } catch {
+        this._labels = null;
+      }
+    }
+    try {
+      this._labelSwitches = await ask("label_switches/list");
+    } catch {
+      this._labelSwitches = null;
+    }
   }
 
   async _save() {
@@ -214,6 +235,7 @@ class ParentalControlPanel extends HTMLElement {
       // Plus parent (son téléphone retiré) : le panneau se ferme ; sinon statuts précédents gardés.
       if (err?.code === "unauthorized") this._me = { ...this._me, parent: false };
     }
+    await this._loadLabelData(); // les services par label déclarés rejoignent le catalogue
     this._saving = false;
     this._render();
   }
@@ -315,6 +337,11 @@ class ParentalControlPanel extends HTMLElement {
         if (!this._commitPill(el)) return;
         this._focus = `[data-input="${el.dataset.input}"]`; // pour en ajouter plusieurs d'affilée
         break;
+      case "label-service":
+        if (L.toggleLabelService(d, arg)) this._message = null;
+        else this._message = { kind: "error", text: `${this._labelName(arg)} est le label de cible d'un enfant ou d'un appareil : retirez-le d'abord de sa cible.` };
+        break;
+      case "label-inverted": L.setLabelInverted(d, arg, el.checked); break;
       case "toggle-owner": L.toggleOwner(res, arg); break;
       case "add-dev": {
         const name = this._input("new-dev");
@@ -451,6 +478,11 @@ class ParentalControlPanel extends HTMLElement {
       const device = this._draft.resources[this._res].devices[j];
       L.addIntegration(device, el.value);
       this._edit = `${j}:${device.integrations.length - 1}`; // vide : ouverte pour la compléter
+    } else if (el.dataset.targetLabel !== undefined) {
+      const entity = getPath(this._draft, el.dataset.targetLabel);
+      if (!entity) return;
+      this._message = L.setTargetLabel(entity, el.value, this._draft) ? null
+        : { kind: "error", text: `${this._labelName(el.value)} est déjà un label de service ou la cible d'un autre.` };
     } else if (el.dataset.rename) {
       this._rename(el.dataset.rename, el.value);
     } else if (el.dataset.path) {
@@ -698,16 +730,92 @@ class ParentalControlPanel extends HTMLElement {
       return `<input ${attrs} placeholder="+ Ajouter" title="Service AdGuard (ex. youtube)">`;
     }
     const options = L.serviceOptions(this._catalog, taken);
-    return `<select ${attrs} title="Ajouter un service AdGuard" ${options.length ? "" : "disabled"}>
+    return `<select ${attrs} title="Ajouter un service" ${options.length ? "" : "disabled"}>
       <option value="">+ Ajouter…</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
   }
 
+  // `label` : repère discret d'un service par label HA ; `unk` : absent du catalogue.
   _svcClass(service) {
-    return L.serviceLabel(this._catalog, service).known ? "" : "unk";
+    const known = L.serviceLabel(this._catalog, service).known;
+    return `${L.isLabelService(service) ? "label" : ""} ${known ? "" : "unk"}`.trim();
   }
 
   _svcTitle(service) {
-    return L.serviceLabel(this._catalog, service).known ? service : `${service} : inconnu d'AdGuard, à retirer`;
+    if (L.serviceLabel(this._catalog, service).known) return L.isLabelService(service) ? `${service} (service par label)` : service;
+    return L.isLabelService(service)
+      ? `${service} : label introuvable ou plus déclaré comme service, à retirer`
+      : `${service} : inconnu d'AdGuard, à retirer`;
+  }
+
+  // Nom d'un label HA d'après le registre (à défaut son identifiant).
+  _labelName(labelId) {
+    return this._labels?.find((l) => l.label_id === labelId)?.name ?? labelId;
+  }
+
+  // Menu « Label de cible » d'un enfant ou d'un appareil (`path` : kids.N / resources.N) : les labels
+  // qui ne sont ni de service ni déjà la cible d'un autre ; le label actuel est gardé même disparu.
+  _targetLabelField(entity, path) {
+    if (!this._labels) return "";
+    const current = entity.target_label ?? "";
+    const taken = new Set([
+      ...(this._draft.label_services ?? []).map((s) => s.label_id),
+      ...[...this._draft.kids, ...this._draft.resources].filter((e) => e !== entity).map((e) => e.target_label),
+    ]);
+    const known = this._labels.some((l) => l.label_id === current);
+    return `<label class="field" style="margin-top:14px"><span>Label de cible</span>
+      <select data-target-label="${path}" title="Un interrupteur portant ce label et un label de service est piloté pour cette cible">
+        <option value="" ${current ? "" : "selected"}>Aucun</option>
+        ${current && !known ? opt(current, `${current} (introuvable)`, current) : ""}
+        ${this._labels.filter((l) => !taken.has(l.label_id)).map((l) => opt(l.label_id, l.name, current)).join("")}
+      </select></label>`;
+  }
+
+  _targetName(t) {
+    const list = t.kind === "kid" ? this._draft?.kids : this._draft?.resources;
+    return list?.find((x) => x.id === t.id)?.name ?? t.id;
+  }
+
+  // Carte « Services par label » : un label HA devient un service (case « Service »), avec son sens.
+  _labelServicesCard() {
+    if (!this._labels) return "";
+    const d = this._draft;
+    const declared = new Map((d.label_services ?? []).map((s) => [s.label_id, s]));
+    const targets = new Set([...d.kids, ...d.resources].map((e) => e.target_label).filter(Boolean));
+    const rows = this._labels.map((l) => {
+      const svc = declared.get(l.label_id);
+      const color = L.safeColor(l.color);
+      const target = targets.has(l.label_id);
+      return `<div class="lblrow">
+        <span class="nm"><span class="dot" style="background:${color ?? "transparent"};${color ? "" : "border:1px solid var(--pc-muted)"}"></span>${esc(l.name)}${target ? ` <span class="mut">(label de cible)</span>` : ""}</span>
+        <label class="check"><input type="checkbox" data-act="label-service" data-arg="${esc(l.label_id)}" ${svc ? "checked" : ""} ${target && !svc ? "disabled" : ""}> Service</label>
+        <label class="check"><input type="checkbox" data-act="label-inverted" data-arg="${esc(l.label_id)}" ${svc?.on_means_allowed ? "checked" : ""} ${svc ? "" : "disabled"}> Allumé = autorisé</label>
+      </div>`;
+    }).join("");
+    const orphans = [...declared.keys()].filter((id) => !this._labels.some((l) => l.label_id === id));
+    const lost = orphans.map((id) => `<div class="lblrow"><span class="nm unk-text">${esc(id)} <span class="mut">(label introuvable)</span></span>
+      <label class="check"><input type="checkbox" data-act="label-service" data-arg="${esc(id)}" checked> Service</label><span></span></div>`).join("");
+    return `<div class="card"><h2>Services par label</h2>
+      ${rows || lost ? `<div class="lbls">${rows}${lost}</div>` : `<div class="mut">Aucun label dans Home Assistant.</div>`}
+      <div class="mut help">Un interrupteur portant un label de service et le label de cible d'un enfant ou d'un appareil est piloté pour lui, comme un service AdGuard. Par défaut allumé = bloqué.</div>
+      ${this._labelSwitchesView()}</div>`;
+  }
+
+  // Récapitulatif « Interrupteurs pilotés » (reflète la configuration enregistrée) et problèmes.
+  _labelSwitchesView() {
+    const data = this._labelSwitches;
+    if (!data) return "";
+    const PROBLEMS = { no_target: "sans cible", unknown_label: "label introuvable" };
+    const state = (sw) => `${sw.state ? `${esc(sw.state)} · ` : ""}${sw.blocked ? "bloqué" : "autorisé"}`;
+    const rows = (data.switches ?? []).map((sw) => `<div class="lsw">
+      <span class="nm">${esc(sw.name || sw.entity_id)}</span>
+      <span class="mut">${esc(L.serviceLabel(this._catalog, sw.service).name)} · ${(sw.targets ?? []).map((t) => esc(this._targetName(t))).join(", ")}</span>
+      <span class="st">${state(sw)}</span></div>`).join("");
+    const issues = (data.issues ?? []).map((it) => `<div class="lsw bad">
+      <span class="nm">${esc(it.entity_id ? (it.name || it.entity_id) : (it.service_name || it.service))}</span>
+      <span class="mut">${it.entity_id ? esc(it.service_name || it.service) : "service par label"}</span>
+      <span class="st missing">${esc(PROBLEMS[it.problem] ?? it.problem)}</span></div>`).join("");
+    if (!rows && !issues) return `<div class="group"><h3>Interrupteurs pilotés</h3><div class="mut">Aucun interrupteur piloté par label.</div></div>`;
+    return `<div class="group"><h3>Interrupteurs pilotés <span class="mut">(configuration enregistrée)</span></h3>${rows}${issues}</div>`;
   }
 
   // Destinataires (`notify` ou `request_notify`) : pastilles au nom de l'appareil, puis menu des
@@ -749,7 +857,8 @@ class ParentalControlPanel extends HTMLElement {
     const d = this._draft;
     const cal = Object.entries(d.calendar_map ?? {});
     return `<div class="general">
-      <div>${this._commonList("leisure")}<div style="height:16px"></div>${this._commonList("on_demand")}</div>
+      <div>${this._commonList("leisure")}<div style="height:16px"></div>${this._commonList("on_demand")}
+        ${this._labels ? `<div style="height:16px"></div>${this._labelServicesCard()}` : ""}</div>
       <div>
         <div class="card"><h2>Correspondance calendrier</h2>
           <div class="mut">Un événement du calendrier dont le titre contient ce mot donne ce type de jour.</div>
