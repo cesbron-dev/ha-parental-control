@@ -36,7 +36,9 @@ export function fmtDuration(minutes) {
   return `${Math.floor(total / 60)}h ${pad(total % 60)}m`;
 }
 
-export function serviceLabel(id) {
+// `names` : noms des services par label (`state.service_names`), absents de SERVICES.
+export function serviceLabel(id, names = null) {
+  if (names?.[id]) return names[id];
   if (SERVICES[id]) return SERVICES[id];
   const s = String(id ?? "");
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -149,12 +151,13 @@ export function exceptionsForResource(state, resourceId) {
         ? (resource.owners ?? []).includes(t.kid_id)
         : true;
     if (!touches) continue;
-    // Une exception de service ne concerne que les appareils qui ont une intégration AdGuard.
-    if (t.service && !(resource.kinds ?? [resource.kind]).includes("adguard_services")) continue;
+    // Une exception de service ne concerne que les appareils AdGuard ou ceux d'un interrupteur par label.
+    if (t.service && !(resource.kinds ?? [resource.kind]).includes("adguard_services")
+      && !(resource.label_services ?? []).includes(t.service)) continue;
     const scope = scopeOf(t);
     out.push({
       id: e.id,
-      label: t.service ? serviceLabel(t.service) : "Tout l'appareil",
+      label: t.service ? serviceLabel(t.service, state.service_names) : "Tout l'appareil",
       service: t.service ?? null,
       scope,
       kid: scope === "kid" ? (state.kids?.[t.kid_id]?.name ?? t.kid_id) : null,
@@ -234,18 +237,22 @@ export function resourceView(state, resourceId) {
 }
 
 // Services sur demande affichés sur la carte d'un appareil, avec leur état actuel (débloqué ou
-// non, d'après `blocked_services` du moteur). `only` (liste
+// non, d'après `blocked_services` du moteur) ; un appareil sans AdGuard n'a que ses services par label
+// (`label_services`). `only` (liste
 // d'ids, config de la carte) restreint et ordonne l'affichage. `exceptions` : ids des exceptions
 // de ce service posées sur cet appareil (à remplacer lors d'une bascule, pour ne pas les empiler).
 export function serviceToggles(state, resourceId, only = null) {
   const r = state?.resources?.[resourceId];
-  if (!r || !(r.kinds ?? [r.kind]).includes("adguard_services")) return [];
-  const onDemand = r.on_demand ?? [];
+  if (!r) return [];
+  const adguard = (r.kinds ?? [r.kind]).includes("adguard_services");
+  const labelled = r.label_services ?? [];
+  const onDemand = (r.on_demand ?? []).filter((s) => adguard || labelled.includes(s));
+  if (!onDemand.length) return [];
   const ids = Array.isArray(only) && only.length ? only.filter((s) => onDemand.includes(s)) : onDemand;
   const blocked = new Set(r.blocked_services ?? []);
   return ids.map((service) => ({
     service,
-    label: serviceLabel(service),
+    label: serviceLabel(service, state.service_names),
     open: !blocked.has(service),
     exceptions: (state.exceptions ?? [])
       .filter((e) => e.target?.resource_id === resourceId && e.target?.service === service)
@@ -277,12 +284,20 @@ export function kidServiceToggles(state, kidId, only = null) {
       holders.get(s).push(id);
     }
   }
-  const all = [...holders.keys()];
-  const ids = Array.isArray(only) && only.length ? only.filter((s) => holders.has(s)) : all;
+  // Services par label qui visent l'enfant : l'état (`blocked`) est calculé pour lui par le moteur.
+  const kid = state?.kids?.[kidId];
+  const labelled = new Map((kid?.label_services ?? [])
+    .filter((l) => (kid.on_demand ?? []).includes(l.service))
+    .map((l) => [l.service, l.blocked]));
+  const all = [...new Set([...holders.keys(), ...labelled.keys()])];
+  const ids = Array.isArray(only) && only.length ? only.filter((s) => holders.has(s) || labelled.has(s)) : all;
   return ids.map((service) => ({
     service,
-    label: serviceLabel(service),
-    open: holders.get(service).every((id) => !(state.resources[id].blocked_services ?? []).includes(service)),
+    label: serviceLabel(service, state.service_names),
+    open: labelled.has(service) && !holders.has(service)
+      ? !labelled.get(service)
+      : (holders.get(service) ?? []).every((id) => !(state.resources[id].blocked_services ?? []).includes(service))
+        && !labelled.get(service),
     exceptions: (state.exceptions ?? [])
       .filter((e) => e.target?.service === service
         && (e.target.kid_id === kidId || resources.includes(e.target.resource_id)))
@@ -305,7 +320,7 @@ export function kidExceptions(state, kidId) {
     // Où : l'appareil, tous ceux de l'enfant, ou tous (formatPill ajoute alors « tout le monde »).
     const where = resource ? (resource.name || t.resource_id) : t.kid_id ? "tous ses appareils" : "";
     const label = t.service
-      ? [serviceLabel(t.service), where].filter(Boolean).join(" · ")
+      ? [serviceLabel(t.service, state.service_names), where].filter(Boolean).join(" · ")
       : where ? where.charAt(0).toUpperCase() + where.slice(1) : "Tous les appareils";
     out.push({
       id: e.id, label, service: t.service ?? null,
