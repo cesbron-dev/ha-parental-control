@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from homeassistant.core import Context, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import label_registry as lr
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
@@ -192,6 +193,22 @@ async def test_request_message(make_env, julie, catalog, kwargs, expected) -> No
     kind = kwargs.pop("kind")
     req_id = await env.engine.request_time(kind, "hugo", **kwargs)
     assert env.engine.request_message(env.engine.requests.get(req_id)) == expected
+
+
+async def test_request_message_uses_label_name(hass, make_env, julie) -> None:
+    lr.async_get(hass).async_create("Internet")
+    config = copy.deepcopy(CONFIG)
+    config["label_services"] = [{"label_id": "internet"}, {"label_id": "disparu"}]
+    config["kids"][0]["leisure_add"] = [*config["kids"][0].get("leisure_add", []), "label:internet"]
+    env = await _env(make_env, config)
+    req_id = await env.engine.request_time(
+        RequestKind.OPEN, "hugo", service="label:internet", proposed=30
+    )
+    assert env.engine.request_message(env.engine.requests.get(req_id)) == (
+        "Hugo demande 30 min de Internet"
+    )
+    # Label supprimé du registre : repli sur l'identifiant sans préfixe, sans exception.
+    assert env.engine._service_label("label:disparu") == "disparu"
 
 
 # --- réponse depuis la notification ---------------------------------------------

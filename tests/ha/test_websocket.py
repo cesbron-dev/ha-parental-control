@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.parental_control.const import DOMAIN
@@ -273,10 +275,72 @@ async def test_services_catalog_merges_adguard_entries(hass, entry, hass_ws_clie
 async def test_services_catalog_empty_and_admin_only(hass, entry, hass_ws_client) -> None:
     admin = await _client(hass, hass_ws_client, admin=True)
     await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
-    assert (await admin.receive_json())["result"] == {"services": {}}
+    assert (await admin.receive_json())["result"] == {"services": {}, "label_services": []}
     user = await _client(hass, hass_ws_client, admin=False)
     await user.send_json_auto_id({"type": "parental_control/services/catalog"})
     assert not (await user.receive_json())["success"]
+
+
+async def _entry_with_label_services(hass: HomeAssistant, freezer) -> MockConfigEntry:
+    await hass.config.async_set_time_zone("America/Toronto")
+    freezer.move_to(at(TUESDAY, 16, 30))
+    config = copy.deepcopy(EX)
+    config["label_services"] = [{"label_id": "ecran"}, {"label_id": "disparu"}]
+    await ParentalStore(hass).save_config(parse_config(config))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code("0123")})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_catalog_includes_label_services(hass, freezer, hass_ws_client) -> None:
+    registry = lr.async_get(hass)
+    label = registry.async_create("Écran")  # id « ecran » ; « disparu » n'existe plus
+    await _entry_with_label_services(hass, freezer)
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
+    result = (await admin.receive_json())["result"]
+    assert result == {"services": {"label:ecran": "Écran"}, "label_services": ["label:ecran"]}
+    registry.async_update(label.label_id, name="Internet")  # nom lu à chaque fois
+    await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
+    assert (await admin.receive_json())["result"]["services"] == {"label:ecran": "Internet"}
+
+
+async def test_labels_list_parent_only(hass, entry, hass_ws_client) -> None:
+    registry = lr.async_get(hass)
+    registry.async_create("Zèbre", icon="mdi:zebra", color="red")
+    registry.async_create("abeille")
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/labels/list"})
+    assert (await admin.receive_json())["result"] == {"labels": [
+        {"label_id": "abeille", "name": "abeille", "icon": None, "color": None},
+        {"label_id": "zebre", "name": "Zèbre", "icon": "mdi:zebra", "color": "red"},
+    ]}
+    user = await _client(hass, hass_ws_client, admin=False)
+    await user.send_json_auto_id({"type": "parental_control/labels/list"})
+    res = await user.receive_json()
+    assert not res["success"] and res["error"]["code"] == "unauthorized"
+
+
+async def test_label_switches_list(hass, freezer, hass_ws_client) -> None:
+    lr.async_get(hass).async_create("Écran")
+    await _entry_with_label_services(hass, freezer)
+    registry = er.async_get(hass)
+    registry.async_get_or_create("switch", "test", "prise", suggested_object_id="prise_tele")
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/label_switches/list"})
+    result = (await admin.receive_json())["result"]
+    engine = hass.config_entries.async_loaded_entries(DOMAIN)[0].runtime_data
+    assert result == {"switches": engine.label_switches, "issues": engine.label_issues}
+    assert result["issues"] == [
+        {"entity_id": "", "service": "label:disparu", "service_name": "disparu",
+         "problem": "unknown_label"}
+    ]
+    user = await _client(hass, hass_ws_client, admin=False)
+    await user.send_json_auto_id({"type": "parental_control/label_switches/list"})
+    res = await user.receive_json()
+    assert not res["success"] and res["error"]["code"] == "unauthorized"
 
 
 async def test_state_requests_hidden_until_enabled(hass, entry, hass_ws_client) -> None:
@@ -303,7 +367,7 @@ async def test_config_get_set_and_catalog_parent_non_admin(
     resp = await _send(client, {"type": "parental_control/config/set", "config": got})
     assert resp["success"]
     assert entry.runtime_data.config.kid("hugo").name == "Renommé"
-    assert (await _send(client, CATALOG))["result"] == {"services": {}}
+    assert (await _send(client, CATALOG))["result"] == {"services": {}, "label_services": []}
 
 
 async def test_config_get_non_parent_gets_no_config(
