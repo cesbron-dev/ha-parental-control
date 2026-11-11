@@ -428,6 +428,13 @@ export function isLabelService(id) {
   return typeof id === "string" && id.startsWith(LABEL_PREFIX);
 }
 
+// État d'un interrupteur piloté dans le récapitulatif (texte brut, à échapper) : son état HA puis
+// l'état voulu ; `blocked` nul : service ni en loisir ni sur demande d'une cible (laissé tel quel).
+export function labelSwitchStatus(sw) {
+  const wanted = sw.blocked === true ? "bloqué" : sw.blocked === false ? "autorisé" : "non géré";
+  return sw.state ? `${sw.state} · ${wanted}` : wanted;
+}
+
 // Labels de cible déjà pris dans le brouillon (enfants et appareils), hors `except`.
 function targetLabels(cfg, except = null) {
   return [...(cfg.kids ?? []), ...(cfg.resources ?? [])]
