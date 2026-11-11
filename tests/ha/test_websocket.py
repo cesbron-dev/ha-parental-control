@@ -128,7 +128,7 @@ async def test_state_and_not_loaded(hass, entry, hass_ws_client) -> None:
     await client.send_json_auto_id({"type": "parental_control/state"})
     result = (await client.receive_json())["result"]
     assert set(result) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
-        "requests", "requests_enabled"}
+        "requests", "requests_enabled", "service_names"}
     assert "hugo" in result["kids"]
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -151,7 +151,7 @@ async def test_state_subscribe_pushes_on_update(hass, entry, hass_ws_client) -> 
     pushed = await client.receive_json()
     assert pushed["type"] == "event"
     assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
-        "requests", "requests_enabled"}
+        "requests", "requests_enabled", "service_names"}
 
 
 async def test_state_subscribe_survives_entry_reload(hass, entry, hass_ws_client) -> None:

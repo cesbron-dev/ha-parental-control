@@ -11,6 +11,7 @@ from homeassistant.util import dt as dt_util
 
 from .core.decisions import ManualException
 from .core.display import exception_end, kid_timeline
+from .core.label_services import switch_blocked
 from .core.model import ResourceKind
 from .core.requests import RequestStatus, action_choices
 
@@ -85,6 +86,9 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
     for kind, known in (("kids", {k.id for k in cfg.kids}), ("resources", {r.id for r in cfg.resources})):
         for stale in [i for i in state[kind] if i not in known]:
             del state[kind][stale]
+    # Interrupteurs labellisés déjà découverts par le moteur : jamais redécouverts ici.
+    switches = engine.label_switches
+    state["service_names"] = {s["service"]: s["service_name"] for s in switches}
     for kid_id, data in state["kids"].items():
         kid = cfg.kid(kid_id)
         data |= {
@@ -92,6 +96,8 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "emoji": kid.emoji,
             "color": kid.color,
             "timeline": kid_timeline(cfg, snap, kid_id, now),
+            "on_demand": sorted(cfg.on_demand_for(kid_id)),
+            "label_services": _kid_label_services(engine, switches, kid_id, now),
         }
     for resource_id, data in state["resources"].items():
         resource = cfg.resource(resource_id)
@@ -103,6 +109,10 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "owners": list(resource.owners),
             "leisure": sorted(cfg.leisure_for_resource(resource_id)),
             "on_demand": sorted(cfg.on_demand_for_resource(resource_id)),
+            "label_services": sorted({
+                s["service"] for s in switches
+                if {"kind": "resource", "id": resource_id} in s["targets"]
+            }),
         }
         for integration in resource.integrations:
             if integration.kind is ResourceKind.NINTENDO:
@@ -129,6 +139,20 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
         for r in engine.requests.visible(now)
     ]
     state["now"] = now.isoformat()
+
+
+def _kid_label_services(engine: ParentalEngine, switches: list[dict[str, Any]],
+                        kid_id: str, now: datetime) -> list[dict[str, Any]]:
+    """Services par label des interrupteurs qui visent l'enfant, `blocked` pour lui seul."""
+    cfg, snap = engine.config, engine.snapshot
+    result: dict[str, bool] = {}
+    for sw in switches:
+        if {"kind": "kid", "id": kid_id} not in sw["targets"] or snap is None:
+            continue
+        blocked = switch_blocked(now, cfg, engine.decisions, snap, sw["service"], [("kid", kid_id)])
+        if blocked is not None:
+            result[sw["service"]] = result.get(sw["service"], False) or blocked
+    return [{"service": service, "blocked": blocked} for service, blocked in sorted(result.items())]
 
 
 def serialize_requests(engine: ParentalEngine, *, can_answer: bool) -> dict[str, Any]:

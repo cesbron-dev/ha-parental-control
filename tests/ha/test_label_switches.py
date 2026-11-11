@@ -17,6 +17,7 @@ from custom_components.parental_control.label_switches import (
     LabelSwitchIssue,
     discover,
 )
+from custom_components.parental_control.serialize import serialize_snapshot
 from custom_components.parental_control.store import ParentalStore
 from tests.fixtures import EX
 from tests.ha.test_engine import (  # noqa: F401 - `services` est une fixture
@@ -315,3 +316,29 @@ async def test_simulation_silent_when_already_in_wanted_state(
     await engine.set_simulation(True)
     await engine.async_evaluate("test")
     assert "Simulation : " not in caplog.text
+
+
+async def test_state_exposes_label_services(hass, freezer, services) -> None:
+    """Les cartes lisent les services par label de l'enfant (avec `blocked`) et de l'appareil."""
+    add_labels(hass)
+    lr.async_get(hass).async_create("tele")
+    add_switch(hass, {"ecran", "hugo"}, "off")
+    config = label_config(services=services)
+    config["kids"][0]["on_demand_add"] = ["label:ecran"]
+    config["kids"][0]["leisure_add"] = []
+    config["resources"][0]["target_label"] = "tele"  # « tv »
+    engine = await start(hass, freezer, services, BLOCKED, config)
+    # Un second interrupteur vise l'appareil.
+    registry = er.async_get(hass)
+    registry.async_get_or_create("switch", "test", "autre", suggested_object_id="autre")
+    registry.async_update_entity("switch.autre", labels={"ecran", "tele"})
+    hass.states.async_set("switch.autre", "off")
+    engine._discover_labels()
+    await engine.async_evaluate("test")
+    data = serialize_snapshot(engine, display=True)
+    assert data["kids"]["hugo"]["label_services"] == [{"service": "label:ecran", "blocked": True}]
+    assert data["kids"]["hugo"]["on_demand"] == ["label:ecran"]
+    assert data["resources"]["tv"]["label_services"] == ["label:ecran"]
+    assert data["resources"]["iphone_hugo"]["label_services"] == []
+    assert data["service_names"] == {"label:ecran": "Écran"}
+    assert "label_services" not in serialize_snapshot(engine)["kids"]["hugo"]

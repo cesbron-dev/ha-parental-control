@@ -563,3 +563,33 @@ test("needsCode / canRequest : un parent non admin n'a ni code ni « Demander »
   assert.equal(canRequest(user, { requests_enabled: true }, true), false);
   assert.equal(canRequest(user, { requests_enabled: true }, false), true);
 });
+
+test("serviceToggles shows label service on non-AdGuard device", async () => {
+  const { serviceToggles } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    service_names: { "label:internet": "Internet" },
+    resources: {
+      tablette: { kinds: ["media_player"], owners: ["alice"], on_demand: ["label:internet", "netflix"], label_services: ["label:internet"], blocked_services: ["label:internet"] },
+    },
+    exceptions: [],
+  };
+  const t = serviceToggles(state, "tablette");
+  assert.deepEqual(t.map((x) => [x.service, x.label, x.open]), [["label:internet", "Internet", false]]);
+});
+
+test("kidServiceToggles includes kid-targeted label service", async () => {
+  const { kidServiceToggles } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    service_names: { "label:tablette": "Tablette de Alice" },
+    kids: { alice: { on_demand: ["label:tablette", "label:autre"], label_services: [{ service: "label:tablette", blocked: true }] } },
+    resources: { tv: { owners: ["alice"], kinds: ["adguard_services"], on_demand: ["youtube"], blocked_services: [] } },
+    exceptions: [],
+  };
+  assert.deepEqual(kidServiceToggles(state, "alice").map((x) => [x.service, x.label, x.open]), [
+    ["youtube", "YouTube", true],
+    ["label:tablette", "Tablette de Alice", false],
+  ]);
+  state.kids.alice.label_services[0].blocked = false;
+  assert.equal(kidServiceToggles(state, "alice").find((x) => x.service === "label:tablette").open, true);
+  assert.deepEqual(kidServiceToggles(state, "alice", ["label:tablette"]).map((x) => x.service), ["label:tablette"]);
+});

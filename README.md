@@ -387,9 +387,9 @@ navigateur garde une ancienne version.
 
 | Carte | Rôle | Configuration minimale |
 |---|---|---|
-| `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
+| `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard ou ciblé par un interrupteur par label : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
 | `parental-timeline-card` | La frise de la journée de chaque enfant. | `type: custom:parental-timeline-card` ; `kids: [hugo]` limite aux enfants listés |
-| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules sur tous ses appareils AdGuard, autorisations en cours (✕) et bonus. | `kid: alice` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
+| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules sur tous ses appareils AdGuard et ses services par label, autorisations en cours (✕) et bonus. | `kid: alice` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
 | `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
 
 ```yaml
@@ -438,6 +438,35 @@ L'entrée « Règles » est visible dans la barre latérale de tous les comptes,
 parent n'y lit que « Réservé aux parents. » : le serveur refuse aussi `config/get`, `config/set`
 et `services/catalog` aux non-parents (`unauthorized`). Un compte administrateur désactivé n'est
 plus dispensé du code.
+
+## Services par label
+
+Un `switch` Home Assistant peut être piloté comme un service, sans intégration dédiée : il
+suffit de lui poser des **labels HA**. Exemple : une règle UniFi « Couper internet tablette
+Alice », exposée comme `switch`, avec deux labels :
+
+- **« Internet »**, un **label de service** : il devient un service (`label:<id>`, nom du label,
+  qui suit les renommages), à côté des services AdGuard ;
+- **« Tablette de Alice »**, un **label de cible** : il désigne un seul enfant ou un seul appareil
+  logique.
+
+Dans le panneau « Règles », déclarez « Internet » comme label de service, associez « Tablette de
+Alice » à l'enfant (ou à l'appareil) via son champ « Label de cible », puis rangez le service dans
+les loisirs ou sur demande, comme n'importe quel service. Sans label de service déclaré, rien
+ne change.
+
+- **Sens.** Par défaut, **allumé = bloqué**, comme une règle de pare-feu active. L'option
+  « Allumé = autorisé » du label de service inverse le sens.
+- **Cible enfant ou appareil.** Avec un enfant pour cible, l'interrupteur suit l'état de
+  l'enfant (et les exceptions qui le visent ou visent un de ses appareils) ; avec un appareil,
+  il suit l'état du service pour cet appareil, même sans client AdGuard.
+- **Plusieurs cibles.** L'interrupteur est bloqué dès qu'une cible l'exige.
+- **Cartes.** Un service par label sur demande apparaît en bascule sur la carte de l'enfant ou
+  de l'appareil ciblé, comme un service AdGuard, et peut faire l'objet d'une demande.
+- **Cas ignorés.** Un interrupteur est laissé tel quel (avec un avertissement dans le journal
+  et le panneau) s'il n'a aucune cible, si son service n'est ni en loisir ni sur demande d'une
+  cible (service non géré), si le label de service a été supprimé, ou s'il est indisponible
+  (il est piloté dès son retour).
 
 ## Demandes de temps
 
