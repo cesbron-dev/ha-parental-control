@@ -95,11 +95,13 @@ async def test_discover_without_target_reports_issue(hass) -> None:
 
 
 async def test_discover_unknown_label_reports_issue(hass) -> None:
-    lr.async_get(hass).async_create("gabin")  # le label « ecran » n'existe pas
+    add_labels(hass)
     add_switch(hass, {"ecran", "gabin"})
+    lr.async_get(hass).async_delete("ecran")  # HA le retire aussi de l'interrupteur
     switches, issues = discover(hass, parse_config(label_config()))
+    assert er.async_get(hass).async_get(SWITCH).labels == {"gabin"}
     assert switches == []
-    assert issues == [LabelSwitchIssue(SWITCH, "label:ecran", "unknown_label")]
+    assert issues == [LabelSwitchIssue("", "label:ecran", "unknown_label")]
 
 
 async def test_discover_ignores_disabled_and_other_domains(hass) -> None:
@@ -270,3 +272,46 @@ async def test_label_switches_for_websocket(hass, freezer, services) -> None:
         "state": "on",
     }]
     assert engine.label_issues == []
+
+
+async def test_registry_event_without_label_service_ignored(hass, freezer, services) -> None:
+    add_labels(hass)
+    add_switch(hass, {"ecran", "gabin"}, "off")
+    config = label_config(services=services)
+    config["label_services"] = []
+    engine = await start(hass, freezer, services, BLOCKED, config)
+    evaluations: list[str] = []
+    real = engine.async_evaluate
+
+    async def spy(reason: str) -> None:
+        evaluations.append(reason)
+        await real(reason)
+
+    engine.async_evaluate = spy
+    er.async_get(hass).async_update_entity(SWITCH, labels={"gabin"})
+    lr.async_get(hass).async_create("autre")
+    await hass.async_block_till_done()
+    assert "labels" not in evaluations
+    assert services.of("switch", "turn_on") == []
+
+
+async def test_leaving_simulation_resends_command(hass, freezer, services) -> None:
+    add_labels(hass)
+    add_switch(hass, {"ecran", "gabin"}, "off")
+    engine = await start(hass, freezer, services, ALLOWED, label_config(services=services))
+    await engine.set_simulation(True)
+    await tick(hass, freezer, 60)  # 16:30 : bloqué, rien n'est envoyé
+    assert services.of("switch", "turn_on") == []
+    await engine.set_simulation(False)
+    assert services.entities("switch", "turn_on") == [SWITCH]
+
+
+async def test_simulation_silent_when_already_in_wanted_state(
+    hass, freezer, services, caplog
+) -> None:
+    add_labels(hass)
+    add_switch(hass, {"ecran", "gabin"}, "on")
+    engine = await start(hass, freezer, services, BLOCKED, label_config(services=services))
+    await engine.set_simulation(True)
+    await engine.async_evaluate("test")
+    assert "Simulation : " not in caplog.text

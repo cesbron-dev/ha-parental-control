@@ -53,6 +53,10 @@ def discover(
     if not cfg.label_services:
         return switches, issues
     labels = lr.async_get(hass)
+    # HA retire un label supprimé de toutes les entités : le problème ne tient pas à un interrupteur.
+    for service in cfg.label_services:
+        if labels.async_get_label(service.label_id) is None:
+            issues.append(LabelSwitchIssue("", service.service, PROBLEM_UNKNOWN_LABEL))
     entries = sorted(
         (e for e in er.async_get(hass).entities.values()
          if e.domain == "switch" and e.disabled_by is None and e.labels),
@@ -61,10 +65,6 @@ def discover(
     for entry in entries:
         service_labels = [s for s in cfg.label_services if s.label_id in entry.labels]
         chosen: LabelService | None = None
-        for service in service_labels:
-            if labels.async_get_label(service.label_id) is None:
-                issues.append(LabelSwitchIssue(entry.entity_id, service.service,
-                                               PROBLEM_UNKNOWN_LABEL))
         service_ids = {s.label_id for s in service_labels}
         targets = tuple(sorted(
             t for label_id in entry.labels - service_ids

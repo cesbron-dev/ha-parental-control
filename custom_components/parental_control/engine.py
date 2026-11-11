@@ -54,13 +54,13 @@ from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
 from .core.label_services import switch_blocked
 from .core.model import (
+    LABEL_PREFIX,
     Config,
     DayType,
     Kid,
     Resource,
     ResourceKind,
     SegmentType,
-    LABEL_PREFIX,
     is_label_service,
 )
 from .core.requests import (
@@ -363,6 +363,7 @@ class ParentalEngine:
     def _discover_labels(self) -> None:
         """Redécouvre les interrupteurs labellisés et leur écoute (adaptateurs intacts)."""
         self._cancel_label_listener()
+        previous = {ls.entity_id for ls in self._label_switches}
         cfg = self._config
         if cfg is None:
             self._label_switches, self._label_issues = [], []
@@ -372,6 +373,8 @@ class ParentalEngine:
         self._label_applied = {k: v for k, v in self._label_applied.items() if k in entity_ids}
         self._label_blocked = {k: v for k, v in self._label_blocked.items() if k in entity_ids}
         self._label_unavailable &= entity_ids
+        for gone in previous - entity_ids:
+            self._sent_at.pop(gone, None)
         # Une seule journalisation par problème, tant qu'il persiste.
         current = {(i.entity_id, i.service, i.problem) for i in self._label_issues}
         self._label_reported &= current
@@ -381,8 +384,9 @@ class ParentalEngine:
                 continue
             self._label_reported.add(key)
             _LOGGER.warning(
-                "%s : %s ignoré (%s)", issue.entity_id,
-                self._label_service_name(issue.service), self._issue_text(issue.problem),
+                "%s ignoré (%s)",
+                " : ".join(filter(None, (issue.entity_id, self._label_service_name(issue.service)))),
+                self._issue_text(issue.problem),
             )
         if entity_ids:
             self._label_state_unsub = async_track_state_change_event(
@@ -406,12 +410,15 @@ class ParentalEngine:
 
     @callback
     def _on_registry_change(self, _event: Event[Any]) -> None:
+        if self._config is None or not self._config.label_services:
+            return  # sans label de service, rien n'a changé pour le moteur
         self._schedule(self._rediscover_and_evaluate())
 
     async def _rediscover_and_evaluate(self) -> None:
         if self._stopped:
             return
-        self._discover_labels()
+        async with self._lock:
+            self._discover_labels()
         await self.async_evaluate("labels")
 
     def _record_simulation(self, name: str, line: str) -> None:
@@ -582,6 +589,8 @@ class ParentalEngine:
             if self._decisions.simulation:
                 # Rien n'est envoyé : la ligne n'est écrite qu'au changement d'état voulu.
                 if not unchanged:
+                    self._label_applied[ls.entity_id] = want_on
+                if not unchanged and drifted:  # déjà dans l'état voulu : rien à dire
                     name = self._switch_name(ls.entity_id)
                     verb = "allumer" if want_on else "éteindre"
                     what = "bloquer" if blocked else "autoriser"
@@ -589,7 +598,6 @@ class ParentalEngine:
                         name,
                         f"{name} : {verb} ({what} {self._label_service_name(ls.service)})",
                     )
-                    self._label_applied[ls.entity_id] = want_on
                 continue
             if drifted:
                 self._sent_at[ls.entity_id] = now
