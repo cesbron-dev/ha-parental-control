@@ -13,7 +13,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_client_config
-from .core.model import label_service_id
+from .core.model import is_label_service
 from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
 from .parents import bind_owners, is_parent, phone_status, trusted_phone_owners
@@ -139,11 +139,14 @@ async def ws_services_catalog(
         return
     if not await _require_parent(hass, connection, msg, engine):
         return
-    services = services_catalog(hass, engine.config)
-    label_services = [label_service_id(s.label_id) for s in engine.config.label_services]
+    cfg = engine.config
+    if cfg is None:  # installation neuve : pas encore de configuration
+        connection.send_result(msg["id"], {"services": services_catalog(hass), "label_services": []})
+        return
+    services = services_catalog(hass, cfg)
     connection.send_result(
         msg["id"],
-        {"services": services, "label_services": [s for s in label_services if s in services]},
+        {"services": services, "label_services": [s for s in services if is_label_service(s)]},
     )
 
 

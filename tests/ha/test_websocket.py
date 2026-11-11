@@ -286,6 +286,8 @@ async def _entry_with_label_services(hass: HomeAssistant, freezer) -> MockConfig
     freezer.move_to(at(TUESDAY, 16, 30))
     config = copy.deepcopy(EX)
     config["label_services"] = [{"label_id": "ecran"}, {"label_id": "disparu"}]
+    config["kids"][0]["target_label"] = "gabin"
+    config["kids"][0]["leisure_add"] = [*config["kids"][0].get("leisure_add", []), "label:ecran"]
     await ParentalStore(hass).save_config(parse_config(config))
     entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code("0123")})
     entry.add_to_hass(hass)
@@ -307,6 +309,18 @@ async def test_catalog_includes_label_services(hass, freezer, hass_ws_client) ->
     assert (await admin.receive_json())["result"]["services"] == {"label:ecran": "Internet"}
 
 
+async def test_catalog_without_config(hass, hass_ws_client) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code("0123")})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.config_entries.async_loaded_entries(DOMAIN)[0].runtime_data.config is None
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
+    res = await admin.receive_json()
+    assert res["success"] and res["result"] == {"services": {}, "label_services": []}
+
+
 async def test_labels_list_parent_only(hass, entry, hass_ws_client) -> None:
     registry = lr.async_get(hass)
     registry.async_create("Zèbre", icon="mdi:zebra", color="red")
@@ -325,14 +339,21 @@ async def test_labels_list_parent_only(hass, entry, hass_ws_client) -> None:
 
 async def test_label_switches_list(hass, freezer, hass_ws_client) -> None:
     lr.async_get(hass).async_create("Écran")
-    await _entry_with_label_services(hass, freezer)
+    lr.async_get(hass).async_create("gabin")
     registry = er.async_get(hass)
     registry.async_get_or_create("switch", "test", "prise", suggested_object_id="prise_tele")
+    registry.async_update_entity("switch.prise_tele", labels={"ecran", "gabin"})
+    hass.states.async_set("switch.prise_tele", "off", {"friendly_name": "Prise"})
+    await _entry_with_label_services(hass, freezer)
     admin = await _client(hass, hass_ws_client, admin=True)
     await admin.send_json_auto_id({"type": "parental_control/label_switches/list"})
     result = (await admin.receive_json())["result"]
     engine = hass.config_entries.async_loaded_entries(DOMAIN)[0].runtime_data
     assert result == {"switches": engine.label_switches, "issues": engine.label_issues}
+    (switch,) = result["switches"]
+    assert switch["entity_id"] == "switch.prise_tele"
+    assert switch["service"] == "label:ecran"
+    assert switch["targets"] == [{"kind": "kid", "id": "gabin"}]
     assert result["issues"] == [
         {"entity_id": "", "service": "label:disparu", "service_name": "disparu",
          "problem": "unknown_label"}
