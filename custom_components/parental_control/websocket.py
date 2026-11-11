@@ -7,11 +7,13 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_client_config
+from .core.model import label_service_id
 from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
 from .parents import bind_owners, is_parent, phone_status, trusted_phone_owners
@@ -30,6 +32,8 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_config_get)
     websocket_api.async_register_command(hass, ws_config_set)
     websocket_api.async_register_command(hass, ws_services_catalog)
+    websocket_api.async_register_command(hass, ws_labels_list)
+    websocket_api.async_register_command(hass, ws_label_switches_list)
     websocket_api.async_register_command(hass, ws_state)
     websocket_api.async_register_command(hass, ws_state_subscribe)
     websocket_api.async_register_command(hass, ws_requests_subscribe)
@@ -135,7 +139,49 @@ async def ws_services_catalog(
         return
     if not await _require_parent(hass, connection, msg, engine):
         return
-    connection.send_result(msg["id"], {"services": services_catalog(hass)})
+    services = services_catalog(hass, engine.config)
+    label_services = [label_service_id(s.label_id) for s in engine.config.label_services]
+    connection.send_result(
+        msg["id"],
+        {"services": services, "label_services": [s for s in label_services if s in services]},
+    )
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/labels/list"})
+@websocket_api.async_response
+async def ws_labels_list(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Labels du registre de HA (pour choisir les labels de service et de cible)."""
+    if (engine := _engine(hass, connection, msg)) is None:
+        return
+    if not await _require_parent(hass, connection, msg, engine):
+        return
+    labels = sorted(lr.async_get(hass).async_list_labels(), key=lambda lb: lb.name.casefold())
+    connection.send_result(
+        msg["id"],
+        {
+            "labels": [
+                {"label_id": lb.label_id, "name": lb.name, "icon": lb.icon, "color": lb.color}
+                for lb in labels
+            ]
+        },
+    )
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/label_switches/list"})
+@websocket_api.async_response
+async def ws_label_switches_list(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Interrupteurs labellisés pilotés et ceux ignorés (avec la raison)."""
+    if (engine := _engine(hass, connection, msg)) is None:
+        return
+    if not await _require_parent(hass, connection, msg, engine):
+        return
+    connection.send_result(
+        msg["id"], {"switches": engine.label_switches, "issues": engine.label_issues}
+    )
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})

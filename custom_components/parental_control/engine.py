@@ -707,6 +707,8 @@ class ParentalEngine:
     # ------------------------------------------------------------------ demandes
 
     def _service_label(self, service: str) -> str:
+        if is_label_service(service):
+            return label_name(self._hass, service.removeprefix(LABEL_PREFIX))
         return services_catalog(self._hass).get(service, service)
 
     def request_message(self, req: TimeRequest) -> str:
