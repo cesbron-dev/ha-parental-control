@@ -6,8 +6,16 @@ from custom_components.parental_control.core.decisions import (
     ManualException,
     Target,
 )
-from custom_components.parental_control.core.evaluator import KidStatus, evaluate
-from custom_components.parental_control.core.model import DayType, SegmentType
+from custom_components.parental_control.core.evaluator import (
+    KidStatus,
+    evaluate,
+    rule_signature,
+)
+from custom_components.parental_control.core.model import (
+    DayType,
+    ResourceKind,
+    SegmentType,
+)
 from tests.core.conftest import TZ, mixed_tv
 from tests.fixtures import integration_of
 
@@ -166,7 +174,8 @@ def test_pause_beats_everything(cfg):
     assert snap.resources["iphone_gabin"].blocked_services == (
         cfg.leisure_for_resource("iphone_gabin") | {"fortnite"}
     )
-    assert snap.resources["tv"].blocked_services == frozenset()
+    # Les services sont calculés pour toute ressource (loisirs d'abord, pas d'exception de tv).
+    assert snap.resources["tv"].blocked_services == cfg.leisure_for_resource("tv")
 
 
 def test_adguard_blocked_services_are_leisure_only(cfg):
@@ -174,7 +183,7 @@ def test_adguard_blocked_services_are_leisure_only(cfg):
     iphone = snap.resources["iphone_gabin"]
     assert iphone.open is False
     assert iphone.blocked_services == cfg.leisure_for_resource("iphone_gabin")
-    assert snap.resources["tv"].blocked_services == frozenset()
+    assert snap.resources["tv"].blocked_services == cfg.leisure_for_resource("tv")
     assert evaluate(at(15, 40), cfg, Decisions(), ECOLE).resources[
         "iphone_gabin"].blocked_services == frozenset()
 
@@ -316,3 +325,52 @@ def test_service_exception_created_at_resource_close_is_ignored(cfg):
     ])
     snap = evaluate(at(20, 30), cfg, dec, ECOLE)
     assert snap.resources["iphone_gabin"].blocked_services == cfg.leisure_for_resource("iphone_gabin")
+
+
+def _tv_only_switch(d: dict) -> None:
+    """La TV n'a qu'un interrupteur (pas d'AdGuard) ; les loisirs de tous contiennent
+    `label:internet`."""
+    d["default_leisure"] = [*d["default_leisure"], "label:internet"]
+    d["resources"][0]["devices"] = [{"name": "TV", "integrations": [
+        {"kind": "switch", "entity_id": "switch.tv"}]}]
+
+
+def test_blocked_services_computed_without_adguard(make_cfg):
+    cfg = make_cfg(_tv_only_switch)
+    assert not cfg.resource("tv").has(ResourceKind.ADGUARD)
+    closed = evaluate(at(20, 0), cfg, Decisions(), ECOLE).resources["tv"]
+    assert "label:internet" in closed.blocked_services
+    opened = evaluate(at(15, 40), cfg, Decisions(), ECOLE).resources["tv"]
+    assert opened.open is True
+    assert "label:internet" not in opened.blocked_services
+
+
+def test_label_service_exception_on_non_adguard_resource(make_cfg):
+    cfg = make_cfg(_tv_only_switch)
+    dec = Decisions(exceptions=[
+        exc(Target(resource_id="tv", service="label:internet"), True)])
+    tv = evaluate(at(20, 0), cfg, dec, ECOLE).resources["tv"]
+    assert "label:internet" not in tv.blocked_services
+    assert tv.opened_services == frozenset()
+
+
+def _kid_with_switch_device(d: dict) -> None:
+    switch_device = copy.deepcopy(d["resources"][0])
+    switch_device.update(id="lampe_gabin", name="Lampe", owners=["gabin"])
+    switch_device["devices"] = [{"name": "Lampe", "integrations": [
+        {"kind": "switch", "entity_id": "switch.lampe"}]}]
+    d["resources"].append(switch_device)
+
+
+def test_adguard_signature_unchanged(make_cfg):
+    cfg = make_cfg(_kid_with_switch_device)
+    snap = evaluate(at(20, 0), cfg, Decisions(), ECOLE)
+    sig = rule_signature(Target(kid_id="gabin", service="youtube"), snap, cfg)
+    assert [item[0] for item in sig] == ["iphone_gabin"]
+
+
+def test_label_signature_covers_all_kid_resources(make_cfg):
+    cfg = make_cfg(_kid_with_switch_device)
+    snap = evaluate(at(20, 0), cfg, Decisions(), ECOLE)
+    sig = rule_signature(Target(kid_id="gabin", service="label:internet"), snap, cfg)
+    assert {item[0] for item in sig} == {"tv", "iphone_gabin", "switch", "lampe_gabin"}

@@ -49,7 +49,15 @@ from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TI
 from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
-from .core.model import Config, DayType, Kid, Resource, ResourceKind, SegmentType
+from .core.model import (
+    Config,
+    DayType,
+    Kid,
+    Resource,
+    ResourceKind,
+    SegmentType,
+    is_label_service,
+)
 from .core.requests import (
     RequestBook,
     RequestError,
@@ -783,7 +791,12 @@ class ParentalEngine:
             scope = [r for r in cfg.resources if target.kid_id in r.owners]
         else:
             scope = list(cfg.resources)
-        if not any(r.has(ResourceKind.ADGUARD) for r in scope):
+        # Un service par label vaut pour tout appareil ; un service AdGuard exige AdGuard.
+        if is_label_service(target.service):
+            valid = bool(scope)
+        else:
+            valid = any(r.has(ResourceKind.ADGUARD) for r in scope)
+        if not valid:
             raise _invalid("invalid_target")
 
     def _bonus_by_grant(self, cfg: Config, resource_id: str) -> bool:

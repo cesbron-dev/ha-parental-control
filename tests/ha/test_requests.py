@@ -16,6 +16,7 @@ from pytest_homeassistant_custom_component.common import (
 
 from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.decisions import Target
+from custom_components.parental_control.core.model import ResourceKind
 from custom_components.parental_control.core.requests import RequestKind
 from custom_components.parental_control.parents import trusted_phone_owners
 from custom_components.parental_control.request_listener import parse_action
@@ -644,6 +645,17 @@ async def test_request_on_demand_service_accepted(make_env, manou) -> None:
     kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
     await env.call("demander", {**kid_wide, "service": "steam"}, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 2
+
+
+async def test_request_label_service_without_adguard_accepted(make_env, manou) -> None:
+    cfg = copy.deepcopy(CONFIG)
+    cfg["default_leisure"] = [*cfg["default_leisure"], "label:internet"]
+    cfg["resources"] = [r for r in cfg["resources"] if r["id"] != "iphone_gabin"]
+    env = await _env(make_env, cfg)
+    assert not any(r.has(ResourceKind.ADGUARD) for r in env.engine.config.resources)
+    kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
+    await env.call("demander", {**kid_wide, "service": "label:internet"}, env.kid_ctx)
+    assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
 
 async def test_too_many_pending_requests_rejected(make_env, manou) -> None:
