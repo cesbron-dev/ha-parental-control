@@ -5,10 +5,11 @@ from custom_components.parental_control.core.decisions import (
     ManualException,
     Target,
 )
-from custom_components.parental_control.core.evaluator import evaluate
+from custom_components.parental_control.core.config_io import parse_config
+from custom_components.parental_control.core.evaluator import evaluate, upcoming_closures
 from custom_components.parental_control.core.label_services import switch_blocked
 from custom_components.parental_control.core.model import DayType
-from tests.core.conftest import TZ
+from tests.core.conftest import TZ, family_config_dict, mixed_tv
 
 TUESDAY = date(2026, 10, 27)
 ECOLE = {"hugo": DayType.ECOLE, "zoe": DayType.ECOLE, "alice": DayType.ECOLE}
@@ -104,3 +105,45 @@ def test_expired_exception_ignored(make_cfg):
     snap = evaluate(at(20), cfg, dec, ECOLE)
     snap = type(snap)(snap.kids, snap.resources, frozenset({"e1"}))
     assert switch_blocked(at(20), cfg, dec, snap, SVC, [("kid", "hugo")]) is True
+
+
+def test_label_exception_does_not_keep_mixed_device_on():
+    # Une exception sur un service par label ne doit pas garder allumé le lecteur ni
+    # l'interrupteur d'un appareil mixte fermé (`opened_services` : AdGuard seulement).
+    d = family_config_dict()
+    _labels(d)
+    mixed_tv(d)
+    cfg = parse_config(d)
+    dec = Decisions(exceptions=[exc(Target(kid_id="hugo", service=SVC), True)])
+    state = evaluate(at(20), cfg, dec, ECOLE).resources["tv"]
+    assert state.open is False
+    assert state.opened_services == frozenset()
+    assert SVC not in state.blocked_services
+
+
+def test_pause_ignores_opening_exceptions(make_cfg):
+    for target in (Target(kid_id="hugo", service=SVC),
+                   Target(resource_id="iphone_hugo", service=SVC),
+                   Target(service=SVC)):
+        dec = Decisions(paused=True, exceptions=[exc(target, True)])
+        assert _blocked(make_cfg, at(15, 40), [("kid", "hugo")], dec=dec) is True, target
+        assert _blocked(make_cfg, at(15, 40), [("resource", "iphone_hugo")],
+                        dec=dec) is True, target
+
+
+def test_pause_keeps_closing_exceptions_and_unmanaged(make_cfg):
+    dec = Decisions(paused=True, exceptions=[exc(Target(kid_id="hugo", service=SVC), False)])
+    assert _blocked(make_cfg, at(15, 40), [("kid", "hugo")], dec=dec) is True
+    # La pause ne touche pas un service non géré.
+    assert _blocked(make_cfg, at(15, 40), [("kid", "hugo")], dec=Decisions(paused=True),
+                    service="label:autre") is None
+    assert _blocked(make_cfg, at(15, 40), [("resource", "tv")], dec=Decisions(paused=True),
+                    service="label:autre") is None
+
+
+def test_no_closure_warning_key_for_label_services(make_cfg):
+    cfg = make_cfg(_labels)
+    dec = Decisions(exceptions=[exc(Target(resource_id="iphone_hugo", service=SVC), True,
+                                    until=at(20, 30))])
+    closures = upcoming_closures(at(20), cfg, dec, ECOLE, {})
+    assert not any(k.startswith("service:") and "label:" in k for k in closures)

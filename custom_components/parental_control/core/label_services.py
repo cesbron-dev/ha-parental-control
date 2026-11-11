@@ -29,6 +29,9 @@ def _kid_blocked(now: datetime, cfg: Config, dec: Decisions, snap: Snapshot,
         t = e.target
         if t.service != service:
             continue
+        if dec.paused and e.open:
+            # Pause : seules les exceptions fermantes s'appliquent (`_paused_resource_state`).
+            continue
         if t.kid_id == kid_id or (t.resource_id in devices) or (
                 t.kid_id is None and t.resource_id is None):
             blocked = not e.open

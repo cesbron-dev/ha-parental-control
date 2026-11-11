@@ -480,8 +480,10 @@ def _apply_exceptions(
             used_minutes=state.used_minutes,
             remaining_minutes=state.remaining_minutes,
             blocked_services=frozenset(blocked),
-            # `opened_services` ne concerne que l'adaptateur AdGuard.
-            opened_services=(frozenset(s for s, open_ in overrides.items() if open_)
+            # `opened_services` ne concerne que les services AdGuard : un service par label
+            # ouvert ne garde allumé ni le lecteur ni l'interrupteur d'un appareil fermé.
+            opened_services=(frozenset(s for s, open_ in overrides.items()
+                                       if open_ and not is_label_service(s))
                              if resource.has(ResourceKind.ADGUARD) else frozenset()),
         )
     return result
@@ -671,7 +673,9 @@ def _service_keys(cfg: Config, dec: Decisions, snap: Snapshot) -> set[str]:
         services |= {e.target.service for e in dec.exceptions  # type: ignore[misc]
                      if _service_exception_applies(e, resource)}
         blocked = snap.resources[resource.id].blocked_services
-        keys |= {f"service:{resource.id}:{s}" for s in services if s not in blocked}
+        # Pas d'avertissement de fermeture pour les services par label.
+        keys |= {f"service:{resource.id}:{s}" for s in services
+                 if s not in blocked and not is_label_service(s)}
     return keys
 
 
