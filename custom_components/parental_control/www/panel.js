@@ -754,7 +754,8 @@ class ParentalControlPanel extends HTMLElement {
 
   // Menu « Label de cible » d'un enfant ou d'un appareil (`path` : kids.N / resources.N) : les labels
   // qui ne sont ni de service ni déjà la cible d'un autre ; le label actuel est gardé même disparu.
-  _targetLabelField(entity, path) {
+  // `spaced` : marge au-dessus du champ (faux quand il est rangé dans une grille).
+  _targetLabelField(entity, path, { spaced = true } = {}) {
     if (!this._labels) return "";
     const current = entity.target_label ?? "";
     const taken = new Set([
@@ -762,7 +763,7 @@ class ParentalControlPanel extends HTMLElement {
       ...[...this._draft.kids, ...this._draft.resources].filter((e) => e !== entity).map((e) => e.target_label),
     ]);
     const known = this._labels.some((l) => l.label_id === current);
-    return `<label class="field" style="margin-top:14px"><span>Label de cible</span>
+    return `<label class="field"${spaced ? ' style="margin-top:14px"' : ""}><span>Label de cible</span>
       <select data-target-label="${path}" title="Un interrupteur portant ce label et un label de service est piloté pour cette cible">
         <option value="" ${current ? "" : "selected"}>Aucun</option>
         ${current && !known ? opt(current, `${current} (introuvable)`, current) : ""}
