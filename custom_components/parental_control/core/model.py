@@ -6,7 +6,20 @@ import datetime
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, Final
+
+
+# Préfixe des services pilotés par un label Home Assistant (« label:<label_id> »).
+LABEL_PREFIX: Final = "label:"
+
+
+def label_service_id(label_id: str) -> str:
+    """Identifiant de service associé à un label Home Assistant."""
+    return LABEL_PREFIX + label_id
+
+
+def is_label_service(service: str) -> bool:
+    return service.startswith(LABEL_PREFIX)
 
 
 class DayType(StrEnum):
@@ -66,6 +79,8 @@ class Kid:
     leisure_remove: frozenset[str]
     on_demand_add: frozenset[str] = frozenset()
     on_demand_remove: frozenset[str] = frozenset()
+    # Label HA qui désigne les interrupteurs de cet enfant.
+    target_label: str | None = None
 
     def profile_for(self, day: DayType) -> Profile:
         """Profil du jour ; congé pédagogique et vacances se replient sur la fin de semaine."""
@@ -100,6 +115,8 @@ class Resource:
     devices: tuple[PhysicalDevice, ...]
     quota_minutes: Mapping[DayType, int] = field(default_factory=dict)
     icon: str | None = None
+    # Label HA qui désigne les interrupteurs de cet appareil logique.
+    target_label: str | None = None
 
     @property
     def integrations(self) -> tuple[Integration, ...]:
@@ -128,6 +145,19 @@ class Resource:
 
 
 @dataclass(frozen=True)
+class LabelService:
+    """Label HA dont les interrupteurs sont pilotés comme un service."""
+
+    label_id: str
+    # Interrupteur allumé = service autorisé (sinon allumé = service coupé).
+    on_means_allowed: bool = False
+
+    @property
+    def service(self) -> str:
+        return label_service_id(self.label_id)
+
+
+@dataclass(frozen=True)
 class Config:
     kids: tuple[Kid, ...]
     resources: tuple[Resource, ...]
@@ -140,6 +170,8 @@ class Config:
     request_notify: tuple[str, ...] = ()
     # Propriétaire mémorisé de chaque téléphone de demandes : cible notify complète -> user_id.
     request_notify_owners: Mapping[str, str] = field(default_factory=dict)
+    # Labels HA pilotés comme des services.
+    label_services: tuple[LabelService, ...] = ()
 
     def kid(self, kid_id: str) -> Kid:
         for kid in self.kids:
@@ -152,6 +184,16 @@ class Config:
             if resource.id == resource_id:
                 return resource
         raise KeyError(resource_id)
+
+    def label_target(self, label_id: str) -> tuple[str, str] | None:
+        """Cible d'un label : `("kid", id)` ou `("resource", id)`, `None` s'il ne cible rien."""
+        for kid in self.kids:
+            if kid.target_label == label_id:
+                return ("kid", kid.id)
+        for resource in self.resources:
+            if resource.target_label == label_id:
+                return ("resource", resource.id)
+        return None
 
     def leisure_for(self, kid_id: str) -> frozenset[str]:
         kid = self.kid(kid_id)

@@ -15,6 +15,7 @@ from custom_components.parental_control.core.model import (
     Segment,
     SegmentType,
 )
+from tests.core.conftest import family_config_dict
 from tests.fixtures import EX, integration_of
 
 
@@ -356,3 +357,55 @@ def test_request_notify_owners_empty_user_rejected() -> None:
     }
     with pytest.raises(ConfigError, match=re.escape("request_notify_owners")):
         parse_config(raw)
+
+
+def test_label_fields_absent_keep_defaults():
+    d = family_config_dict()
+    cfg = parse_config(d)
+    assert cfg.label_services == ()
+    assert all(k.target_label is None for k in cfg.kids)
+    assert all(r.target_label is None for r in cfg.resources)
+    out = dump_config(cfg)
+    assert "target_label" not in str(out)
+    assert out["label_services"] == []
+
+
+def test_label_fields_roundtrip():
+    d = family_config_dict()
+    d["label_services"] = [{"label_id": "internet", "on_means_allowed": True}]
+    d["resources"][0]["target_label"] = "tablette_mael"
+    d["kids"][2]["target_label"] = "mael"
+    cfg = parse_config(d)
+    assert cfg.label_services[0].service == "label:internet"
+    assert cfg.label_services[0].on_means_allowed is True
+    assert cfg.label_target("mael") == ("kid", "mael")
+    assert cfg.label_target("tablette_mael") == ("resource", d["resources"][0]["id"])
+    assert cfg.label_target("inconnu") is None
+    out = dump_config(cfg)
+    assert out["label_services"] == d["label_services"]
+    assert out["kids"][2]["target_label"] == "mael"
+    assert out["resources"][0]["target_label"] == "tablette_mael"
+    assert parse_config(out) == cfg
+
+
+def test_label_both_service_and_target_rejected():
+    d = family_config_dict()
+    d["label_services"] = [{"label_id": "internet"}]
+    d["kids"][0]["target_label"] = "internet"
+    with pytest.raises(ConfigError, match=r"^label_services"):
+        parse_config(d)
+
+
+def test_target_label_used_twice_rejected():
+    d = family_config_dict()
+    d["kids"][0]["target_label"] = "partage"
+    d["resources"][0]["target_label"] = "partage"
+    with pytest.raises(ConfigError, match="partage"):
+        parse_config(d)
+
+
+def test_label_service_duplicate_rejected():
+    d = family_config_dict()
+    d["label_services"] = [{"label_id": "internet"}, {"label_id": "internet"}]
+    with pytest.raises(ConfigError, match=r"label_services\[1\]"):
+        parse_config(d)
