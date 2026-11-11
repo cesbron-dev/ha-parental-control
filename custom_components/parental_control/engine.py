@@ -221,7 +221,7 @@ class ParentalEngine:
                 "entity_id": ls.entity_id,
                 "name": self._switch_name(ls.entity_id),
                 "service": ls.service,
-                "service_name": self._label_service_name(ls.service),
+                "service_name": self.label_service_name(ls.service),
                 "targets": [{"kind": kind, "id": ident} for kind, ident in ls.targets],
                 "blocked": self._label_blocked.get(ls.entity_id),
                 "state": None if state is None else state.state,
@@ -235,13 +235,14 @@ class ParentalEngine:
             {
                 "entity_id": i.entity_id,
                 "service": i.service,
-                "service_name": self._label_service_name(i.service),
+                "service_name": self.label_service_name(i.service),
                 "problem": i.problem,
             }
             for i in self._label_issues
         ]
 
-    def _label_service_name(self, service: str) -> str:
+    def label_service_name(self, service: str) -> str:
+        """Nom d'un service par label : celui du label dans le registre."""
         return label_name(self._hass, service.removeprefix(LABEL_PREFIX))
 
     def _switch_name(self, entity_id: str) -> str:
@@ -385,7 +386,7 @@ class ParentalEngine:
             self._label_reported.add(key)
             _LOGGER.warning(
                 "%s ignoré (%s)",
-                " : ".join(filter(None, (issue.entity_id, self._label_service_name(issue.service)))),
+                " : ".join(filter(None, (issue.entity_id, self.label_service_name(issue.service)))),
                 self._issue_text(issue.problem),
             )
         if entity_ids:
@@ -596,7 +597,7 @@ class ParentalEngine:
                     what = "bloquer" if blocked else "autoriser"
                     self._record_simulation(
                         name,
-                        f"{name} : {verb} ({what} {self._label_service_name(ls.service)})",
+                        f"{name} : {verb} ({what} {self.label_service_name(ls.service)})",
                     )
                 continue
             if drifted:

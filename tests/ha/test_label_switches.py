@@ -327,6 +327,9 @@ async def test_state_exposes_label_services(hass, freezer, services) -> None:
     config["kids"][0]["on_demand_add"] = ["label:ecran"]
     config["kids"][0]["leisure_add"] = []
     config["resources"][0]["target_label"] = "tele"  # « tv »
+    # Service par label déclaré sans aucun interrupteur : nommé quand même.
+    lr.async_get(hass).async_create("Console")
+    config["label_services"].append({"label_id": "console", "on_means_allowed": False})
     engine = await start(hass, freezer, services, BLOCKED, config)
     # Un second interrupteur vise l'appareil.
     registry = er.async_get(hass)
@@ -340,5 +343,5 @@ async def test_state_exposes_label_services(hass, freezer, services) -> None:
     assert data["kids"]["gabin"]["on_demand"] == ["label:ecran"]
     assert data["resources"]["tv"]["label_services"] == ["label:ecran"]
     assert data["resources"]["iphone_gabin"]["label_services"] == []
-    assert data["service_names"] == {"label:ecran": "Écran"}
+    assert data["service_names"] == {"label:ecran": "Écran", "label:console": "Console"}
     assert "label_services" not in serialize_snapshot(engine)["kids"]["gabin"]
