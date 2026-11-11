@@ -55,7 +55,7 @@ function servicesField(state, config) {
     name: "services",
     label: "Services affichés",
     helper: "Aucun coché : tous les services sur demande de l'appareil",
-    selector: { select: { multiple: true, mode: "list", options: withCurrent(ids.map((s) => ({ value: s, label: serviceLabel(s) })), config?.services) } },
+    selector: { select: { multiple: true, mode: "list", options: withCurrent(ids.map((s) => ({ value: s, label: serviceLabel(s, state?.service_names) })), config?.services) } },
   };
 }
 
@@ -92,7 +92,7 @@ export function editorSchema(card, state, config) {
       { name: "show_services", label: "Afficher les services sur demande", helper: "Bascules autoriser / bloquer sur tous ses appareils AdGuard", selector: { boolean: {} } },
       {
         name: "services", label: "Services affichés", helper: "Aucun coché : tous ses services sur demande",
-        selector: { select: { multiple: true, mode: "list", options: withCurrent(kidOnDemand.map((s) => ({ value: s, label: serviceLabel(s) })), config?.services) } },
+        selector: { select: { multiple: true, mode: "list", options: withCurrent(kidOnDemand.map((s) => ({ value: s, label: serviceLabel(s, state?.service_names) })), config?.services) } },
       },
       { name: "show_bonus", label: "Afficher les bonus de temps d'écran", helper: "Seulement les jours où l'enfant a un quota", selector: { boolean: {} } },
       BONUS_FIELD,

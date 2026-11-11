@@ -109,3 +109,14 @@ test("kid card: kid choice, sections shown by default, the kid's on-demand servi
   assert.deepEqual(editorConfig({ type: "t", kid: "mael" }, { show_timeline: true, show_services: true, show_bonus: false }),
     { type: "t", kid: "mael", show_bonus: false });
 });
+
+test("services fields name label services from state.service_names", () => {
+  const s = {
+    service_names: { "label:internet": "Internet" },
+    kids: { mael: { name: "Maël" } },
+    resources: { ipad: { name: "iPad", owners: ["mael"], kind: "adguard_services", kinds: ["adguard_services"], on_demand: ["label:internet"] } },
+  };
+  const label = (schema) => schema.find((f) => f.name === "services").selector.select.options[0].label;
+  assert.equal(label(editorSchema("resource", s, { resource: "ipad" })), "Internet");
+  assert.equal(label(editorSchema("kid", s, { kid: "mael" })), "Internet");
+});

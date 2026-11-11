@@ -593,3 +593,41 @@ test("kidServiceToggles includes kid-targeted label service", async () => {
   assert.equal(kidServiceToggles(state, "mael").find((x) => x.service === "label:tablette").open, true);
   assert.deepEqual(kidServiceToggles(state, "mael", ["label:tablette"]).map((x) => x.service), ["label:tablette"]);
 });
+
+test("kidServiceToggles: label service exceptions include non-AdGuard devices of the kid", async () => {
+  const { kidServiceToggles } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    kids: { mael: { on_demand: ["label:tablette"], label_services: [{ service: "label:tablette", blocked: false }] } },
+    resources: {
+      tablette: { owners: ["mael"], kinds: ["media_player"], on_demand: ["label:tablette"], label_services: ["label:tablette"], blocked_services: [] },
+      tv_leo: { owners: ["leo"], kinds: ["media_player"], on_demand: [], blocked_services: [] },
+    },
+    exceptions: [
+      { id: "a", open: true, target: { resource_id: "tablette", service: "label:tablette" } },
+      { id: "b", open: true, target: { kid_id: "mael", service: "label:tablette" } },
+      { id: "c", open: true, target: { resource_id: "tv_leo", service: "label:tablette" } },
+    ],
+  };
+  const [t] = kidServiceToggles(state, "mael");
+  assert.equal(t.open, true);
+  assert.deepEqual(t.exceptions, ["a", "b"]);
+});
+
+test("allowChoices: AdGuard services, label services of the device, names from state", async () => {
+  const { allowChoices } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    service_names: { "label:internet": "Internet" },
+    resources: {
+      tablette: { kinds: ["media_player"], on_demand: ["label:internet", "netflix"], leisure: ["youtube", "label:jeux"], label_services: ["label:internet"] },
+      ipad: { kinds: ["adguard_services"], on_demand: ["tiktok", "label:internet"], leisure: ["youtube", "tiktok"], label_services: [] },
+      tv: { kinds: ["media_player"], on_demand: [], leisure: [] },
+    },
+  };
+  assert.deepEqual(allowChoices(state, "tablette"), [
+    { value: null, label: "Tout l'appareil" },
+    { value: "label:internet", label: "Internet (sur demande)" },
+  ]);
+  assert.deepEqual(allowChoices(state, "ipad").map((c) => c.value), [null, "tiktok", "youtube"]);
+  assert.deepEqual(allowChoices(state, "tv"), [{ value: null, label: "Tout l'appareil" }]);
+  assert.deepEqual(allowChoices(state, "inconnu"), [{ value: null, label: "Tout l'appareil" }]);
+});

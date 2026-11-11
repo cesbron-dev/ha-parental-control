@@ -36,6 +36,9 @@ export function fmtDuration(minutes) {
   return `${Math.floor(total / 60)}h ${pad(total % 60)}m`;
 }
 
+// Préfixe des services par label (`label:<label_id>`), comme `LABEL_PREFIX` côté moteur.
+const LABEL_PREFIX = "label:";
+
 // `names` : noms des services par label (`state.service_names`), absents de SERVICES.
 export function serviceLabel(id, names = null) {
   if (names?.[id]) return names[id];
@@ -263,6 +266,25 @@ export function serviceToggles(state, resourceId, only = null) {
   }));
 }
 
+// Choix du dialogue « Autoriser… » d'un appareil : l'appareil entier, puis ses services (sur
+// demande d'abord : ils ne s'ouvrent que par une autorisation, puis loisirs). Même filtre que
+// `serviceToggles` : un appareil AdGuard propose tous ses services, les services par label ne
+// sont proposés que s'ils visent l'appareil (`label_services`), avec ou sans AdGuard.
+export function allowChoices(state, resourceId) {
+  const choices = [{ value: null, label: "Tout l'appareil" }];
+  const r = state?.resources?.[resourceId];
+  if (!r) return choices;
+  const adguard = (r.kinds ?? [r.kind]).includes("adguard_services");
+  const labelled = r.label_services ?? [];
+  const shown = (s) => adguard ? !String(s).startsWith(LABEL_PREFIX) || labelled.includes(s) : labelled.includes(s);
+  const onDemand = (r.on_demand ?? []).filter(shown);
+  for (const s of onDemand) choices.push({ value: s, label: `${serviceLabel(s, state.service_names)} (sur demande)` });
+  for (const s of (r.leisure ?? []).filter(shown)) {
+    if (!onDemand.includes(s)) choices.push({ value: s, label: serviceLabel(s, state.service_names) });
+  }
+  return choices;
+}
+
 // Appareils AdGuard d'un enfant (il en est propriétaire), ids triés.
 function kidAdguardResources(state, kidId) {
   return Object.entries(state?.resources ?? {})
@@ -271,12 +293,17 @@ function kidAdguardResources(state, kidId) {
     .sort();
 }
 
-// Services sur demande d'un enfant (réunis sur ses appareils AdGuard) avec leur état : débloqué si
-// aucun de ses appareils qui le gèrent ne le bloque. `exceptions` : exceptions de ce service qui
-// visent l'enfant ou un de ses appareils (annulées lors d'une bascule) ; `openedElsewhere` : une
-// exception globale l'ouvre (bloquer demande alors une fermeture pour l'enfant).
+// Services sur demande d'un enfant (réunis sur ses appareils AdGuard, plus ses services par label)
+// avec leur état : débloqué si aucun de ses appareils qui le gèrent ne le bloque et si le moteur
+// ne le bloque pas pour l'enfant. `exceptions` : exceptions de ce service qui visent l'enfant ou un
+// de ses appareils (AdGuard ; pour un service par label, n'importe lequel de ses appareils),
+// annulées lors d'une bascule ; `openedElsewhere` : une exception globale l'ouvre (bloquer
+// demande alors une fermeture pour l'enfant).
 export function kidServiceToggles(state, kidId, only = null) {
   const resources = kidAdguardResources(state, kidId);
+  const owned = Object.entries(state?.resources ?? {})
+    .filter(([, r]) => (r.owners ?? []).includes(kidId))
+    .map(([id]) => id);
   const holders = new Map(); // service -> appareils qui le gèrent sur demande
   for (const id of resources) {
     for (const s of state.resources[id].on_demand ?? []) {
@@ -291,20 +318,23 @@ export function kidServiceToggles(state, kidId, only = null) {
     .map((l) => [l.service, l.blocked]));
   const all = [...new Set([...holders.keys(), ...labelled.keys()])];
   const ids = Array.isArray(only) && only.length ? only.filter((s) => holders.has(s) || labelled.has(s)) : all;
-  return ids.map((service) => ({
-    service,
-    label: serviceLabel(service, state.service_names),
-    open: labelled.has(service) && !holders.has(service)
-      ? !labelled.get(service)
-      : (holders.get(service) ?? []).every((id) => !(state.resources[id].blocked_services ?? []).includes(service))
-        && !labelled.get(service),
-    exceptions: (state.exceptions ?? [])
-      .filter((e) => e.target?.service === service
-        && (e.target.kid_id === kidId || resources.includes(e.target.resource_id)))
-      .map((e) => e.id),
-    openedElsewhere: (state.exceptions ?? []).some((e) => e.open && e.target?.service === service
-      && !e.target.kid_id && !e.target.resource_id),
-  }));
+  return ids.map((service) => {
+    const openOnDevices = (holders.get(service) ?? [])
+      .every((id) => !(state.resources[id].blocked_services ?? []).includes(service));
+    const blockedForKid = labelled.get(service) === true;
+    const devices = String(service).startsWith(LABEL_PREFIX) ? owned : resources;
+    return {
+      service,
+      label: serviceLabel(service, state.service_names),
+      open: openOnDevices && !blockedForKid,
+      exceptions: (state.exceptions ?? [])
+        .filter((e) => e.target?.service === service
+          && (e.target.kid_id === kidId || devices.includes(e.target.resource_id)))
+        .map((e) => e.id),
+      openedElsewhere: (state.exceptions ?? []).some((e) => e.open && e.target?.service === service
+        && !e.target.kid_id && !e.target.resource_id),
+    };
+  });
 }
 
 // Autorisations en cours qui touchent un enfant, pour ses pilules (formatPill) : libellé selon la
