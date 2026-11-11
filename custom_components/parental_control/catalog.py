@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from homeassistant.core import HomeAssistant
-
 from homeassistant.helpers import label_registry as lr
 
 from .adapters.adguard import ADGUARD_DOMAIN
