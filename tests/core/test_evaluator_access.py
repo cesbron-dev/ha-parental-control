@@ -174,8 +174,7 @@ def test_pause_beats_everything(cfg):
     assert snap.resources["iphone_gabin"].blocked_services == (
         cfg.leisure_for_resource("iphone_gabin") | {"fortnite"}
     )
-    # Les services sont calculés pour toute ressource (loisirs d'abord, pas d'exception de tv).
-    assert snap.resources["tv"].blocked_services == cfg.leisure_for_resource("tv")
+    assert snap.resources["tv"].blocked_services == frozenset()
 
 
 def test_adguard_blocked_services_are_leisure_only(cfg):
@@ -183,7 +182,7 @@ def test_adguard_blocked_services_are_leisure_only(cfg):
     iphone = snap.resources["iphone_gabin"]
     assert iphone.open is False
     assert iphone.blocked_services == cfg.leisure_for_resource("iphone_gabin")
-    assert snap.resources["tv"].blocked_services == cfg.leisure_for_resource("tv")
+    assert snap.resources["tv"].blocked_services == frozenset()
     assert evaluate(at(15, 40), cfg, Decisions(), ECOLE).resources[
         "iphone_gabin"].blocked_services == frozenset()
 
@@ -374,3 +373,9 @@ def test_label_signature_covers_all_kid_resources(make_cfg):
     snap = evaluate(at(20, 0), cfg, Decisions(), ECOLE)
     sig = rule_signature(Target(kid_id="gabin", service="label:internet"), snap, cfg)
     assert {item[0] for item in sig} == {"tv", "iphone_gabin", "switch", "lampe_gabin"}
+
+
+def test_adguard_service_exception_ignored_on_non_adguard_resource(cfg):
+    dec = Decisions(exceptions=[exc(Target(resource_id="tv", service="youtube"), False)])
+    tv = evaluate(at(15, 40), cfg, dec, ECOLE).resources["tv"]
+    assert tv.blocked_services == frozenset()

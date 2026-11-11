@@ -338,6 +338,9 @@ def _resource_state(cfg: Config, resource: Resource, *, open_: bool, reason: str
     blocked = cfg.on_demand_for_resource(resource.id)
     if not open_:
         blocked |= cfg.leisure_for_resource(resource.id)
+    if not resource.has(ResourceKind.ADGUARD):
+        # Sans AdGuard, seuls les services par label ont un sens (état publié inchangé).
+        blocked = frozenset(s for s in blocked if is_label_service(s))
     return ResourceState(
         open=open_,
         reason=reason,
@@ -415,6 +418,8 @@ def _is_resource_exception(e: ManualException) -> bool:
 def _service_exception_applies(e: ManualException, resource: Resource) -> bool:
     target = e.target
     if target.service is None:
+        return False
+    if not (resource.has(ResourceKind.ADGUARD) or is_label_service(target.service)):
         return False
     if target.resource_id is not None:
         return target.resource_id == resource.id
