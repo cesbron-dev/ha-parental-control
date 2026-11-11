@@ -194,6 +194,22 @@ async def test_adguard_blocks_only_leisure_services(hass: HomeAssistant, fake) -
     assert not adapter.in_use()
 
 
+async def test_adguard_adapter_ignores_label_services(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked([])
+    adapter = AdGuardAdapter(
+        hass, "iPhone Hugo", {"device_id": fake.device_id},
+        frozenset({"youtube", "label:internet"}),
+    )
+    desired = state(False, frozenset({"youtube", "label:internet"}))
+    assert adapter.drifted(desired)
+    await adapter.apply(desired)
+
+    assert len(fake.calls) == 1
+    assert fake.blocks() == ["youtube"]
+    assert fake.unblocks() == []
+    assert not adapter.drifted(desired)
+
+
 async def test_adguard_unblocks_when_open(hass: HomeAssistant, fake) -> None:
     fake.set_blocked(["youtube", "roblox", "khanacademy"])
     adapter = adguard(hass, fake)

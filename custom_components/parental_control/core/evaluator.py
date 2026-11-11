@@ -36,6 +36,7 @@ from .model import (
     ResourceKind,
     ResourceMode,
     SegmentType,
+    is_label_service,
 )
 
 
@@ -331,12 +332,12 @@ def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
 
 def _resource_state(cfg: Config, resource: Resource, *, open_: bool, reason: str,
                     until: datetime | None) -> ResourceState:
-    blocked: frozenset[str] = frozenset()
-    if resource.has(ResourceKind.ADGUARD):
-        # Les services sur demande restent bloqués même ouverte ; seule une exception les ouvre.
-        blocked = cfg.on_demand_for_resource(resource.id)
-        if not open_:
-            blocked |= cfg.leisure_for_resource(resource.id)
+    # Calculé pour toute ressource, AdGuard ou non : les services par label (interrupteurs)
+    # en dépendent. Les services sur demande restent bloqués même ouverte ; seule une
+    # exception les ouvre.
+    blocked = cfg.on_demand_for_resource(resource.id)
+    if not open_:
+        blocked |= cfg.leisure_for_resource(resource.id)
     return ResourceState(
         open=open_,
         reason=reason,
@@ -413,7 +414,7 @@ def _is_resource_exception(e: ManualException) -> bool:
 
 def _service_exception_applies(e: ManualException, resource: Resource) -> bool:
     target = e.target
-    if target.service is None or not resource.has(ResourceKind.ADGUARD):
+    if target.service is None:
         return False
     if target.resource_id is not None:
         return target.resource_id == resource.id
@@ -442,7 +443,7 @@ def _apply_exceptions(
     now: datetime, cfg: Config, dec: Decisions, states: Mapping[str, ResourceState],
     ignored: frozenset[str] = frozenset(),
 ) -> dict[str, ResourceState]:
-    """Exceptions de ressource d'abord, puis exceptions de service (AdGuard)."""
+    """Exceptions de ressource d'abord, puis exceptions de service."""
     exceptions = _active_exceptions(now, dec, ignored)
     result = dict(states)
     closed_at: dict[str, datetime] = {}  # ressource -> dernière fermeture manuelle
@@ -474,7 +475,9 @@ def _apply_exceptions(
             used_minutes=state.used_minutes,
             remaining_minutes=state.remaining_minutes,
             blocked_services=frozenset(blocked),
-            opened_services=frozenset(s for s, open_ in overrides.items() if open_),
+            # `opened_services` ne concerne que l'adaptateur AdGuard.
+            opened_services=(frozenset(s for s, open_ in overrides.items() if open_)
+                             if resource.has(ResourceKind.ADGUARD) else frozenset()),
         )
     return result
 
@@ -499,7 +502,7 @@ def rule_signature(target: Target, snap: Snapshot, cfg: Config) -> tuple:
         state = snap.resources[resource.id]
         if target.service is None:
             items.append((resource.id, None, state.open))
-        elif resource.has(ResourceKind.ADGUARD):
+        elif resource.has(ResourceKind.ADGUARD) or is_label_service(target.service):
             # Un service sur demande est toujours bloqué par la règle : « jusqu'au prochain
             # changement » suit alors l'ouverture de l'appareil (changement de plage).
             open_ = (state.open if target.service in cfg.on_demand_for_resource(resource.id)
@@ -529,7 +532,7 @@ def _paused_resource_state(now: datetime, cfg: Config, dec: Decisions, resource:
                            apply_exceptions: bool) -> ResourceState:
     """Pause : tout fermé ; les services fermés par exception restent bloqués en plus."""
     state = _resource_state(cfg, resource, open_=False, reason="Écrans en pause", until=None)
-    if not apply_exceptions or not resource.has(ResourceKind.ADGUARD):
+    if not apply_exceptions:
         return state
     closed = {s for s, open_ in _service_overrides(
         _active_exceptions(now, dec), resource).items() if not open_}

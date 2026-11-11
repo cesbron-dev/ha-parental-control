@@ -16,6 +16,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from ..core.evaluator import ResourceState
+from ..core.model import is_label_service
 from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +42,8 @@ class AdGuardAdapter:
         self.hass = hass
         self.label = label  # nom de l'appareil physique
         self._device_id: str = options["device_id"]
-        self._leisure = leisure
+        # Les services par label (interrupteurs) ne concernent pas AdGuard.
+        self._leisure = frozenset(s for s in leisure if not is_label_service(s))
         self._sensor: str | None = None
         self._missing_logged = False
         self._global_logged = False
@@ -102,7 +104,11 @@ class AdGuardAdapter:
 
     def drifted(self, desired: ResourceState) -> bool:
         current = self._blocked_now()
-        return current is not None and not desired.blocked_services <= current
+        return current is not None and not self._wanted(desired) <= current
+
+    @staticmethod
+    def _wanted(desired: ResourceState) -> frozenset[str]:
+        return frozenset(s for s in desired.blocked_services if not is_label_service(s))
 
     def _plan(
         self, desired: ResourceState
@@ -111,9 +117,10 @@ class AdGuardAdapter:
         current = self._blocked_now()
         if current is None:
             return None
+        wanted = self._wanted(desired)
         released = self._leisure | self._extra_blocked
-        released -= desired.blocked_services
-        block = sorted(desired.blocked_services - current)
+        released -= wanted
+        block = sorted(wanted - current)
         unblock = sorted(released & current)
         # déjà débloqué (à la main ou ailleurs) : plus à gérer
         return block, unblock, released - current
