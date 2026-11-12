@@ -321,3 +321,38 @@ def test_request_notify_defaults_empty() -> None:
 def test_request_notify_must_be_strings() -> None:
     with pytest.raises(ConfigError, match=re.escape("request_notify")):
         parse_config(EX | {"request_notify": [3]})
+
+
+def test_request_notify_owners_round_trip() -> None:
+    raw = EX | {
+        "request_notify": ["notify.mobile_app_ipad"],
+        "request_notify_owners": {"notify.mobile_app_ipad": "u1"},
+    }
+    cfg = parse_config(raw)
+    assert cfg.request_notify_owners == {"notify.mobile_app_ipad": "u1"}
+    assert dump_config(cfg)["request_notify_owners"] == {"notify.mobile_app_ipad": "u1"}
+    assert parse_config(dump_config(cfg)) == cfg
+
+
+def test_request_notify_owners_absent_defaults_empty() -> None:
+    assert parse_config(EX).request_notify_owners == {}
+    # Toujours écrite, même vide : sa présence marque la migration des téléphones comme faite.
+    assert dump_config(parse_config(EX))["request_notify_owners"] == {}
+
+
+def test_request_notify_owners_unknown_target_rejected() -> None:
+    raw = EX | {
+        "request_notify": ["notify.mobile_app_ipad"],
+        "request_notify_owners": {"notify.mobile_app_autre": "u1"},
+    }
+    with pytest.raises(ConfigError, match=r"^request_notify_owners"):
+        parse_config(raw)
+
+
+def test_request_notify_owners_empty_user_rejected() -> None:
+    raw = EX | {
+        "request_notify": ["notify.mobile_app_ipad"],
+        "request_notify_owners": {"notify.mobile_app_ipad": ""},
+    }
+    with pytest.raises(ConfigError, match=re.escape("request_notify_owners")):
+        parse_config(raw)

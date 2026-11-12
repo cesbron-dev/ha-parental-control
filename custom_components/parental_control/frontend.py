@@ -52,7 +52,8 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         else:
             hass.data[_PATH_REGISTERED] = True
     if not hass.data.get(_PANEL_REGISTERED):
-        # Panneau d'édition des règles, réservé aux admins (config/get et config/set le sont aussi).
+        # Panneau d'édition des règles, visible de tous : HA ne sait pas le réserver aux parents
+        # non admins. config/get, config/set et services/catalog le refusent aux non-parents.
         await panel_custom.async_register_panel(
             hass,
             frontend_url_path=PANEL_URL_PATH,
@@ -60,7 +61,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
             sidebar_title="Règles",
             sidebar_icon="mdi:shield-edit",
             module_url=f"{_URL_BASE}/panel.js",
-            require_admin=True,
+            require_admin=False,
         )
         hass.data[_PANEL_REGISTERED] = True
     if not hass.data.get(_REQUESTS_PANEL_REGISTERED):

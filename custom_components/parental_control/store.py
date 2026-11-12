@@ -26,6 +26,10 @@ class ParentalStore:
         self._hass = hass
         self._config_store: Store[dict] = Store(hass, STORE_VERSION, f"{DOMAIN}.config")
         self._state_store: Store[dict] = Store(hass, STORE_VERSION, f"{DOMAIN}.state")
+        # Vrai si la configuration chargée était à l'ancien format (sans la clé
+        # `request_notify_owners`) : l'association automatique des téléphones est à faire, une
+        # seule fois. Faux dès qu'une configuration est enregistrée (`dump_config` écrit la clé).
+        self.owners_migration_pending = False
 
     async def load(self) -> tuple[Config | None, Decisions]:
         """Config (None si jamais enregistrée ou invalide) et décisions (vides par défaut)."""
@@ -39,6 +43,7 @@ class ParentalStore:
         if raw_cfg is not None:
             try:
                 cfg = parse_config(raw_cfg)
+                self.owners_migration_pending = "request_notify_owners" not in raw_cfg
             except ConfigError as err:
                 # Les décisions restent valables : une config corrigée les retrouvera.
                 _LOGGER.error("Configuration enregistrée invalide, moteur inactif : %s", err)
@@ -52,6 +57,7 @@ class ParentalStore:
 
     async def save_config(self, cfg: Config) -> None:
         await self._config_store.async_save(dump_config(cfg))
+        self.owners_migration_pending = False
 
     async def save_state(self, dec: Decisions) -> None:
         """Écriture différée d'1 s : les rafales de changements sont regroupées."""

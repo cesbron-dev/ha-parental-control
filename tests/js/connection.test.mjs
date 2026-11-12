@@ -1,7 +1,7 @@
 // Tests de connection.js avec une fausse connexion Home Assistant.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { subscribeState, callAction } from "../../custom_components/parental_control/www/connection.js";
+import { subscribeState, callAction, fetchWhoami } from "../../custom_components/parental_control/www/connection.js";
 
 function fakeHass() {
   const subs = [];
@@ -87,4 +87,29 @@ test("après un échec de souscription, un nouvel appel réessaie", async () => 
   assert.equal(hass.subs.length, 1);
   hass.subs[0].cb({ n: 1 });
   assert.deepEqual(got, [{ n: 1 }]);
+});
+
+test("fetchWhoami met en cache 60 s par connexion, erreur => null", async () => {
+  const mk = (impl) => {
+    const msgs = [];
+    return { msgs, connection: { sendMessagePromise: async (m) => { msgs.push(m); return impl(); } } };
+  };
+  const hass = mk(async () => ({ admin: false, parent: true, user_id: "u" }));
+  const a = fetchWhoami(hass);
+  const b = fetchWhoami(hass);
+  assert.deepEqual(await a, { admin: false, parent: true, user_id: "u" });
+  assert.deepEqual(await b, { admin: false, parent: true, user_id: "u" });
+  assert.equal(hass.msgs.length, 1);
+  assert.deepEqual(hass.msgs[0], { type: "parental_control/whoami" });
+  const realNow = Date.now;
+  try {
+    const t = realNow();
+    Date.now = () => t + 61000;
+    await fetchWhoami(hass);
+    assert.equal(hass.msgs.length, 2);
+  } finally {
+    Date.now = realNow;
+  }
+  const bad = mk(async () => { throw new Error("boom"); });
+  assert.equal(await fetchWhoami(bad), null);
 });

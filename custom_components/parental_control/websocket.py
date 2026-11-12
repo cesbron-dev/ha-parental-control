@@ -1,4 +1,4 @@
-"""API WebSocket : configuration et état, pour les cartes ; demandes, pour l'écran « Demandes »."""
+"""API WebSocket : droits, configuration (parents) et état pour les cartes ; demandes."""
 
 from __future__ import annotations
 
@@ -11,10 +11,10 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
-from .core.config_io import ConfigError, dump_config, parse_config
+from .core.config_io import ConfigError, dump_config, parse_client_config
 from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
-from .request_listener import parent_user_ids
+from .parents import bind_owners, is_parent, phone_status, trusted_phone_owners
 from .serialize import serialize_requests, serialize_snapshot
 
 _REGISTERED = f"{DOMAIN}_websocket_registered"
@@ -26,6 +26,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     if hass.data.get(_REGISTERED):
         return
     hass.data[_REGISTERED] = True
+    websocket_api.async_register_command(hass, ws_whoami)
     websocket_api.async_register_command(hass, ws_config_get)
     websocket_api.async_register_command(hass, ws_config_set)
     websocket_api.async_register_command(hass, ws_services_catalog)
@@ -45,30 +46,79 @@ def _engine(
     return entries[0].runtime_data
 
 
+async def _require_parent(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    engine: ParentalEngine,
+) -> bool:
+    """Parent (`parents.is_parent`, évalué sur la config courante) ; sinon erreur envoyée.
+
+    La config expose les appareils et les cibles de notification : rien aux non-parents.
+    """
+    if await is_parent(hass, engine.config, connection.user.id):
+        return True
+    connection.send_error(msg["id"], "unauthorized", "Réservé aux parents")
+    return False
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/whoami"})
+@websocket_api.async_response
+async def ws_whoami(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Droits de l'utilisateur de la connexion, pour les cartes et le panneau (ouvert à tous)."""
+    entries = hass.config_entries.async_loaded_entries(DOMAIN)
+    cfg = entries[0].runtime_data.config if entries else None
+    user = connection.user
+    connection.send_result(
+        msg["id"],
+        {
+            "admin": user.is_admin,
+            "parent": await is_parent(hass, cfg, user.id),
+            "user_id": user.id,
+        },
+    )
+
+
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/config/get"})
-@websocket_api.require_admin
-@callback
-def ws_config_get(
+@websocket_api.async_response
+async def ws_config_get(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     if (engine := _engine(hass, connection, msg)) is None:
         return
+    if not await _require_parent(hass, connection, msg, engine):
+        return
     cfg = engine.config
-    connection.send_result(msg["id"], {"config": None if cfg is None else dump_config(cfg)})
+    connection.send_result(
+        msg["id"],
+        {
+            "config": None if cfg is None else dump_config(cfg),
+            "phones": {} if cfg is None else await phone_status(hass, cfg),
+        },
+    )
 
 
 @websocket_api.websocket_command(
-    {vol.Required("type"): f"{DOMAIN}/config/set", vol.Required("config"): dict}
+    {
+        vol.Required("type"): f"{DOMAIN}/config/set",
+        vol.Required("config"): dict,
+        # Téléphones à réassocier au compte actuel de leur appareil (pas une clé de config).
+        vol.Optional("rebind", default=[]): [str],
+    }
 )
-@websocket_api.require_admin
 @websocket_api.async_response
 async def ws_config_set(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
     if (engine := _engine(hass, connection, msg)) is None:
         return
+    if not await _require_parent(hass, connection, msg, engine):
+        return
     try:
-        cfg = parse_config(msg["config"])
+        # Propriétaires des téléphones déterminés par le serveur, jamais repris du client.
+        cfg = bind_owners(hass, parse_client_config(msg["config"]), engine.config, msg["rebind"])
     except ConfigError as err:
         connection.send_error(msg["id"], "invalid_config", str(err))
         return
@@ -77,11 +127,14 @@ async def ws_config_set(
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/services/catalog"})
-@websocket_api.require_admin
-@callback
-def ws_services_catalog(
+@websocket_api.async_response
+async def ws_services_catalog(
     hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
 ) -> None:
+    if (engine := _engine(hass, connection, msg)) is None:
+        return
+    if not await _require_parent(hass, connection, msg, engine):
+        return
     connection.send_result(msg["id"], {"services": services_catalog(hass)})
 
 
@@ -119,10 +172,10 @@ def ws_state_subscribe(
     push()
 
 
-def _is_parent(hass: HomeAssistant, engine: ParentalEngine, user_id: str) -> bool:
-    """Même règle que la réponse par notification : propriétaire d'un téléphone de la liste."""
-    cfg = engine.config
-    return cfg is not None and user_id in parent_user_ids(hass, cfg.request_notify)
+def _can_answer(hass: HomeAssistant, engine: ParentalEngine, user_id: str) -> bool:
+    """Même règle que la réponse par notification : propriétaire reconnu d'un téléphone de
+    la liste (`parents.trusted_phone_owners`). Être administrateur ne suffit pas."""
+    return user_id in trusted_phone_owners(hass, engine.config)
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/requests/subscribe"})
@@ -142,7 +195,7 @@ def ws_requests_subscribe(
             return
         engine = entries[0].runtime_data
         # Recalculé à chaque envoi : la liste des téléphones a pu changer.
-        payload = serialize_requests(engine, can_answer=_is_parent(hass, engine, user_id))
+        payload = serialize_requests(engine, can_answer=_can_answer(hass, engine, user_id))
         connection.send_message(websocket_api.event_message(msg_id, payload))
 
     connection.subscriptions[msg_id] = async_dispatcher_connect(hass, SIGNAL_UPDATE, push)
@@ -165,7 +218,7 @@ async def ws_requests_answer(
     if (engine := _engine(hass, connection, msg)) is None:
         return
     user_id = connection.user.id
-    if not _is_parent(hass, engine, user_id):
+    if not _can_answer(hass, engine, user_id):
         connection.send_error(
             msg["id"], "unauthorized", "Seul un parent de la liste des demandes peut répondre"
         )

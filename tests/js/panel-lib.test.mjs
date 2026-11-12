@@ -227,7 +227,7 @@ test("isDirty", () => {
 
 test("emptyConfig : brouillon v2 d'une nouvelle installation, prêt à recevoir un appareil", () => {
   const cfg = emptyConfig();
-  assert.deepEqual(cfg, { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], kids: [], resources: [] });
+  assert.deepEqual(cfg, { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], request_notify_owners: {}, kids: [], resources: [] });
   const res = addResource(cfg, "Télé");
   addIntegration(res.devices[0], "media_player");
   assert.equal(cfg.version, 2);
@@ -546,3 +546,75 @@ test("Notification services: menu choices with mobile_app device names", () => {
     "notify.mobile_app_inconnu", "notify.persistent_notification",
   ]);
 });
+
+test("Phone badge: label and tone for each status", () => {
+  assert.deepEqual(lib.phoneBadge("ok"), { label: "Associé", tone: "ok" });
+  assert.deepEqual(lib.phoneBadge("unbound"), { label: "À associer", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("missing"), { label: "Appareil introuvable", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("changed"), { label: "Changé de compte", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("ambiguous"), { label: "Nom en double", tone: "warn" });
+});
+
+test("losesParentOnSave: warns a non-admin who keeps no phone of their own that is ok", () => {
+  const A = "notify.mobile_app_a";
+  const B = "notify.mobile_app_b";
+  const phones = {
+    [A]: { owner: "julie", status: "ok" },
+    [B]: { owner: "julie", status: "ok" },
+  };
+  // Administrateur : reste parent quoi qu'il arrive.
+  assert.equal(lib.losesParentOnSave({ request_notify: [] }, phones, "julie", true), false);
+  // Dernier téléphone retiré.
+  assert.equal(lib.losesParentOnSave({ request_notify: [] }, { [A]: phones[A] }, "julie", false), true);
+  assert.equal(lib.losesParentOnSave({}, { [A]: phones[A] }, "julie", false), true);
+  // Un autre téléphone `ok` reste.
+  assert.equal(lib.losesParentOnSave({ request_notify: [B] }, phones, "julie", false), false);
+  // Le téléphone restant a changé de compte : plus de droits.
+  const changed = { ...phones, [B]: { owner: "julie", status: "changed" } };
+  assert.equal(lib.losesParentOnSave({ request_notify: [B] }, changed, "julie", false), true);
+  // Téléphone `ok` d'un autre parent : ne compte pas.
+  const other = { [A]: { owner: "marc", status: "ok" } };
+  assert.equal(lib.losesParentOnSave({ request_notify: [A] }, other, "julie", false), true);
+});
+
+test("saveMessage: rebind sent beside the configuration, never inside it", () => {
+  const draft = { version: 2, request_notify: ["notify.mobile_app_a"], rebind: ["notify.mobile_app_a"] };
+  const msg = lib.saveMessage(draft);
+  assert.deepEqual(msg, {
+    type: "parental_control/config/set",
+    config: { version: 2, request_notify: ["notify.mobile_app_a"] },
+    rebind: ["notify.mobile_app_a"],
+  });
+  assert.deepEqual(draft.rebind, ["notify.mobile_app_a"]); // brouillon intact
+  // Réassociation d'un téléphone retiré depuis : rien à envoyer pour lui.
+  const gone = lib.saveMessage({ request_notify: [], rebind: ["notify.mobile_app_a"] });
+  assert.deepEqual(gone, { type: "parental_control/config/set", config: { request_notify: [] }, rebind: [] });
+  assert.deepEqual(lib.saveMessage({ request_notify: [] }), {
+    type: "parental_control/config/set", config: { request_notify: [] }, rebind: [],
+  });
+});
+
+test("saveMessage: request_notify_owners never sent (the server determines owners)", () => {
+  const draft = {
+    request_notify: ["notify.mobile_app_b"],
+    request_notify_owners: { "notify.mobile_app_a": "u1", "notify.mobile_app_b": "u2" },
+  };
+  const msg = lib.saveMessage(draft);
+  assert.deepEqual(msg.config, { request_notify: ["notify.mobile_app_b"] });
+  assert.ok(draft.request_notify_owners, "draft untouched");
+});
+
+test("phoneRebind: offered only for unbound and changed, naming who will become parent", () => {
+  assert.deepEqual(lib.phoneRebind({ status: "unbound", owner_name: null, current_name: "Julie" }),
+    { current: "Julie", label: "Réassocier à Julie" });
+  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Julie", current_name: "Tablette" }),
+    { current: "Tablette", label: "Réassocier à Tablette" });
+  // Propriétaire actuel inconnu de HA : bouton sans nom.
+  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Julie", current_name: null }),
+    { current: null, label: "Réassocier" });
+  for (const status of ["ok", "missing", "ambiguous"]) {
+    assert.equal(lib.phoneRebind({ status, owner_name: "Julie", current_name: "Julie" }), null);
+  }
+  assert.equal(lib.phoneRebind(undefined), null);
+});
+

@@ -244,6 +244,14 @@ def parse_config(data: dict) -> Config:
         _str(word, "calendar_map"): _enum(DayType, day, f"calendar_map.{word}")
         for word, day in calendar_raw.items()
     }
+    request_notify = tuple(_str_list(data.get("request_notify", []), "request_notify"))
+    owners_raw = _expect_dict(data.get("request_notify_owners", {}), "request_notify_owners")
+    request_notify_owners: dict[str, str] = {}
+    for target, user_id in owners_raw.items():
+        path = f"request_notify_owners.{target}"
+        if target not in request_notify:
+            raise _fail(path, "cible absente de request_notify")
+        request_notify_owners[target] = _str(user_id, path)
     return Config(
         kids=kids,
         resources=resources,
@@ -253,8 +261,21 @@ def parse_config(data: dict) -> Config:
         calendar_map=calendar_map,
         notify=tuple(_str_list(data.get("notify", []), "notify")),
         default_on_demand=tuple(_str_list(data.get("default_on_demand", []), "default_on_demand")),
-        request_notify=tuple(_str_list(data.get("request_notify", []), "request_notify")),
+        request_notify=request_notify,
+        request_notify_owners=request_notify_owners,
     )
+
+
+def parse_client_config(data: dict) -> Config:
+    """`parse_config` d'une configuration reçue d'un client (panneau, import).
+
+    `request_notify_owners` est retiré avant validation : les propriétaires sont déterminés par
+    le serveur (`parents.bind_owners`), une valeur envoyée par le client est donc ignorée —
+    y compris la clé d'un téléphone que le client vient de retirer de `request_notify`. La
+    validation stricte de `parse_config` reste celle du chargement depuis le stockage.
+    """
+    data = _expect_dict(data, "config")
+    return parse_config({k: v for k, v in data.items() if k != "request_notify_owners"})
 
 
 def _dump_segment(segment: Segment) -> dict:
@@ -314,6 +335,7 @@ def dump_config(cfg: Config) -> dict:
         "calendar_map": {word: day.value for word, day in cfg.calendar_map.items()},
         "notify": list(cfg.notify),
         "request_notify": list(cfg.request_notify),
+        "request_notify_owners": dict(cfg.request_notify_owners),
         "kids": [_dump_kid(k) for k in cfg.kids],
         "resources": [_dump_resource(r) for r in cfg.resources],
     }

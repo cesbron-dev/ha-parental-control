@@ -94,7 +94,7 @@ export function setPath(obj, path, value) {
 // Brouillon d'une nouvelle installation (aucune config enregistrée) : au format v2, celui que
 // produisent `addResource`/`addIntegration`.
 export function emptyConfig() {
-  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], kids: [], resources: [] };
+  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], request_notify_owners: {}, kids: [], resources: [] };
 }
 
 // Ressource avec son arbre d'appareils physiques ? Un JSON mal formé collé dans l'onglet JSON peut
@@ -502,4 +502,42 @@ export function isIconName(value) {
 
 export function isDirty(original, draft) {
   return JSON.stringify(original) !== JSON.stringify(draft);
+}
+
+// Statut d'un téléphone de demandes (`config/get` → `phones`) : pastille du panneau.
+const PHONE_BADGES = {
+  ok: { label: "Associé", tone: "ok" },
+  unbound: { label: "À associer", tone: "warn" },
+  missing: { label: "Appareil introuvable", tone: "warn" },
+  changed: { label: "Changé de compte", tone: "warn" },
+  ambiguous: { label: "Nom en double", tone: "warn" },
+};
+
+export function phoneBadge(status) {
+  return PHONE_BADGES[status] ?? { label: String(status ?? ""), tone: "warn" };
+}
+
+// « Réassocier » d'un téléphone de demandes : proposé seulement pour `unbound` et `changed` (pour
+// `missing` et `ambiguous`, le serveur refuserait). `current` : propriétaire actuel de l'appareil,
+// celui qui deviendra parent (à montrer, il diffère du mémorisé) ; `null` s'il est inconnu.
+export function phoneRebind(phone) {
+  if (phone?.status !== "unbound" && phone?.status !== "changed") return null;
+  const current = phone.current_name ?? null;
+  return { current, label: current ? `Réassocier à ${current}` : "Réassocier" };
+}
+
+// Vrai si l'utilisateur, non administrateur, n'aura plus aucun téléphone `ok` à son nom dans les
+// destinataires des demandes une fois le brouillon enregistré : il ne sera plus parent.
+export function losesParentOnSave(draft, phones, userId, isAdmin) {
+  if (isAdmin) return false;
+  return !(draft?.request_notify ?? []).some((t) => phones?.[t]?.status === "ok" && phones[t].owner === userId);
+}
+
+// Message `config/set` : `rebind` (téléphones à réassocier) voyage à côté de la configuration,
+// jamais dedans ; seuls les téléphones encore listés sont réassociés. `request_notify_owners`
+// n'est pas envoyé : le serveur détermine les propriétaires (et ignore toute valeur reçue).
+export function saveMessage(draft) {
+  const { rebind = [], request_notify_owners: _owners, ...config } = draft;
+  const listed = new Set(config.request_notify ?? []);
+  return { type: "parental_control/config/set", config, rebind: rebind.filter((t) => listed.has(t)) };
 }

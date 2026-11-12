@@ -7,10 +7,11 @@ from dataclasses import dataclass
 import pytest
 from homeassistant.auth.models import User
 from homeassistant.core import Context, HomeAssistant
+from homeassistant.helpers.storage import Store
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.parental_control.const import DOMAIN
-from custom_components.parental_control.core.config_io import parse_config
+from custom_components.parental_control.const import DOMAIN, STORE_VERSION
+from custom_components.parental_control.core.config_io import dump_config, parse_config
 from custom_components.parental_control.engine import ParentalEngine
 from custom_components.parental_control.security import hash_code
 from custom_components.parental_control.store import ParentalStore
@@ -18,6 +19,32 @@ from tests.fixtures import EX
 from tests.ha.test_engine import Services
 
 CODE = "0123"
+PARENT_PHONE = "notify.mobile_app_ipad_de_julie"
+
+
+def add_phone(hass: HomeAssistant, device_name: str, user_id: str) -> MockConfigEntry:
+    """Appareil `mobile_app` de `user_id` : son service est `notify.mobile_app_<nom>`."""
+    entry = MockConfigEntry(
+        domain="mobile_app",
+        data={
+            "device_name": device_name,
+            "user_id": user_id,
+            "app_id": "io.robbie.HomeAssistant",
+            "webhook_id": f"{device_name}-{user_id}",
+        },
+    )
+    entry.add_to_hass(hass)
+    return entry
+
+
+async def bind_parent_phone(hass: HomeAssistant, engine: ParentalEngine, parent: User) -> None:
+    """Le téléphone de `parent` est dans `request_notify` et mémorisé comme le sien."""
+    add_phone(hass, "iPad de Julie", parent.id)
+    cfg = dump_config(engine.config)
+    cfg["request_notify"] = [*cfg["request_notify"], PARENT_PHONE]
+    cfg["request_notify_owners"] = {**cfg["request_notify_owners"], PARENT_PHONE: parent.id}
+    await engine.set_config(parse_config(cfg))
+    await hass.async_block_till_done()
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +60,7 @@ class Env:
     engine: ParentalEngine
     admin: User
     kid: User
+    parent: User
     services: Services
 
     @property
@@ -42,6 +70,14 @@ class Env:
     @property
     def kid_ctx(self) -> Context:
         return Context(user_id=self.kid.id)
+
+    @property
+    def parent_ctx(self) -> Context:
+        return Context(user_id=self.parent.id)
+
+    async def bind_parent(self) -> None:
+        """Fait de `parent` (non admin) un parent : son téléphone est dans la liste."""
+        await bind_parent_phone(self.hass, self.engine, self.parent)
 
     async def call(self, service: str, data: dict, context: Context | None = None,
                    return_response: bool = False):
@@ -59,17 +95,24 @@ async def make_env(hass: HomeAssistant, freezer):
     await hass.auth.async_create_user("Propriétaire", group_ids=["system-admin"])
     admin = await hass.auth.async_create_user("Parent", group_ids=["system-admin"])
     kid = await hass.auth.async_create_user("Tablette", group_ids=["system-users"])
-    assert admin.is_admin and not kid.is_admin
+    # Parent non admin : parent seulement une fois son téléphone lié (`Env.bind_parent`).
+    parent = await hass.auth.async_create_user("Julie", group_ids=["system-users"])
+    assert admin.is_admin and not kid.is_admin and not parent.is_admin
 
-    async def _make(moment, config: dict | None = None) -> Env:
+    async def _make(moment, config: dict | None = None, raw: bool = False) -> Env:
+        """`raw` : `config` est écrite telle quelle (ex. ancien format sans
+        `request_notify_owners`) au lieu de passer par `parse_config`/`dump_config`."""
         freezer.move_to(moment)
-        await ParentalStore(hass).save_config(parse_config(EX if config is None else config))
+        if raw:
+            await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_save(config)
+        else:
+            await ParentalStore(hass).save_config(parse_config(EX if config is None else config))
         entry = MockConfigEntry(
             domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code(CODE)}
         )
         entry.add_to_hass(hass)
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        return Env(hass, entry, entry.runtime_data, admin, kid, services)
+        return Env(hass, entry, entry.runtime_data, admin, kid, parent, services)
 
     return _make

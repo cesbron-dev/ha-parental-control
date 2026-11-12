@@ -1,5 +1,6 @@
-// Panneau « Règles » (barre latérale, admins) : édite la configuration du moteur en brouillon,
+// Panneau « Règles » (barre latérale, parents) : édite la configuration du moteur en brouillon,
 // l'écrit avec `parental_control/config/set` ; le moteur valide et cite le chemin fautif.
+// Un non-parent ne voit que « Réservé aux parents » (rien d'autre n'est demandé au serveur).
 import { esc, pendingCount } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import * as L from "./panel-lib.js";
@@ -8,6 +9,7 @@ import { kidsView } from "./panel-kids.js";
 import { devicesView } from "./panel-devices.js";
 
 const CONFIRM_MS = 3000;
+const LOSE_PARENT_MS = 8000; // le temps de lire l'avertissement avant de confirmer
 const TABS = [
   { id: "kids", label: "Enfants" },
   { id: "resources", label: "Appareils" },
@@ -32,7 +34,9 @@ class ParentalControlPanel extends HTMLElement {
     this._kid = 0;
     this._res = 0;
     this._original = null;
-    this._draft = null;
+    this._draft = null; // `rebind` (téléphones à réassocier) n'y est que côté panneau
+    this._me = null; // {admin, parent, user_id} (`whoami`)
+    this._phones = {}; // téléphone de demandes → {owner, owner_name, status}
     this._newIds = new Set(); // ids créés depuis le dernier enregistrement : encore modifiables
     this._devices = [];
     this._catalog = {}; // services AdGuard (id → nom) ; vide : saisie libre
@@ -158,7 +162,19 @@ class ParentalControlPanel extends HTMLElement {
   async _load() {
     this._message = null;
     try {
-      const { config } = await this._hass.connection.sendMessagePromise({ type: "parental_control/config/get" });
+      this._me = await this._hass.connection.sendMessagePromise({ type: "parental_control/whoami" });
+    } catch (err) {
+      this._message = { kind: "error", text: `Droits illisibles : ${err?.message ?? err}` };
+      this._render();
+      return;
+    }
+    if (!this._me?.parent) {
+      this._render();
+      return;
+    }
+    try {
+      const { config, phones } = await this._hass.connection.sendMessagePromise({ type: "parental_control/config/get" });
+      this._phones = phones ?? {};
       this._original = config ?? L.emptyConfig();
       this._draft = clone(this._original);
       this._newIds.clear();
@@ -183,20 +199,27 @@ class ParentalControlPanel extends HTMLElement {
     this._message = null;
     this._render();
     try {
-      const { config } = await this._hass.connection.sendMessagePromise({ type: "parental_control/config/set", config: this._draft });
+      const { config } = await this._hass.connection.sendMessagePromise(L.saveMessage(this._draft));
       this._original = config;
-      this._draft = clone(config);
+      this._draft = clone(config); // sans `rebind` : réassociations faites
       this._newIds.clear();
       this._message = { kind: "ok", text: "Règles enregistrées." };
     } catch (err) {
       this._message = { kind: "error", text: `Non enregistré : ${err?.message ?? err}` };
+    }
+    try {
+      // Statut des téléphones après enregistrement (ajouts, retraits, réassociations).
+      ({ phones: this._phones = {} } = await this._hass.connection.sendMessagePromise({ type: "parental_control/config/get" }));
+    } catch (err) {
+      // Plus parent (son téléphone retiré) : le panneau se ferme ; sinon statuts précédents gardés.
+      if (err?.code === "unauthorized") this._me = { ...this._me, parent: false };
     }
     this._saving = false;
     this._render();
   }
 
   // Confirmation en deux appuis pour les actions destructrices.
-  _confirm(key) {
+  _confirm(key, ms = CONFIRM_MS) {
     if (this._armed === key) {
       clearTimeout(this._armTimer);
       this._armed = null;
@@ -207,7 +230,7 @@ class ParentalControlPanel extends HTMLElement {
     this._armTimer = setTimeout(() => {
       this._armed = null;
       this._render();
-    }, CONFIRM_MS);
+    }, ms);
     this._render();
     return false;
   }
@@ -233,7 +256,13 @@ class ParentalControlPanel extends HTMLElement {
     const list = el.dataset.list;
     switch (action) {
       case "tab": this._tab = arg; this._closeAll(); break;
-      case "save": this._commitPending(); this._save(); return;
+      case "save":
+        this._commitPending();
+        // Retrait de son propre téléphone : averti, pas empêché (un administrateur peut réparer).
+        if (L.losesParentOnSave(d, this._phones, this._me?.user_id, this._me?.admin)
+          && !this._confirm("lose-parent", LOSE_PARENT_MS)) return;
+        this._save();
+        return;
       case "revert": if (!this._confirm("revert")) return; this._load(); return;
       case "requests":
         // Quitter le panneau perd le brouillon : confirmation en deux appuis s'il y en a un.
@@ -311,7 +340,11 @@ class ParentalControlPanel extends HTMLElement {
       }
       case "del-cal": delete d.calendar_map[arg]; break;
       case "del-notify": L.toggleListValue(d.notify, arg); break;
-      case "del-request-notify": L.toggleListValue(d.request_notify, arg); break;
+      case "del-request-notify":
+        L.toggleListValue(d.request_notify, arg);
+        this._toggleRebind(arg, false);
+        break;
+      case "rebind": this._toggleRebind(arg, !(d.rebind ?? []).includes(arg)); break;
       case "apply-json": {
         const text = this.shadowRoot.querySelector("textarea").value;
         try {
@@ -325,6 +358,16 @@ class ParentalControlPanel extends HTMLElement {
       default: return;
     }
     this._render();
+  }
+
+  // Réassociation d'un téléphone au compte actuel de son appareil, faite à l'enregistrement ;
+  // `rebind` disparaît du brouillon quand il est vide (sinon le brouillon paraîtrait modifié).
+  _toggleRebind(target, on) {
+    const d = this._draft;
+    const list = (d.rebind ?? []).filter((t) => t !== target);
+    if (on) list.push(target);
+    if (list.length) d.rebind = list;
+    else delete d.rebind;
   }
 
   // Pastille « + Ajouter » : écrit la valeur saisie dans le brouillon et vide le champ ; faux si
@@ -569,7 +612,7 @@ class ParentalControlPanel extends HTMLElement {
       <span class="req-slot">${this._requestsButton()}</span>
       ${dirty ? `<span class="dirty">Modifications non enregistrées</span>` : msg?.kind === "ok" ? `<span class="ok">${esc(msg.text)}</span>` : ""}
       ${this._btn("revert", "Annuler", { cls: "btn", title: "Annuler les modifications", disabled: !dirty || this._saving, confirmKey: "revert" })}
-      ${this._btn("save", this._saving ? "Enregistrement…" : "Enregistrer", { cls: "btn primary", disabled: !dirty || this._saving })}`;
+      ${this._btn("save", this._saving ? "Enregistrement…" : "Enregistrer", { cls: "btn primary", disabled: !dirty || this._saving, confirmKey: "lose-parent" })}`;
   }
 
   _renderHeader() {
@@ -580,9 +623,16 @@ class ParentalControlPanel extends HTMLElement {
   _render() {
     const d = this._draft;
     const msg = this._message;
+    if (this._me && !this._me.parent) {
+      this.shadowRoot.innerHTML = `<style>${CSS}</style>
+        <div class="wrap"><header><h1>Règles</h1></header>
+          <div class="card mut">Réservé aux parents.</div></div>`;
+      return;
+    }
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
       <div class="wrap">
         <header>${this._header()}</header>
+        ${this._armed === "lose-parent" ? `<div class="notice">Vous ne serez plus parent après l'enregistrement. Continuer ?</div>` : ""}
         ${this._removedNotice()}
         ${msg?.kind === "error" ? `<div class="error">${esc(msg.text)}</div>` : ""}
         ${d ? this._body() : `<div class="card mut">Chargement…</div>`}
@@ -666,11 +716,33 @@ class ParentalControlPanel extends HTMLElement {
     const act = key === "notify" ? "notify" : "request-notify";
     const taken = this._draft[key] ?? [];
     const devices = this._devices;
-    const chips = taken.map((s) => `<button type="button" class="pill own" data-act="del-${act}" data-arg="${esc(s)}" title="Retirer ${esc(s)}">${esc(L.notifyLabel(s, devices))}<span class="x">✕</span></button>`).join("");
+    const chips = taken.map((s) => (key === "request_notify" ? this._phoneChip(s)
+      : `<button type="button" class="pill own" data-act="del-${act}" data-arg="${esc(s)}" title="Retirer ${esc(s)}">${esc(L.notifyLabel(s, devices))}<span class="x">✕</span></button>`)).join("");
     const services = Object.keys(this._hass?.services?.notify ?? {});
     const options = L.notifyOptions(services, devices, taken, key === "request_notify");
     return `${chips}<select class="pill-in" data-input="${key}" data-enter="add-${act}" title="Ajouter un destinataire" ${options.length ? "" : "disabled"}>
       <option value="">+ Ajouter…</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
+  }
+
+  // Téléphone de demandes : nom, propriétaire mémorisé (qui est parent grâce à lui), statut, et
+  // « Réassocier à <propriétaire actuel> » quand il est à associer ou a changé de compte. Un
+  // téléphone ajouté n'a de statut qu'enregistré.
+  _phoneChip(target) {
+    const phone = this._phones[target];
+    const queued = (this._draft.rebind ?? []).includes(target);
+    const badge = phone && L.phoneBadge(phone.status);
+    const re = L.phoneRebind(phone);
+    const owner = phone?.owner_name ? ` · ${esc(phone.owner_name)}` : "";
+    const current = re?.current ? ` · appareil de ${esc(re.current)}` : "";
+    const title = [target, phone?.owner_name && `téléphone de ${phone.owner_name}`,
+      re?.current && `appareil actuellement au compte ${re.current}`].filter(Boolean).join(" — ");
+    const rebind = re
+      ? `<button type="button" data-act="rebind" data-arg="${esc(target)}" title="${queued
+        ? "Annuler la réassociation" : "Associer au compte actuel de l'appareil (à l'enregistrement)"}">${esc(queued ? (re.current ? `Réassociation à ${re.current} prévue` : "Réassociation prévue") : re.label)}</button>`
+      : "";
+    return `<span class="pill split own" title="${esc(title)}">${esc(L.notifyLabel(target, this._devices))}${owner}${current}
+      ${badge ? `<span class="badge tone-${badge.tone}">${esc(badge.label)}</span>` : ""}${rebind}
+      <button type="button" data-act="del-request-notify" data-arg="${esc(target)}" title="Retirer ${esc(target)}">✕</button></span>`;
   }
 
   _general() {

@@ -58,3 +58,19 @@ export async function callAction(hass, service, data, code) {
     return { ok: false, error: err?.message ?? String(err) };
   }
 }
+
+const WHOAMI_TTL = 60000;
+const whoamis = new WeakMap(); // connexion -> {at, promise}
+
+// Rôle du compte courant ({admin, parent, user_id}), mis en cache 60 s par connexion ; erreur => null.
+export function fetchWhoami(hass) {
+  const conn = hass.connection;
+  const cached = whoamis.get(conn);
+  if (cached && Date.now() - cached.at < WHOAMI_TTL) return cached.promise;
+  const entry = { at: Date.now(), promise: null };
+  entry.promise = Promise.resolve()
+    .then(() => conn.sendMessagePromise({ type: "parental_control/whoami" }))
+    .catch(() => null);
+  whoamis.set(conn, entry);
+  return entry.promise;
+}

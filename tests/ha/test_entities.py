@@ -205,6 +205,33 @@ async def test_simulation_switch_turn_on_non_admin_rejected(make_env) -> None:  
     assert env.hass.states.get(eid).state == STATE_OFF
 
 
+async def test_entities_parent_non_admin_without_code(make_env) -> None:  # noqa: F811
+    """Devoirs, arrêt de la pause, activation de la simulation : un parent n'a pas de code."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    button = entity_id(env, "button", "kid_hugo_homework_done")
+    pause = entity_id(env, "switch", "global_pause")
+    simulation = entity_id(env, "switch", "global_simulation")
+    # Pas encore parent : code exigé comme pour tout non-admin.
+    with pytest.raises(ServiceValidationError) as err:
+        await call(env, "button", "press", button, env.parent_ctx)
+    assert err.value.translation_key == "code_required"
+
+    await env.bind_parent()
+    await call(env, "button", "press", button, env.parent_ctx)
+    assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
+    await call(env, "switch", "turn_on", pause, env.parent_ctx)
+    await call(env, "switch", "turn_off", pause, env.parent_ctx)
+    assert not env.engine.decisions.paused
+    await call(env, "switch", "turn_on", simulation, env.parent_ctx)
+    assert env.engine.simulation
+
+    # Un non-parent garde le code, même quand un parent existe.
+    await call(env, "switch", "turn_on", pause, env.kid_ctx)
+    with pytest.raises(ServiceValidationError) as err:
+        await call(env, "switch", "turn_off", pause, env.kid_ctx)
+    assert err.value.translation_key == "code_required"
+
+
 async def test_entities_follow_config_change(make_env) -> None:  # noqa: F811
     env = await make_env(at(TUESDAY, 16, 30))
     tv_keys = [("binary_sensor", "resource_tv_allowed"),

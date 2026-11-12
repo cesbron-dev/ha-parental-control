@@ -1,4 +1,4 @@
-"""Services du contrôle parental ; les actions qui débloquent exigent le code parent."""
+"""Services du contrôle parental ; les actions qui débloquent exigent le code d'un non-parent."""
 
 from __future__ import annotations
 
@@ -15,9 +15,10 @@ from homeassistant.exceptions import ServiceValidationError, Unauthorized
 from homeassistant.helpers import config_validation as cv
 
 from .const import CONF_CODE, CONF_CODE_HASH, DOMAIN
-from .core.config_io import ConfigError, parse_config
+from .core.config_io import ConfigError, parse_client_config
 from .core.decisions import Target
 from .core.requests import RequestKind
+from .parents import bind_owners, is_parent
 from .security import check_unlock
 
 if TYPE_CHECKING:
@@ -109,7 +110,11 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
 
     async def unlock(call: ServiceCall) -> None:
         await check_unlock(
-            hass, call.context, call.data.get(CONF_CODE), entry.data[CONF_CODE_HASH]
+            hass,
+            call.context,
+            call.data.get(CONF_CODE),
+            entry.data[CONF_CODE_HASH],
+            entry.runtime_data.config,
         )
 
     async def homework_done(call: ServiceCall) -> None:
@@ -160,19 +165,20 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
         await entry.runtime_data.set_pause(active)
 
     async def import_config(call: ServiceCall) -> None:
-        if call.context.user_id is not None:
-            user = await hass.auth.async_get_user(call.context.user_id)
-            if user is None or not user.is_admin:
-                raise Unauthorized(context=call.context)
+        engine = entry.runtime_data
+        user_id = call.context.user_id
+        if user_id is not None and not await is_parent(hass, engine.config, user_id):
+            raise Unauthorized(context=call.context)
         try:
-            cfg = parse_config(call.data[ATTR_CONFIG])
+            # Propriétaires des téléphones déterminés ici, jamais repris du fichier importé.
+            cfg = bind_owners(hass, parse_client_config(call.data[ATTR_CONFIG]), engine.config)
         except ConfigError as err:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
                 translation_key="invalid_config",
                 translation_placeholders={"error": str(err)},
             ) from err
-        await entry.runtime_data.set_config(cfg)
+        await engine.set_config(cfg)
 
     async def request(call: ServiceCall) -> ServiceResponse:
         # Pas de code : la demande n'accorde rien, un parent doit y répondre.
