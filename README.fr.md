@@ -22,6 +22,8 @@ anglais et en français (voir [Langues](#langues)). Fonctionnement interne et ra
 
 Distribuée sous [licence MIT](LICENSE).
 
+![Tableau de bord : frise du jour, cartes enfant et cartes appareil](docs/images/dashboard-fr.png)
+
 ## Installation
 
 Prérequis : Home Assistant **2026.10** ou plus récent. Pour piloter les services AdGuard Home,
@@ -448,6 +450,12 @@ dit si l'entité ou l'appareil existe dans Home Assistant) et leurs quotas, lois
 modifications restent en brouillon jusqu'à « Enregistrer » ; le moteur valide et, en cas d'erreur,
 indique le champ fautif. Un onglet JSON garde l'accès à la configuration brute.
 
+![Panneau Règles, onglet Enfants](docs/images/panel-children-fr.png)
+
+![Panneau Règles, onglet Appareils](docs/images/panel-devices-fr.png)
+
+![Panneau Règles, onglet Général](docs/images/panel-general-fr.png)
+
 **Qui est parent.** Peuvent ouvrir et modifier le panneau (onglet JSON et liste des téléphones des
 parents compris), sans code et sans « Demander » :
 
@@ -511,6 +519,8 @@ demande 30 min de YouTube sur iPhone Hugo ») avec un bouton par durée proposé
 La première réponse valable applique l'action (exception, bonus, minuteur ou devoirs terminés) ; la
 notification disparaît chez tous les parents. La carte de l'enfant montre « Demande envoyée · en
 attente », puis le résultat (accepté, refusé, sans réponse) pendant 5 minutes.
+
+![Écran Demandes avec deux demandes en attente](docs/images/requests-fr.png)
 
 **Activer.** Dans le panneau « Règles », carte « Demandes de temps (parents) », ajoutez les
 téléphones des parents (clé `request_notify`, par exemple `notify.mobile_app_iphone_de_marc`).

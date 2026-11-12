@@ -21,6 +21,8 @@ French (see [Languages](#languages)). How it works inside, and why:
 
 Released under the [MIT license](LICENSE).
 
+![Dashboard: daily timeline, child cards and device cards](docs/images/dashboard-en.png)
+
 ## Installation
 
 Requirements: Home Assistant **2026.10** or later. To control AdGuard Home services, also
@@ -445,6 +447,12 @@ school-calendar words and notifications. Changes stay as a draft until "Save";
 the engine validates them and, on error, points to the faulty field. A JSON tab keeps access to
 the raw configuration.
 
+![Rules panel, Children tab](docs/images/panel-children-en.png)
+
+![Rules panel, Devices tab](docs/images/panel-devices-en.png)
+
+![Rules panel, General tab](docs/images/panel-general-en.png)
+
 ### Who is a parent
 
 The following can open and edit the panel (JSON tab and parents' phone list included), without
@@ -509,6 +517,8 @@ iPhone") with one button per offered duration and "Refuse". The first valid answ
 action (exception, bonus, timer or homework done); the notification disappears for all
 parents. The child's card shows "Request sent · waiting", then the outcome (accepted, refused,
 no answer) for 5 minutes.
+
+![Requests screen with two pending requests](docs/images/requests-en.png)
 
 **Enabling.** In the Rules panel, "Time requests (parents)" card, add the parents' phones
 (`request_notify` key, for example `notify.mobile_app_marc_iphone`). Without this list,
