@@ -46,7 +46,14 @@ accepte pas).
 ```jsonc
 {
   "version": 2,                       // toujours 2
-  "default_leisure": ["youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch"],
+  "services": [                       // vos services (voir « Services ») ; ordre d'affichage
+    {"id": "youtube", "name": "YouTube", "icon": "mdi:youtube", "adguard": ["youtube"]},
+    {"id": "jeux_video", "name": "Jeux vidéo", "icon": "mdi:gamepad-variant",
+     "adguard": ["roblox", "fortnite"],
+     "labels": [{"label_id": "console", "on_means_allowed": false}]}
+  ],
+  "default_leisure": ["jeux_video"],  // identifiants de vos services
+  "default_on_demand": ["youtube"],
   "calendar_map": {                   // mot (sans accent ni casse) -> type de journée
     "pédagogique": "conge_peda",
     "vacances": "vacances",
@@ -147,7 +154,8 @@ accepte pas).
 | Clé | Rôle |
 |---|---|
 | `version` | `2`. Une configuration en `1` (ou sans `version`) est convertie à la lecture. |
-| `default_leisure` | Services AdGuard considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Défaut : `youtube`, `roblox`, `tiktok`, `netflix`, `disneyplus`, `twitch`. |
+| `services` | Vos services (voir [Services configurables](#services-configurables)) : `id` (fixe, créé à partir du nom), `name`, `icon` (facultatif), `adguard` (identifiants de services AdGuard Home), `labels` (`label_id` et `on_means_allowed`). |
+| `default_leisure` | Identifiants de vos services considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Vide par défaut. Un identifiant inconnu est retiré au chargement ; envoyé par le panneau, il est refusé. |
 | `calendar_map` | Associe un mot cherché dans le titre des événements « journée entière » du calendrier de l'enfant à un type de journée. Comparaison sans accent ni casse, par inclusion. |
 | `notify` | Services `notify.*` des parents : avertissements de fin de plage d'un enfant et de re-blocage d'un service AdGuard ouvert par exception. |
 | `request_notify` | Téléphones des parents (`notify.mobile_app_…`) qui reçoivent et peuvent répondre aux demandes de temps des enfants. Distinct de `notify`. Voir « Demandes de temps ». |
@@ -330,7 +338,7 @@ Précisions :
   `resource_id` avec un lecteur ou un interrupteur, au quota de la ressource ; sur une ressource
   `nintendo`, accorde du temps de jeu à la console. Pas de bonus pour AdGuard.
 - `exception` sans `service` exige un `resource_id` (cible précise). Avec `service`, la cible
-  est un service AdGuard, pour une ressource, pour toutes les ressources d'un enfant ou pour
+  est un de vos services (son identifiant), pour une ressource, pour toutes les ressources d'un enfant ou pour
   toutes. Une exception sur la Switch est refusée (« Pour la Switch, utilisez
   ajouter_bonus »). Sans `minutes`, l'exception dure jusqu'au prochain changement de règle ; avec
   `minutes`, pour cette durée. Le service retourne `{"id": "..."}` quand on demande la
@@ -389,7 +397,7 @@ navigateur garde une ancienne version.
 |---|---|---|
 | `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard ou ciblé par un interrupteur par label : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
 | `parental-timeline-card` | La frise de la journée de chaque enfant. | `type: custom:parental-timeline-card` ; `kids: [gabin]` limite aux enfants listés |
-| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules sur tous ses appareils AdGuard et ses services par label, autorisations en cours (✕) et bonus. | `kid: mael` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
+| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules de ses services (appareils AdGuard et interrupteurs qui le visent), autorisations en cours (✕) et bonus. | `kid: mael` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
 | `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
 
 ```yaml
@@ -439,46 +447,50 @@ parent n'y lit que « Réservé aux parents. » : le serveur refuse aussi `confi
 et `services/catalog` aux non-parents (`unauthorized`). Un compte administrateur désactivé n'est
 plus dispensé du code.
 
-## Services par label
+## Services configurables
 
-Un `switch` Home Assistant peut être piloté comme un service, sans intégration dédiée : il
-suffit de lui poser des **labels HA**. Exemple : une règle UniFi « Couper internet tablette
-Maël », exposée comme `switch`, avec deux labels :
+Un **service** est défini par le parent dans le panneau « Règles », onglet Général, carte
+« Services » : un nom, une icône, et ce qui le bloque réellement :
 
-- **« Internet »**, un **label de service** : il devient un service (`label:<id>`, nom du label,
-  qui suit les renommages), à côté des services AdGuard ;
-- **« Tablette de Maël »**, un **label de cible** : il désigne un seul enfant ou un seul appareil
-  logique.
+- un ou plusieurs **services AdGuard Home**, choisis par leur nom dans le catalogue AdGuard ;
+- et/ou un ou plusieurs **labels HA** posés sur des `switch` (règle de pare-feu UniFi, etc.).
 
-Dans le panneau « Règles », déclarez « Internet » comme label de service, associez « Tablette de
-Maël » à l'enfant (ou à l'appareil) via son champ « Label de cible », puis rangez le service dans
-les loisirs ou sur demande, comme n'importe quel service. Sans label de service déclaré, rien
-ne change.
+Exemple : « Jeux vidéo » = Roblox et Fortnite (AdGuard) + le label « Console », posé sur une
+règle UniFi « Couper internet console ». Bloquer « Jeux vidéo » bloque tout cela d'un coup ;
+une exception ou une demande acceptée l'ouvre de même.
 
-- **Sens.** Par défaut, **allumé = bloqué**, comme une règle de pare-feu active. L'option
-  « Allumé = autorisé » du label de service inverse le sens.
+Seuls ces services apparaissent ailleurs : loisirs et sur demande (par défaut et par enfant),
+demandes d'accès, exceptions, notifications, cartes. Le catalogue AdGuard ne sert qu'à choisir
+ce qu'on rattache.
+
+- **AdGuard.** Un client AdGuard bloque l'union des services AdGuard des services bloqués. Un
+  même service AdGuard peut figurer dans plusieurs services : il est bloqué dès qu'un service
+  géré qui le contient est bloqué. Les services AdGuard que vous n'avez rattachés à aucun
+  service géré ne sont jamais touchés.
+- **Interrupteurs.** Un `switch` qui porte un label rattaché à un service et le **label de
+  cible** d'un enfant ou d'un appareil logique (champ « Label de cible » de l'enfant ou de
+  l'appareil) est piloté pour cette cible. Par défaut, **allumé = bloqué**, comme une règle de
+  pare-feu active ; l'option « Allumé = autorisé » se règle **par label**.
 - **Cible enfant ou appareil.** Avec un enfant pour cible, l'interrupteur suit l'état de
   l'enfant (et les exceptions qui le visent ou visent un de ses appareils) ; avec un appareil,
-  il suit l'état du service pour cet appareil, même sans client AdGuard.
-- **Plusieurs cibles.** L'interrupteur est bloqué dès qu'une cible l'exige.
-- **Cartes.** Un service par label sur demande apparaît en bascule sur la carte de l'enfant ou
-  de l'appareil ciblé, comme un service AdGuard, et peut faire l'objet d'une demande.
-- **Un label est soit de service, soit de cible**, jamais les deux : le panneau refuse le cumul.
-  Un label de cible ne désigne qu'un seul enfant ou appareil.
-- **Exceptions.** Une autorisation sur un service par label n'ouvre que ses interrupteurs :
-  contrairement à un service AdGuard, elle ne garde pas allumés les lecteurs ou la prise d'un
-  appareil fermé.
-- **Pause.** La pause générale bloque aussi ces services (s'ils sont gérés) ; pendant la pause,
-  seules les exceptions qui ferment s'appliquent, comme pour les appareils.
-- **Pas d'avertissement de fermeture** pour ces services : les avertissements avant fermeture
-  restent réservés aux services AdGuard et aux appareils.
+  il suit l'état du service pour cet appareil, même sans client AdGuard. Plusieurs cibles :
+  bloqué dès qu'une l'exige.
+- **Un label** est rattaché à un seul service, et n'est jamais à la fois rattaché et label de
+  cible : le panneau refuse le cumul.
+- **Exceptions.** Une autorisation sur un service qui n'a que des labels n'ouvre que ses
+  interrupteurs : elle ne garde pas allumés les lecteurs ou la prise d'un appareil fermé. Les
+  avertissements de fermeture ne concernent que la partie AdGuard des services.
+- **Pause.** La pause générale bloque aussi ces services (s'ils sont gérés).
 - **Cas ignorés.** Un interrupteur est laissé tel quel :
-  - sans cible, ou si son label de service a été supprimé : avertissement dans le journal et
-    dans le récapitulatif « Interrupteurs pilotés » du panneau (en rouge) ;
-  - si son service n'est ni en loisir ni sur demande d'une cible (service non géré) : il figure
-    dans le récapitulatif avec l'état « non géré », sans avertissement dans le journal ;
-  - s'il est indisponible : avertissement dans le journal, son état apparaît dans le
-    récapitulatif ; il est piloté dès son retour.
+  - sans cible, ou si son label a été supprimé : avertissement dans le journal et dans le
+    récapitulatif « Interrupteurs pilotés » de la carte Services (en rouge) ;
+  - si son service n'est ni en loisir ni sur demande d'une cible : état « non géré » ;
+  - s'il est indisponible : avertissement dans le journal ; il est piloté dès son retour.
+
+**Mise à jour depuis la v0.3.** On repart d'une liste de services vide : les anciens
+identifiants AdGuard des loisirs, sur demande, exceptions et demandes sont ignorés. Les services
+AdGuard que l'ancienne configuration avait bloqués **restent bloqués** sur les clients jusqu'à ce
+que vous les débloquiez dans AdGuard ou les rattachiez à un service.
 
 ## Demandes de temps
 
@@ -595,7 +607,7 @@ pas répondu. Avec `response_variable`, il retourne `{"id": "..."}`.
 | `kind` | `open` (autoriser), `bonus`, `homework` (devoirs terminés) ou `timer` (minuteur). Obligatoire. |
 | `kid_id` | L'enfant qui demande. Obligatoire. |
 | `resource_id` | La ressource visée (`open` et `bonus` seulement) ; elle doit appartenir à l'enfant. |
-| `service` | Un service AdGuard à débloquer (`open`). |
+| `service` | Identifiant d'un de vos services à débloquer (`open`). |
 | `minutes` | Durée proposée (1 à 240), obligatoire pour `bonus` et `timer`, interdite pour `homework`. Mise en tête des boutons. |
 | `options` | Autres durées proposées, en minutes ; `null` pour `open` = « jusqu'au prochain changement ». Six boutons de durée au plus. |
 | `replace` | Identifiants d'exceptions à annuler quand le parent accepte (`open`). |
