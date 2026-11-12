@@ -27,6 +27,12 @@ TV_LABEL = f"Télé salon ({TV_ENTITY})"
 LEISURE = frozenset({"youtube", "roblox"})
 
 
+def ident(ids) -> frozenset[str]:
+    """Traduction identité : le service du parent porte le même identifiant AdGuard."""
+    return frozenset(ids)
+
+
+
 def state(open_: bool, blocked: frozenset[str] = frozenset(),
           opened: frozenset[str] = frozenset()) -> ResourceState:
     return ResourceState(
@@ -80,8 +86,8 @@ def called_entities(calls) -> list[str]:
 
 
 async def test_build_adapter_is_composite(hass: HomeAssistant) -> None:
-    tv = build_adapter(hass, tv_resource(), LEISURE)
-    ag = build_adapter(hass, adguard_resource(), LEISURE)
+    tv = build_adapter(hass, tv_resource(), LEISURE, ident)
+    ag = build_adapter(hass, adguard_resource(), LEISURE, ident)
     assert isinstance(tv, CompositeAdapter)
     assert isinstance(ag, CompositeAdapter)
     assert [type(m) for m in tv.members] == [MediaPlayerAdapter]
@@ -171,7 +177,7 @@ def fake(hass: HomeAssistant) -> FakeAdGuard:
 
 
 def adguard(hass: HomeAssistant, fake: FakeAdGuard) -> AdGuardAdapter:
-    return AdGuardAdapter(hass, "iPhone Hugo", {"device_id": fake.device_id}, LEISURE)
+    return AdGuardAdapter(hass, "iPhone Hugo", {"device_id": fake.device_id}, LEISURE, ident)
 
 
 async def test_adguard_watches_device_sensor(hass: HomeAssistant, fake) -> None:
@@ -194,20 +200,86 @@ async def test_adguard_blocks_only_leisure_services(hass: HomeAssistant, fake) -
     assert not adapter.in_use()
 
 
-async def test_adguard_adapter_ignores_label_services(hass: HomeAssistant, fake) -> None:
+def parent_ids(services: dict[str, tuple[str, ...]]):
+    """Traduction par union, comme `Config.adguard_ids` (inconnus ignorés)."""
+    def translate(ids) -> frozenset[str]:
+        return frozenset(a for s in ids for a in services.get(s, ()))
+    return translate
+
+
+async def test_adguard_blocks_union_of_service_ids(hass: HomeAssistant, fake) -> None:
     fake.set_blocked([])
     adapter = AdGuardAdapter(
-        hass, "iPhone Hugo", {"device_id": fake.device_id},
-        frozenset({"youtube", "label:internet"}),
+        hass, "iPhone Hugo", {"device_id": fake.device_id}, frozenset({"jeux"}),
+        parent_ids({"jeux": ("roblox", "fortnite")}),
     )
-    desired = state(False, frozenset({"youtube", "label:internet"}))
-    assert adapter.drifted(desired)
+    await adapter.apply(state(False, frozenset({"jeux"})))
+
+    assert [c.data for c in fake.calls] == [
+        {"device_id": fake.device_id, "block": ["fortnite", "roblox"], "unblock": []}
+    ]
+
+
+async def test_adguard_shared_id_blocked_wins(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked(["khan"])
+    adapter = AdGuardAdapter(
+        hass, "iPhone Hugo", {"device_id": fake.device_id}, frozenset({"video", "ecole"}),
+        parent_ids({"video": ("youtube",), "ecole": ("youtube", "khan")}),
+    )
+    # `video` bloqué, `ecole` ouvert : youtube reste bloqué, khan est débloqué.
+    desired = state(False, frozenset({"video"}))
     await adapter.apply(desired)
 
-    assert len(fake.calls) == 1
     assert fake.blocks() == ["youtube"]
-    assert fake.unblocks() == []
+    assert fake.unblocks() == ["khan"]
     assert not adapter.drifted(desired)
+
+
+async def test_legacy_stored_ids_not_unblocked(hass: HomeAssistant, fake) -> None:
+    """Config stockée sans services : les anciens identifiants sont retirés des loisirs
+    au chargement, l'adaptateur ne débloque donc rien."""
+    from custom_components.parental_control.core.config_io import parse_config
+    from tests.fixtures import EX
+
+    data = {k: v for k, v in EX.items() if k != "services"}
+    data["default_leisure"] = ["youtube"]
+    cfg = parse_config(data)
+    assert cfg.default_leisure == ()
+    fake.set_blocked(["youtube"])
+    adapter = AdGuardAdapter(
+        hass, "iPhone Hugo", {"device_id": fake.device_id},
+        cfg.managed_services_for_resource(cfg.resources[0].id), cfg.adguard_ids,
+    )
+    await adapter.apply(OPEN)
+
+    assert fake.calls == []
+    assert fake.blocked == ["youtube"]
+
+
+async def test_service_without_attachments_noop(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked([])
+    adapter = AdGuardAdapter(
+        hass, "iPhone Hugo", {"device_id": fake.device_id}, frozenset({"vide", "console"}),
+        parent_ids({"vide": (), "console": ()}),
+    )
+    desired = state(False, frozenset({"vide", "console"}))
+    assert not adapter.drifted(desired)
+    await adapter.apply(desired)
+
+    assert fake.calls == []
+    assert adapter.describe(desired) == []
+
+
+async def test_adguard_force_close_translates_once(hass: HomeAssistant, fake) -> None:
+    fake.set_blocked([])
+    adapter = AdGuardAdapter(
+        hass, "iPhone Hugo", {"device_id": fake.device_id}, frozenset({"jeux"}),
+        parent_ids({"jeux": ("roblox",)}),
+    )
+    assert adapter.pause_state().blocked_services == frozenset({"jeux"})
+    await adapter.force_close()
+
+    assert fake.blocks() == ["roblox"]
 
 
 async def test_adguard_unblocks_when_open(hass: HomeAssistant, fake) -> None:
@@ -293,7 +365,7 @@ async def test_adguard_missing_sensor_waits_for_startup(
 
 
 async def test_adguard_unknown_device_has_no_entities(hass: HomeAssistant, fake) -> None:
-    adapter = AdGuardAdapter(hass, "iPhone Hugo", {"device_id": "inconnu"}, LEISURE)
+    adapter = AdGuardAdapter(hass, "iPhone Hugo", {"device_id": "inconnu"}, LEISURE, ident)
     assert adapter.entity_ids() == []
     assert not adapter.drifted(state(False, LEISURE))
     await adapter.apply(state(False, LEISURE))
@@ -467,7 +539,7 @@ def nintendo(hass: HomeAssistant, delay: float = 0) -> NintendoAdapter:
 
 async def test_build_adapter_exposes_nintendo(hass: HomeAssistant) -> None:
     calls = async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
-    composite = build_adapter(hass, switch_resource(), LEISURE)
+    composite = build_adapter(hass, switch_resource(), LEISURE, ident)
     assert isinstance(composite.nintendo, NintendoAdapter)
     assert composite.nintendo.label == "Switch"
     assert composite.describe_grant(15) == ["accorderait 15 min sur Switch"]
@@ -740,7 +812,7 @@ class MixedTv:
                 )),
             ),
         )
-        self.adapter = build_adapter(hass, self.resource, LEISURE)
+        self.adapter = build_adapter(hass, self.resource, LEISURE, ident)
 
     @property
     def fakes(self) -> list[FakeAdGuard]:
@@ -930,7 +1002,7 @@ async def test_simulated_composite_dedups_identical_lines(hass: HomeAssistant) -
     )
     logged: list[str] = []
     sim = SimulatedAdapter(
-        build_adapter(hass, resource, LEISURE), lambda: True,
+        build_adapter(hass, resource, LEISURE, ident), lambda: True,
         lambda _name, line: logged.append(line),
     )
     await sim.apply(state(False, LEISURE))
@@ -941,7 +1013,7 @@ async def test_composite_warn_failure_logged_as_warning(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Un avertissement impossible est un avertissement, pas une erreur."""
-    adapter = build_adapter(hass, tv_resource("notify.tv_absent"), LEISURE)
+    adapter = build_adapter(hass, tv_resource("notify.tv_absent"), LEISURE, ident)
     with caplog.at_level(logging.WARNING):
         await adapter.warn("bientôt")
     records = [r for r in caplog.records if "avertissement" in r.getMessage()]

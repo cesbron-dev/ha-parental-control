@@ -575,6 +575,7 @@ async def test_exception_with_duration_and_cancel(hass, freezer, services) -> No
         (Target(kid_id="inconnu"), "unknown_kid"),
         (Target(resource_id="inconnue"), "unknown_resource"),
         (Target(resource_id="tv", service="youtube"), "invalid_target"),
+        (Target(resource_id="iphone_hugo", service="inconnu"), "invalid_target"),
         (Target(kid_id="hugo"), "invalid_target"),
         (Target(), "invalid_target"),
     ],
@@ -587,6 +588,12 @@ async def test_add_exception_rejects_invalid_target(
         await engine.add_exception(target, True, 10)
     assert err.value.translation_key == key
     assert engine.decisions.exceptions == []
+
+
+async def test_service_name_falls_back_to_id(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    assert engine.service_name("youtube") == "Youtube"  # nom de la config d'exemple
+    assert engine.service_name("inconnu") == "inconnu"
 
 
 async def test_set_config_rebuilds_adapters(hass, freezer, services, hass_storage) -> None:

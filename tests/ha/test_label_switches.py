@@ -38,11 +38,14 @@ def label_config(*, managed: bool = True, on_means_allowed: bool = False,
                  services=None) -> dict:
     """Config d'exemple : label de service `ecran` (loisir de Hugo), label de cible `hugo`."""
     config = copy.deepcopy(config_for(services))
-    config["label_services"] = [{"label_id": "ecran", "on_means_allowed": on_means_allowed}]
+    config["services"] = [{
+        "id": "ecran", "name": "Écran", "adguard": [],
+        "labels": [{"label_id": "ecran", "on_means_allowed": on_means_allowed}],
+    }]
     kid = config["kids"][0]
     kid["target_label"] = "hugo"
     if managed:
-        kid["leisure_add"] = ["label:ecran"]
+        kid["leisure_add"] = ["ecran"]
     return config
 
 
@@ -83,7 +86,7 @@ async def test_discover_service_and_kid_target(hass) -> None:
     er.async_get(hass).async_get_or_create("switch", "test", "autre", suggested_object_id="autre")
     cfg = parse_config(label_config())
     switches, issues = discover(hass, cfg)
-    assert switches == [LabelSwitch(SWITCH, "label:ecran", False, (("kid", "hugo"),))]
+    assert switches == [LabelSwitch(SWITCH, "ecran", False, (("kid", "hugo"),))]
     assert issues == []
 
 
@@ -92,7 +95,7 @@ async def test_discover_without_target_reports_issue(hass) -> None:
     add_switch(hass, {"ecran"})
     switches, issues = discover(hass, parse_config(label_config()))
     assert switches == []
-    assert issues == [LabelSwitchIssue(SWITCH, "label:ecran", "no_target")]
+    assert issues == [LabelSwitchIssue(SWITCH, "ecran", "no_target")]
 
 
 async def test_discover_unknown_label_reports_issue(hass) -> None:
@@ -102,7 +105,7 @@ async def test_discover_unknown_label_reports_issue(hass) -> None:
     switches, issues = discover(hass, parse_config(label_config()))
     assert er.async_get(hass).async_get(SWITCH).labels == {"hugo"}
     assert switches == []
-    assert issues == [LabelSwitchIssue("", "label:ecran", "unknown_label")]
+    assert issues == [LabelSwitchIssue("", "ecran", "unknown_label")]
 
 
 async def test_discover_ignores_disabled_and_other_domains(hass) -> None:
@@ -266,7 +269,7 @@ async def test_label_switches_for_websocket(hass, freezer, services) -> None:
     assert engine.label_switches == [{
         "entity_id": SWITCH,
         "name": hass.states.get(SWITCH).name,
-        "service": "label:ecran",
+        "service": "ecran",
         "service_name": "Écran",
         "targets": [{"kind": "kid", "id": "hugo"}],
         "blocked": True,
@@ -279,7 +282,8 @@ async def test_registry_event_without_label_service_ignored(hass, freezer, servi
     add_labels(hass)
     add_switch(hass, {"ecran", "hugo"}, "off")
     config = label_config(services=services)
-    config["label_services"] = []
+    config["services"] = []
+    config["kids"][0]["leisure_add"] = []
     engine = await start(hass, freezer, services, BLOCKED, config)
     evaluations: list[str] = []
     real = engine.async_evaluate
@@ -324,12 +328,15 @@ async def test_state_exposes_label_services(hass, freezer, services) -> None:
     lr.async_get(hass).async_create("tele")
     add_switch(hass, {"ecran", "hugo"}, "off")
     config = label_config(services=services)
-    config["kids"][0]["on_demand_add"] = ["label:ecran"]
+    config["kids"][0]["on_demand_add"] = ["ecran"]
     config["kids"][0]["leisure_add"] = []
     config["resources"][0]["target_label"] = "tele"  # « tv »
     # Service par label déclaré sans aucun interrupteur : nommé quand même.
     lr.async_get(hass).async_create("Console")
-    config["label_services"].append({"label_id": "console", "on_means_allowed": False})
+    config["services"].append({
+        "id": "console", "name": "Console", "adguard": [],
+        "labels": [{"label_id": "console", "on_means_allowed": False}],
+    })
     engine = await start(hass, freezer, services, BLOCKED, config)
     # Un second interrupteur vise l'appareil.
     registry = er.async_get(hass)
@@ -339,9 +346,71 @@ async def test_state_exposes_label_services(hass, freezer, services) -> None:
     engine._discover_labels()
     await engine.async_evaluate("test")
     data = serialize_snapshot(engine, display=True)
-    assert data["kids"]["hugo"]["label_services"] == [{"service": "label:ecran", "blocked": True}]
-    assert data["kids"]["hugo"]["on_demand"] == ["label:ecran"]
-    assert data["resources"]["tv"]["label_services"] == ["label:ecran"]
+    assert data["kids"]["hugo"]["label_services"] == [{"service": "ecran", "blocked": True}]
+    assert data["kids"]["hugo"]["on_demand"] == ["ecran"]
+    assert data["resources"]["tv"]["label_services"] == ["ecran"]
     assert data["resources"]["iphone_hugo"]["label_services"] == []
-    assert data["service_names"] == {"label:ecran": "Écran", "label:console": "Console"}
+    assert data["services"]["ecran"] == {"name": "Écran", "icon": None, "adguard": False, "labels": True}
+    assert list(data["services"]) == ["ecran", "console"]
     assert "label_services" not in serialize_snapshot(engine)["kids"]["hugo"]
+
+
+# --- services mixtes et labels multiples ----------------------------------------
+
+
+async def test_mixed_service_drives_adguard_and_switch(hass, freezer, services) -> None:
+    """Service mixte dans les loisirs d'un enfant fermé : AdGuard bloque ET l'interrupteur s'allume."""
+    add_labels(hass)
+    add_switch(hass, {"console", "hugo"}, "off")
+    lr.async_get(hass).async_create("Console")
+    config = label_config(services=services)
+    config["services"] = [{
+        "id": "jeux", "name": "Jeux", "adguard": ["roblox"],
+        "labels": [{"label_id": "console", "on_means_allowed": False}],
+    }]
+    config["default_leisure"] = []
+    config["kids"][0]["leisure_add"] = ["jeux"]
+    services.adguard.set_blocked([])
+    await start(hass, freezer, services, BLOCKED, config)
+    assert services.adguard.blocks() == ["roblox"]
+    assert services.entities("switch", "turn_on") == [SWITCH]
+    assert hass.states.get(SWITCH).state == "on"
+
+
+async def test_per_label_on_means_allowed(hass, freezer, services) -> None:
+    """Deux labels du même service, l'un inversé : un interrupteur allumé, l'autre éteint."""
+    registry = lr.async_get(hass)
+    for name in ("Normal", "Inverse", "hugo"):
+        registry.async_create(name)
+    add_switch(hass, {"normal", "hugo"}, "off")
+    er.async_get(hass).async_get_or_create("switch", "test", "autre", suggested_object_id="autre")
+    er.async_get(hass).async_update_entity("switch.autre", labels={"inverse", "hugo"})
+    hass.states.async_set("switch.autre", "on", {"friendly_name": "Autre"})
+    config = label_config(services=services)
+    config["services"] = [{
+        "id": "ecran", "name": "Écran", "adguard": [],
+        "labels": [
+            {"label_id": "normal", "on_means_allowed": False},
+            {"label_id": "inverse", "on_means_allowed": True},
+        ],
+    }]
+    await start(hass, freezer, services, BLOCKED, config)
+    assert services.entities("switch", "turn_on") == [SWITCH]
+    assert services.entities("switch", "turn_off") == ["switch.autre"]
+
+
+async def test_discover_first_service_wins(hass) -> None:
+    """Deux labels rattachés à deux services : le premier service de la config l'emporte."""
+    registry = lr.async_get(hass)
+    for name in ("A", "B", "hugo"):
+        registry.async_create(name)
+    add_switch(hass, {"a", "b", "hugo"})
+    config = label_config()
+    config["services"] = [
+        {"id": "svc_b", "name": "B", "adguard": [], "labels": [{"label_id": "b"}]},
+        {"id": "svc_a", "name": "A", "adguard": [], "labels": [{"label_id": "a"}]},
+    ]
+    config["kids"][0]["leisure_add"] = []
+    switches, issues = discover(hass, parse_config(config))
+    assert switches == [LabelSwitch(SWITCH, "svc_b", False, (("kid", "hugo"),))]
+    assert issues == []

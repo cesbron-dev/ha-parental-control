@@ -47,7 +47,6 @@ from homeassistant.util import dt as dt_util
 from .adapters import build_adapter
 from .adapters.simulation import SimulatedAdapter
 from .calendar_source import fetch_all_day_events
-from .catalog import services_catalog
 from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TICK_SECONDS
 from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
@@ -62,12 +61,6 @@ from .core.model import (
     SegmentType,
 )
 
-# TEMP (tâche 1) : l'ancien préfixe « label: » ; retiré avec la refonte de la tâche 3.
-LABEL_PREFIX = "label:"
-
-
-def is_label_service(service: str) -> bool:
-    return service.startswith(LABEL_PREFIX)
 from .core.requests import (
     RequestBook,
     RequestError,
@@ -77,7 +70,7 @@ from .core.requests import (
     action_choices,
     duration_label,
 )
-from .label_switches import LabelSwitch, LabelSwitchIssue, discover, label_name
+from .label_switches import LabelSwitch, LabelSwitchIssue, discover
 from .store import INVALID_CONFIG_NOTIFICATION, ParentalStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -226,7 +219,7 @@ class ParentalEngine:
                 "entity_id": ls.entity_id,
                 "name": self._switch_name(ls.entity_id),
                 "service": ls.service,
-                "service_name": self.label_service_name(ls.service),
+                "service_name": self.service_name(ls.service),
                 "targets": [{"kind": kind, "id": ident} for kind, ident in ls.targets],
                 "blocked": self._label_blocked.get(ls.entity_id),
                 "state": None if state is None else state.state,
@@ -240,15 +233,16 @@ class ParentalEngine:
             {
                 "entity_id": i.entity_id,
                 "service": i.service,
-                "service_name": self.label_service_name(i.service),
+                "service_name": self.service_name(i.service),
                 "problem": i.problem,
             }
             for i in self._label_issues
         ]
 
-    def label_service_name(self, service: str) -> str:
-        """Nom d'un service par label : celui du label dans le registre."""
-        return label_name(self._hass, service.removeprefix(LABEL_PREFIX))
+    def service_name(self, service_id: str) -> str:
+        """Nom d'un service du parent, à défaut son identifiant."""
+        service = self._config.service(service_id) if self._config is not None else None
+        return service.name if service is not None else service_id
 
     def _switch_name(self, entity_id: str) -> str:
         state = self._hass.states.get(entity_id)
@@ -350,7 +344,10 @@ class ParentalEngine:
             try:
                 self._adapters[resource.id] = SimulatedAdapter(
                     build_adapter(
-                        self._hass, resource, cfg.managed_services_for_resource(resource.id)
+                        self._hass,
+                        resource,
+                        cfg.managed_services_for_resource(resource.id),
+                        cfg.adguard_ids,
                     ),
                     lambda: self._decisions.simulation,
                     self._record_simulation,
@@ -391,7 +388,7 @@ class ParentalEngine:
             self._label_reported.add(key)
             _LOGGER.warning(
                 "%s ignoré (%s)",
-                " : ".join(filter(None, (issue.entity_id, self.label_service_name(issue.service)))),
+                " : ".join(filter(None, (issue.entity_id, self.service_name(issue.service)))),
                 self._issue_text(issue.problem),
             )
         if entity_ids:
@@ -416,7 +413,7 @@ class ParentalEngine:
 
     @callback
     def _on_registry_change(self, _event: Event[Any]) -> None:
-        if self._config is None or not self._config.label_services:
+        if self._config is None or not any(s.has_labels for s in self._config.services):
             return  # sans label de service, rien n'a changé pour le moteur
         self._schedule(self._rediscover_and_evaluate())
 
@@ -602,7 +599,7 @@ class ParentalEngine:
                     what = "bloquer" if blocked else "autoriser"
                     self._record_simulation(
                         name,
-                        f"{name} : {verb} ({what} {self.label_service_name(ls.service)})",
+                        f"{name} : {verb} ({what} {self.service_name(ls.service)})",
                     )
                 continue
             if drifted:
@@ -712,11 +709,6 @@ class ParentalEngine:
 
     # ------------------------------------------------------------------ demandes
 
-    def _service_label(self, service: str) -> str:
-        if is_label_service(service):
-            return label_name(self._hass, service.removeprefix(LABEL_PREFIX))
-        return services_catalog(self._hass).get(service, service)
-
     def request_message(self, req: TimeRequest) -> str:
         """Texte de la notification envoyée aux parents."""
         cfg = self._require_config()
@@ -737,7 +729,7 @@ class ParentalEngine:
             return f"{kid} demande un minuteur de {duration_label(req.proposed)}"
         duration = "" if req.proposed is None else f" {duration_label(req.proposed)}"
         if req.service is not None:
-            service = self._service_label(req.service)
+            service = self.service_name(req.service)
             what = f"{duration} de {service}" if duration else f" {service}"
         else:
             what = duration
@@ -990,11 +982,11 @@ class ParentalEngine:
             scope = [r for r in cfg.resources if target.kid_id in r.owners]
         else:
             scope = list(cfg.resources)
-        # Un service par label vaut pour tout appareil ; un service AdGuard exige AdGuard.
-        if is_label_service(target.service):
-            valid = bool(scope)
-        else:
-            valid = any(r.has(ResourceKind.ADGUARD) for r in scope)
+        # Un service rattaché à des labels vaut pour tout appareil ; ses services AdGuard
+        # exigent un appareil AdGuard ; un service inconnu est refusé.
+        valid = (cfg.has_adguard(target.service) and any(
+            r.has(ResourceKind.ADGUARD) for r in scope
+        )) or (cfg.has_labels(target.service) and bool(scope))
         if not valid:
             raise _invalid("invalid_target")
 

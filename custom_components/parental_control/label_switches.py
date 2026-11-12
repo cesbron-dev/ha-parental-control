@@ -1,7 +1,7 @@
 """Découverte des interrupteurs labellisés (adaptateur Home Assistant).
 
-Tout `switch` portant un label de service déclaré (`Config.label_services`) est piloté comme un
-service : ses autres labels, s'ils ciblent un enfant ou un appareil, disent pour qui.
+Tout `switch` portant un label rattaché à un service du parent (`Service.labels`) est piloté
+comme ce service : ses autres labels, s'ils ciblent un enfant ou un appareil, disent pour qui.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 
 from .core.label_services import LabelTarget
-from .core.model import Config, LabelLink as LabelService
+from .core.model import Config, LabelLink, Service
 
 PROBLEM_NO_TARGET = "no_target"
 PROBLEM_UNKNOWN_LABEL = "unknown_label"
@@ -45,41 +45,44 @@ def discover(
 ) -> tuple[list[LabelSwitch], list[LabelSwitchIssue]]:
     """Interrupteurs actifs portant un label de service, et les problèmes rencontrés.
 
-    Un interrupteur n'est piloté que pour un service : s'il en porte plusieurs, le premier
-    de `cfg.label_services` qui est utilisable l'emporte.
+    Un interrupteur n'est piloté que pour un service : s'il porte plusieurs labels rattachés,
+    le premier dont le label existe l'emporte (ordre de `cfg.services`, puis des labels).
     """
     switches: list[LabelSwitch] = []
     issues: list[LabelSwitchIssue] = []
-    if not cfg.label_services:
+    if not any(s.has_labels for s in cfg.services):
         return switches, issues
     labels = lr.async_get(hass)
     # HA retire un label supprimé de toutes les entités : le problème ne tient pas à un interrupteur.
-    for service in cfg.label_services:
-        if labels.async_get_label(service.label_id) is None:
-            issues.append(LabelSwitchIssue("", service.service, PROBLEM_UNKNOWN_LABEL))
+    for service in cfg.services:
+        for link in service.labels:
+            if labels.async_get_label(link.label_id) is None:
+                issues.append(LabelSwitchIssue("", service.id, PROBLEM_UNKNOWN_LABEL))
+    order = {s.id: i for i, s in enumerate(cfg.services)}
     entries = sorted(
         (e for e in er.async_get(hass).entities.values()
          if e.domain == "switch" and e.disabled_by is None and e.labels),
         key=lambda e: e.entity_id,
     )
     for entry in entries:
-        service_labels = [s for s in cfg.label_services if s.label_id in entry.labels]
-        chosen: LabelService | None = None
-        service_ids = {s.label_id for s in service_labels}
+        found = [
+            pair for label_id in entry.labels
+            if (pair := cfg.service_for_label(label_id)) is not None
+        ]
+        found.sort(key=lambda p: (order[p[0].id], [l.label_id for l in p[0].labels].index(p[1].label_id)))
+        attached = {link.label_id for _, link in found}
         targets = tuple(sorted(
-            t for label_id in entry.labels - service_ids
+            t for label_id in entry.labels - attached
             if (t := cfg.label_target(label_id)) is not None
         ))
-        for service in service_labels:
-            if labels.async_get_label(service.label_id) is not None:
-                chosen = service
-                break
+        chosen: tuple[Service, LabelLink] | None = next(
+            (p for p in found if labels.async_get_label(p[1].label_id) is not None), None
+        )
         if chosen is None:
             continue
+        service, link = chosen
         if not targets:
-            issues.append(LabelSwitchIssue(entry.entity_id, chosen.service, PROBLEM_NO_TARGET))
+            issues.append(LabelSwitchIssue(entry.entity_id, service.id, PROBLEM_NO_TARGET))
             continue
-        switches.append(
-            LabelSwitch(entry.entity_id, chosen.service, chosen.on_means_allowed, targets)
-        )
+        switches.append(LabelSwitch(entry.entity_id, service.id, link.on_means_allowed, targets))
     return switches, issues
