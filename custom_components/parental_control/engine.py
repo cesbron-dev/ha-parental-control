@@ -51,6 +51,7 @@ from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TI
 from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
+from .core.i18n import request_reason
 from .core.label_services import switch_blocked
 from .core.model import (
     Config,
@@ -60,7 +61,6 @@ from .core.model import (
     ResourceKind,
     SegmentType,
 )
-from .core.i18n import request_reason
 from .core.requests import (
     RequestBook,
     RequestError,

@@ -54,7 +54,7 @@ def test_segments_strictly_increasing():
         parse_config(d)
 
 
-def test_ecole_and_fin_de_semaine_required():
+def test_school_and_weekend_required():
     d = ex()
     del d["kids"][0]["profiles"]["school"]
     with pytest.raises(ConfigError, match="school"):

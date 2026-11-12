@@ -328,7 +328,7 @@ def test_upcoming_closure_midnight_only_if_closed_then(make_cfg):
 # --------------------------------------------------------------------------- correctifs (revue)
 
 
-def test_tv_quota_falls_back_to_weekend_on_vacances(weekend_cfg):
+def test_tv_quota_falls_back_to_weekend_on_holidays(weekend_cfg):
     vacances = {k: DayType.HOLIDAYS for k in WEEKEND}
     tv = evaluate(at(10), weekend_cfg, with_usage(500), vacances).resources["tv"]
     assert tv.open is False

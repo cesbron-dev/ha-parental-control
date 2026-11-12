@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .core.decisions import ManualException
-from .core.i18n import msg
 from .core.display import exception_end, kid_timeline
+from .core.i18n import msg
 from .core.label_services import switch_blocked
 from .core.model import ResourceKind
 from .core.requests import RequestStatus

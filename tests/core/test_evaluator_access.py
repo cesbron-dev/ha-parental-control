@@ -109,7 +109,7 @@ def test_missing_day_type_defaults_to_weekday(cfg):
     assert snap.kids["alice"].status is KidStatus.ALLOWED
 
 
-def test_switch_sur_demande_mode_overrides_timeline(make_cfg):
+def test_switch_on_demand_mode_overrides_timeline(make_cfg):
     def modify(d):
         for kid in d["kids"]:
             kid["resource_modes"] = {"switch": "on_demand"}
@@ -123,7 +123,7 @@ def test_switch_sur_demande_mode_overrides_timeline(make_cfg):
     assert evaluate(at(15, 40), make_cfg(), Decisions(), SCHOOL).resources["switch"].open
 
 
-def test_libre_mode_opens_resource_until_midnight(make_cfg):
+def test_free_mode_opens_resource_until_midnight(make_cfg):
     cfg = make_cfg(lambda d: d["kids"][0].update(resource_modes={"iphone_hugo": "free"}))
     snap = evaluate(at(20, 0), cfg, Decisions(), SCHOOL)
     assert snap.kids["hugo"].status is KidStatus.BLOCKED

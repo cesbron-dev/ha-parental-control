@@ -17,7 +17,7 @@ def family_config_dict() -> dict:
     """Config d'exemple de la tâche 1 complétée par Zoé et Alice.
 
     - Zoé : même profil que Hugo.
-    - Alice : école `00:00 bloque → 16:15 apres_devoirs → 19:00 bloque`.
+    - Alice : `school` `00:00 blocked → 16:15 after_homework → 19:00 blocked`.
     - Ressources : TV et Switch partagées par les trois, un iPhone pour Hugo et Zoé.
     - Aucun mode par ressource par défaut (les tests les ajoutent au besoin).
     """

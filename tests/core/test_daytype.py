@@ -19,7 +19,7 @@ def test_weekday_default():
     assert day_type(date(2026, 10, 31), [], CMAP) == DayType.WEEKEND
 
 
-def test_conge_peda_matches_accent_insensitive():
+def test_day_off_matches_accent_insensitive():
     events = [ev("Congé PEDAGOGIQUE", date(2026, 10, 27), date(2026, 10, 28))]
     assert day_type(date(2026, 10, 27), events, CMAP) == DayType.DAY_OFF
 
@@ -34,7 +34,7 @@ def test_end_is_exclusive():
     assert day_type(date(2026, 10, 28), events, CMAP) == DayType.SCHOOL
 
 
-def test_vacances_beats_conge_peda():
+def test_holidays_beats_day_off():
     events = [
         ev("Congé pédagogique", date(2026, 10, 27), date(2026, 10, 28)),
         ev("Vacances", date(2026, 10, 26), date(2026, 10, 30)),
@@ -47,7 +47,7 @@ def test_unmapped_event_ignored():
     assert day_type(date(2026, 10, 27), events, CMAP) == DayType.SCHOOL
 
 
-def test_ecole_mapping_overrides_weekend_default_but_loses_to_conge():
+def test_school_mapping_overrides_weekend_default_but_loses_to_day_off():
     cmap = {**CMAP, "classe samedi": DayType.SCHOOL}
     sat = date(2026, 10, 31)
     events = [ev("Classe samedi", sat, date(2026, 11, 1))]
@@ -56,7 +56,7 @@ def test_ecole_mapping_overrides_weekend_default_but_loses_to_conge():
     assert day_type(sat, events, cmap) == DayType.DAY_OFF
 
 
-def test_ecole_vs_weekend_events_earliest_start_wins():
+def test_school_vs_weekend_events_earliest_start_wins():
     cmap = {"classe": DayType.SCHOOL, "relaxe": DayType.WEEKEND}
     d = date(2026, 10, 27)
     events = [

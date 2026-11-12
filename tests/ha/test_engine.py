@@ -434,7 +434,7 @@ async def test_calendar_failure_keeps_todays_events(hass, freezer, services, cap
     assert engine.snapshot.kids["hugo"].day_type is DayType.DAY_OFF
 
 
-async def test_calendar_conge_peda_switches_profile(hass, freezer, services) -> None:
+async def test_calendar_day_off_switches_profile(hass, freezer, services) -> None:
     services.calendar_events = [
         {"start": "2026-10-27", "end": "2026-10-28", "summary": "Congé pédagogique"},
         # Événement horaire : ignoré même s'il correspond à « vacances ».
