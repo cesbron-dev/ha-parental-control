@@ -180,7 +180,7 @@
         },
         "service": {
           "name": "Service",
-          "description": "AdGuard service (e.g. youtube)."
+          "description": "Id of one of your services (Rules panel, General tab)."
         },
         "minutes": {
           "name": "Minutes",
@@ -276,7 +276,7 @@
         },
         "service": {
           "name": "Service",
-          "description": "AdGuard service (optional)."
+          "description": "Id of one of your services (Rules panel, General tab) (optional)."
         },
         "minutes": {
           "name": "Minutes",

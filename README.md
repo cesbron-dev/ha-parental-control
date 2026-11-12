@@ -466,7 +466,9 @@ ce qu'on rattache.
 - **AdGuard.** Un client AdGuard bloque l'union des services AdGuard des services bloqués. Un
   même service AdGuard peut figurer dans plusieurs services : il est bloqué dès qu'un service
   géré qui le contient est bloqué. Les services AdGuard que vous n'avez rattachés à aucun
-  service géré ne sont jamais touchés.
+  service géré ne sont jamais touchés. Retirer un service AdGuard d'un service (ou supprimer un
+  service) pendant qu'il est bloqué le laisse bloqué sur le client : débloquez-le dans AdGuard
+  si besoin.
 - **Interrupteurs.** Un `switch` qui porte un label rattaché à un service et le **label de
   cible** d'un enfant ou d'un appareil logique (champ « Label de cible » de l'enfant ou de
   l'appareil) est piloté pour cette cible. Par défaut, **allumé = bloqué**, comme une règle de

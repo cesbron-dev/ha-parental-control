@@ -421,6 +421,9 @@ test("serviceToggles: on-demand services only, state from blocked_services, own 
     ["tiktok", false, [], false],
   ]);
   assert.equal(t[0].label, "YouTube");
+  assert.equal(t[0].icon, null); // pas d'icône : la carte garde l'icône d'état
+  const withIcon = serviceToggles({ ...state, services: { ...SERVICES, youtube: { ...SERVICES.youtube, icon: "mdi:youtube" } } }, "tv");
+  assert.equal(withIcon[0].icon, "mdi:youtube");
   // Liste de la carte : filtre et ordre, services inconnus de l'appareil ignorés.
   assert.deepEqual(serviceToggles(state, "tv", ["tiktok", "roblox", "youtube"]).map((x) => x.service), ["tiktok", "youtube"]);
   assert.deepEqual(serviceToggles(state, "ps"), []); // pas d'AdGuard

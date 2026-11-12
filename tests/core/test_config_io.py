@@ -426,7 +426,7 @@ def test_client_config_rejects_unknown_service():
 def test_client_config_rejects_unknown_kid_service():
     d = family_config_dict()
     d["kids"][0]["on_demand_remove"] = ["nope"]
-    with pytest.raises(ConfigError, match=r"kids\[0\]\.on_demand_remove\[0\]"):
+    with pytest.raises(ConfigError, match=r"kids\[0\]\.on_demand_remove : service inconnu : .nope."):
         parse_client_config(d)
 
 

@@ -689,12 +689,30 @@ async def test_warning_before_service_exception_ends(hass, freezer, services) ->
     assert [e for e in events if e.data["target"] == key] == []
     await tick(hass, freezer)  # 19:55
     warned = [e.data for e in events if e.data["target"] == key]
-    message = "youtube sur iPhone Gabin : coupure dans 5 min"
+    message = "YouTube sur iPhone Gabin : coupure dans 5 min"
     assert warned == [{"target": key, "closes_at": at(TUESDAY, 20, 0).isoformat(),
                        "message": message}]
     assert [c.data for c in services.of("notify", NOTIFY)] == [
         {"title": "Contrôle parental", "message": message}
     ]
+
+
+async def test_service_warning_uses_parent_service_name(hass, freezer, services) -> None:
+    config = config_for(services)
+    config["services"].append({"id": "jeux_video", "name": "Jeux vidéo", "adguard": ["roblox"]})
+    config["default_leisure"].append("jeux_video")
+    await ParentalStore(hass).save_config(parse_config(config))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    events = async_capture_events(hass, EVENT_WARNING)
+    _, engine = await setup(hass, freezer, at(TUESDAY, 19, 30), entry)
+    await engine.add_exception(
+        Target(resource_id="iphone_gabin", service="jeux_video"), True, 30
+    )
+    await tick(hass, freezer, 25)  # 19:55
+    key = "service:iphone_gabin:jeux_video"
+    messages = [e.data["message"] for e in events if e.data["target"] == key]
+    assert messages == ["Jeux vidéo sur iPhone Gabin : coupure dans 5 min"]
 
 
 async def test_add_exception_rejects_nintendo(hass, freezer, services) -> None:

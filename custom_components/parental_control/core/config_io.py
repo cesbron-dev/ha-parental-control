@@ -282,7 +282,7 @@ def _check_labels(
 
 
 def _known_services(
-    ids: list[str], known: set[str], path: str, strict: bool
+    ids: list[str], known: set[str], path: str, strict: bool, indexed: bool = True
 ) -> list[str]:
     """Identifiants de service connus ; les autres lèvent une erreur (strict) ou sont retirés."""
     kept: list[str] = []
@@ -290,7 +290,7 @@ def _known_services(
         if service_id in known:
             kept.append(service_id)
         elif strict:
-            raise _fail(f"{path}[{i}]", f"service inconnu : {service_id!r}")
+            raise _fail(f"{path}[{i}]" if indexed else path, f"service inconnu : {service_id!r}")
         else:
             _LOGGER.info("%s : service inconnu %r retiré", path, service_id)
     return kept
@@ -300,7 +300,8 @@ def _filter_kid_services(kid: Kid, index: int, known: set[str], strict: bool) ->
     changes = {}
     for attr in ("leisure_add", "leisure_remove", "on_demand_add", "on_demand_remove"):
         value = getattr(kid, attr)
-        kept = _known_services(sorted(value), known, f"kids[{index}].{attr}", strict)
+        kept = _known_services(sorted(value), known, f"kids[{index}].{attr}", strict,
+                               indexed=False)
         if len(kept) != len(value):
             changes[attr] = frozenset(kept)
     return replace(kid, **changes) if changes else kid

@@ -270,6 +270,22 @@ async def test_service_without_attachments_noop(hass: HomeAssistant, fake) -> No
     assert adapter.describe(desired) == []
 
 
+async def test_service_with_empty_adguard_and_no_labels_is_silent(
+    hass: HomeAssistant, fake
+) -> None:
+    fake.set_blocked([])
+    adapter = AdGuardAdapter(
+        hass, "iPhone Gabin", {"device_id": fake.device_id}, frozenset({"console"}),
+        parent_ids({"console": ()}),
+    )
+    desired = state(False, frozenset({"console"}))
+    assert not adapter.drifted(desired)
+    await adapter.apply(desired)
+
+    assert fake.calls == []
+    assert fake.blocked == []
+
+
 async def test_adguard_force_close_translates_once(hass: HomeAssistant, fake) -> None:
     fake.set_blocked([])
     adapter = AdGuardAdapter(
