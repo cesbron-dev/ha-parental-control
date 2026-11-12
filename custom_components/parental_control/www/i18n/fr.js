@@ -88,6 +88,25 @@ export default {
   },
   request: {
     until_next_change: "jusqu'au prochain changement",
+    // écran « Demandes » : texte et boutons d'une demande (mêmes textes que la notification aux parents)
+    homework: "{kid} dit avoir terminé ses devoirs",
+    bonus: "{kid} demande un bonus de {duration}",
+    bonus_on: "{kid} demande un bonus de {duration} sur {resource}",
+    timer: "{kid} demande un minuteur de {duration}",
+    open: {
+      duration: "{kid} demande {duration}",
+      duration_resource: "{kid} demande {duration} sur {resource}",
+      duration_service: "{kid} demande {duration} de {service}",
+      duration_service_resource: "{kid} demande {duration} de {service} sur {resource}",
+      until: "{kid} demande jusqu'au prochain changement",
+      resource_until: "{kid} demande {resource} jusqu'au prochain changement",
+      service_until: "{kid} demande {service} jusqu'au prochain changement",
+      service_resource_until: "{kid} demande {service} sur {resource} jusqu'au prochain changement",
+    },
+    accept: "Accepter",
+    accept_duration: "Accepter {duration}",
+    accept_until: "Accepter jusqu'au prochain changement",
+    refuse: "Refuser",
     reason: {
       impossible: "Action impossible",
       unknown_choice: "Choix inconnu",

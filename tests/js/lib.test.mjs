@@ -780,3 +780,47 @@ test("frise : capteur de statut lu dans l'instantané, toucher désactivé sinon
   assert.equal(L.statusEntity({ status_entity: "sensor.absent" }, hass), null);
   assert.equal(L.statusEntity({ status_entity: "sensor.hugo_status" }, {}), null);
 });
+
+test("écran « Demandes » : message et boutons dans la langue de l'utilisateur", async () => {
+  const L = await import("../../custom_components/parental_control/www/lib.js");
+  const base = { kid_name: "Hugo", resource_name: null, service_name: null, proposed: null, message: "Texte système" };
+  const open = (extra) => ({ ...base, kind: "open", ...extra });
+  const cases = [
+    [open({ proposed: 30 }), "Hugo asks for 30 min", "Hugo demande 30 min"],
+    [open({ proposed: 30, resource_name: "TV" }), "Hugo asks for 30 min on TV", "Hugo demande 30 min sur TV"],
+    [open({ proposed: 90, service_name: "YouTube" }), "Hugo asks for 1 h 30 min of YouTube", "Hugo demande 1 h 30 de YouTube"],
+    [open({ proposed: 30, service_name: "YouTube", resource_name: "iPhone Hugo" }),
+      "Hugo asks for 30 min of YouTube on iPhone Hugo", "Hugo demande 30 min de YouTube sur iPhone Hugo"],
+    [open({}), "Hugo asks until the next change", "Hugo demande jusqu'au prochain changement"],
+    [open({ resource_name: "TV" }), "Hugo asks for TV until the next change", "Hugo demande TV jusqu'au prochain changement"],
+    [open({ service_name: "YouTube" }), "Hugo asks for YouTube until the next change",
+      "Hugo demande YouTube jusqu'au prochain changement"],
+    [open({ service_name: "YouTube", resource_name: "TV" }), "Hugo asks for YouTube on TV until the next change",
+      "Hugo demande YouTube sur TV jusqu'au prochain changement"],
+    [{ ...base, kind: "bonus", proposed: 60 }, "Hugo asks for a 1 h bonus", "Hugo demande un bonus de 1 h"],
+    [{ ...base, kind: "bonus", proposed: 15, resource_name: "Switch" }, "Hugo asks for a 15 min bonus on Switch",
+      "Hugo demande un bonus de 15 min sur Switch"],
+    [{ ...base, kind: "timer", proposed: 20 }, "Hugo asks for a 20 min timer", "Hugo demande un minuteur de 20 min"],
+    [{ ...base, kind: "homework" }, "Hugo says their homework is done", "Hugo dit avoir terminé ses devoirs"],
+  ];
+  for (const [req, en, fr] of cases) {
+    assert.equal(L.requestMessage(req, EN), en);
+    assert.equal(L.requestMessage(req, FR), fr);
+  }
+  // champs absents (ancien serveur) ou type inconnu : message du serveur
+  assert.equal(L.requestMessage({ kind: "open", message: "Texte système" }, EN), "Texte système");
+  assert.equal(L.requestMessage({ ...base, kind: "nouveau" }, EN), "Texte système");
+
+  const choices = [
+    { choice: "0", label: "accept_duration", minutes: 30 },
+    { choice: "1", label: "duration", minutes: 75 },
+    { choice: "2", label: "duration", minutes: null },
+    { choice: "3", label: "accept_until", minutes: null },
+    { choice: "accept", label: "accept", minutes: null },
+    { choice: "refuse", label: "refuse", minutes: null },
+  ];
+  assert.deepEqual(choices.map((c) => L.choiceTitle(c, EN)),
+    ["Accept 30 min", "1 h 15 min", "Until the next change", "Accept until the next change", "Accept", "Refuse"]);
+  assert.deepEqual(choices.map((c) => L.choiceTitle(c, FR)),
+    ["Accepter 30 min", "1 h 15", "Jusqu'au prochain changement", "Accepter jusqu'au prochain changement", "Accepter", "Refuser"]);
+});

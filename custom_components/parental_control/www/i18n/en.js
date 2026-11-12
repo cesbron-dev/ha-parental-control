@@ -88,6 +88,25 @@ export default {
   },
   request: {
     until_next_change: "until the next change",
+    // "Requests" screen: request text and buttons (same texts as the parents' notification)
+    homework: "{kid} says their homework is done",
+    bonus: "{kid} asks for a {duration} bonus",
+    bonus_on: "{kid} asks for a {duration} bonus on {resource}",
+    timer: "{kid} asks for a {duration} timer",
+    open: {
+      duration: "{kid} asks for {duration}",
+      duration_resource: "{kid} asks for {duration} on {resource}",
+      duration_service: "{kid} asks for {duration} of {service}",
+      duration_service_resource: "{kid} asks for {duration} of {service} on {resource}",
+      until: "{kid} asks until the next change",
+      resource_until: "{kid} asks for {resource} until the next change",
+      service_until: "{kid} asks for {service} until the next change",
+      service_resource_until: "{kid} asks for {service} on {resource} until the next change",
+    },
+    accept: "Accept",
+    accept_duration: "Accept {duration}",
+    accept_until: "Accept until the next change",
+    refuse: "Refuse",
     reason: {
       impossible: "Action not possible",
       unknown_choice: "Unknown choice",

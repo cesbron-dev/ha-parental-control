@@ -14,7 +14,7 @@ from .core.display import exception_end, kid_timeline
 from .core.i18n import msg
 from .core.label_services import switch_blocked
 from .core.model import ResourceKind
-from .core.requests import RequestStatus
+from .core.requests import RequestStatus, choice_specs
 
 if TYPE_CHECKING:
     from .engine import ParentalEngine
@@ -174,16 +174,28 @@ def _kid_label_services(engine: ParentalEngine, switches: list[dict[str, Any]],
 
 
 def serialize_requests(engine: ParentalEngine, *, can_answer: bool) -> dict[str, Any]:
-    """Demandes pour l'écran « Demandes » : texte, choix des boutons, jamais le jeton."""
+    """Demandes pour l'écran « Demandes », jamais le jeton.
+
+    L'écran suit la langue de l'utilisateur : il rend le texte et les boutons d'après des champs
+    sans langue (noms, `proposed`, `choices`). `message`, dans la langue système de HA (celle de
+    la notification), ne sert que de repli.
+    """
     now = dt_util.now()
     requests = []
     for r in engine.requests.visible(now) if engine.config is not None else ():
         pending = r.status == RequestStatus.PENDING
+        names = engine.request_names(r)
         requests.append(
             {
                 "id": r.id,
                 "kind": r.kind.value,
                 "kid_id": r.kid_id,
+                "kid_name": names["kid"],
+                "resource_id": r.resource_id,
+                "resource_name": names["resource"],
+                "service": r.service,
+                "service_name": names["service"],
+                "proposed": r.proposed,
                 "message": engine.request_message(r),
                 "status": r.status.value,
                 "created": _value(r.created),
@@ -193,8 +205,8 @@ def serialize_requests(engine: ParentalEngine, *, can_answer: bool) -> dict[str,
                 "reason_code": r.reason_code,
                 "reason_params": dict(r.reason_params),
                 "answered_by": r.answered_by,
-                # Mêmes boutons que la notification ; seul l'identifiant du choix est exposé.
-                "choices": [list(c) for c in engine.request_choices(r)] if pending else [],
+                # Mêmes boutons que la notification, sans texte : {choice, label, minutes}.
+                "choices": choice_specs(r) if pending else [],
             }
         )
     return {"can_answer": can_answer, "requests": requests, "now": now.isoformat()}

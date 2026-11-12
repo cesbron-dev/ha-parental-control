@@ -12,6 +12,7 @@ from custom_components.parental_control.core.requests import (
     RequestKind,
     RequestStatus,
     action_choices,
+    choice_specs,
     duration_label,
     normalize_options,
 )
@@ -158,6 +159,26 @@ def test_action_choices_homework():
     req = make(RequestBook(), kind=RequestKind.HOMEWORK, proposed=None, options=())
     assert action_choices(req, "fr") == [("accept", "Accepter"), ("refuse", "Refuser")]
     assert action_choices(req, "en") == [("accept", "Accept"), ("refuse", "Refuse")]
+
+
+def test_choice_specs_language_neutral():
+    """Boutons sans texte : l'écran « Demandes » les rend dans la langue de l'utilisateur."""
+    assert choice_specs(make(RequestBook())) == [
+        {"choice": "0", "label": "accept_duration", "minutes": 30},
+        {"choice": "1", "label": "duration", "minutes": 15},
+        {"choice": "2", "label": "duration", "minutes": None},
+        {"choice": "refuse", "label": "refuse", "minutes": None},
+    ]
+    assert choice_specs(make(RequestBook(), proposed=None, options=(None, 15))) == [
+        {"choice": "0", "label": "accept_until", "minutes": None},
+        {"choice": "1", "label": "duration", "minutes": 15},
+        {"choice": "refuse", "label": "refuse", "minutes": None},
+    ]
+    homework = make(RequestBook(), kind=RequestKind.HOMEWORK, proposed=None, options=())
+    assert choice_specs(homework) == [
+        {"choice": "accept", "label": "accept", "minutes": None},
+        {"choice": "refuse", "label": "refuse", "minutes": None},
+    ]
 
 
 def test_duration_label():

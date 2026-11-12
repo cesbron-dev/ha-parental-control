@@ -811,9 +811,15 @@ async def test_requests_screen_lists_choices_without_token(
         assert event["can_answer"] is can_answer
         (req,) = event["requests"]
         assert req["id"] == req_id and req["status"] == "pending"
+        # Champs sans langue : l'écran rend le texte dans la langue de l'utilisateur ;
+        # `message` (langue système) reste en repli.
         assert req["message"] == "Hugo demande 30 min de YouTube sur iPhone Hugo"
-        assert req["choices"][0] == ["0", "Accepter 30 min"]
-        assert req["choices"][-1] == ["refuse", "Refuser"]
+        assert (req["kid_name"], req["resource_name"], req["service_name"], req["proposed"]) == (
+            "Hugo", "iPhone Hugo", "YouTube", 30)
+        assert req["choices"][0] == {"choice": "0", "label": "accept_duration", "minutes": 30}
+        assert req["choices"][-1] == {"choice": "refuse", "label": "refuse", "minutes": None}
+        assert not any(isinstance(v, str) and "Accepter" in v
+                       for c in req["choices"] for v in c.values())
 
 
 @_ws

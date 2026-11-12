@@ -114,6 +114,36 @@ export function requestLine(req, hass) {
   }
 }
 
+// Texte d'une demande pour l'écran « Demandes », dans la langue de l'utilisateur, d'après les
+// champs sans langue du serveur (noms, `proposed`) ; même choix de gabarit que
+// `ParentalEngine.request_message` (notification, langue système). Sans ces champs : `message`.
+export function requestMessage(req, hass) {
+  if (!req?.kid_name) return req?.message ?? "";
+  const params = { kid: req.kid_name };
+  if (req.resource_name) params.resource = req.resource_name;
+  if (req.proposed != null) params.duration = formatDuration(hass, req.proposed);
+  switch (req.kind) {
+    case "homework": return t(hass, "request.homework", params);
+    case "bonus": return t(hass, params.resource ? "request.bonus_on" : "request.bonus", params);
+    case "timer": return t(hass, "request.timer", params);
+    case "open": {
+      if (req.service_name) params.service = req.service_name;
+      const parts = ["duration", "service", "resource"].filter((p) => p in params);
+      if (req.proposed == null) parts.push("until");
+      return t(hass, `request.open.${parts.join("_")}`, params);
+    }
+    default: return req.message ?? "";
+  }
+}
+
+// Titre d'un bouton de réponse ({choice, label, minutes}) dans la langue de l'utilisateur :
+// `duration` -> la durée seule (null : « Jusqu'au prochain changement ») ; sinon `request.<label>`.
+export function choiceTitle(choice, hass) {
+  const duration = formatDuration(hass, choice.minutes);
+  if (choice.label === "duration") return duration;
+  return t(hass, `request.${choice.label}`, { duration });
+}
+
 // Temps restant avant l'expiration d'une demande en attente, pour l'écran « Demandes ».
 export function requestRemaining(expires, now, hass) {
   const minutes = Math.ceil((new Date(expires) - now) / 60000);

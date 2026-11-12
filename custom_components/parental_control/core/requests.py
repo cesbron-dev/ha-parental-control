@@ -207,20 +207,31 @@ def duration_label(minutes: int | None, lang: str = DEFAULT_LANGUAGE) -> str:
     return duration_text(lang, minutes)
 
 
+def choice_specs(req: TimeRequest) -> list[dict[str, str | int | None]]:
+    """Boutons de la demande sans texte : `choice` (réponse), `label` (gabarit `request.<label>`,
+    ou `duration` pour la durée seule) et `minutes` (None : jusqu'au prochain changement)."""
+    refuse = {"choice": "refuse", "label": "refuse", "minutes": None}
+    if req.kind == RequestKind.HOMEWORK:
+        return [{"choice": "accept", "label": "accept", "minutes": None}, refuse]
+    specs: list[dict[str, str | int | None]] = []
+    for i, minutes in enumerate(req.options):
+        label = "duration"
+        if i == 0 and (req.proposed is not None or minutes is None):
+            label = "accept_until" if minutes is None else "accept_duration"
+        specs.append({"choice": str(i), "label": label, "minutes": minutes})
+    specs.append(refuse)
+    return specs
+
+
+def choice_title(spec: dict[str, str | int | None], lang: str = DEFAULT_LANGUAGE) -> str:
+    """Titre d'un bouton de `choice_specs` dans la langue `lang`."""
+    minutes = spec["minutes"]
+    duration = duration_label(minutes if isinstance(minutes, int) else None, lang)
+    if spec["label"] == "duration":
+        return duration
+    return msg(lang, f"request.{spec['label']}", duration=duration)
+
+
 def action_choices(req: TimeRequest, lang: str = DEFAULT_LANGUAGE) -> list[tuple[str, str]]:
     """Paires (choix, titre) des boutons de la notification, dans la langue `lang`."""
-    refuse = ("refuse", msg(lang, "request.refuse"))
-    if req.kind == RequestKind.HOMEWORK:
-        return [("accept", msg(lang, "request.accept")), refuse]
-    choices: list[tuple[str, str]] = []
-    for i, minutes in enumerate(req.options):
-        title = duration_label(minutes, lang)
-        if i == 0 and (req.proposed is not None or minutes is None):
-            title = (
-                msg(lang, "request.accept_until")
-                if minutes is None
-                else msg(lang, "request.accept_duration", duration=title)
-            )
-        choices.append((str(i), title))
-    choices.append(refuse)
-    return choices
+    return [(str(spec["choice"]), choice_title(spec, lang)) for spec in choice_specs(req)]

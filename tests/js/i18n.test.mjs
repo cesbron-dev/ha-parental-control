@@ -281,3 +281,21 @@ test("chaque code d'erreur WebSocket de l'intégration a son texte", async () =>
   codes.delete("invalid_config"); // traduite par `config_error.*` (translation_key)
   assert.deepEqual([...codes].sort(), Object.keys(en.ws_error).sort());
 });
+
+test("textes des demandes identiques au catalogue du serveur (écran « Demandes »)", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../../custom_components/parental_control/core/i18n.py", import.meta.url), "utf8");
+  const [, enPart, frPart] = source.split(/^ {4}"(?:en|fr)": \{$/m);
+  // entrées sur une ou deux lignes ; `request.reason.*` est vérifié à part
+  const server = (part) => Object.fromEntries([...part.matchAll(/^ {8}"(request\.[\w.]+)":\s+"(.*)",$/gm)]
+    .filter(([, key]) => !key.startsWith("request.reason."))
+    .map(([, key, text]) => [key, text]));
+  for (const [catalogue, part] of [[en, enPart], [fr, frPart]]) {
+    const expected = server(part);
+    assert.equal(Object.keys(expected).length, 16);
+    for (const [key, text] of Object.entries(expected)) {
+      const node = key.split(".").slice(1).reduce((n, k) => n?.[k], catalogue.request);
+      assert.equal(node, text, key);
+    }
+  }
+});

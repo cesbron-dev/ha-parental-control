@@ -740,17 +740,31 @@ class ParentalEngine:
 
     # ------------------------------------------------------------------ demandes
 
-    def request_message(self, req: TimeRequest) -> str:
-        """Texte de la notification envoyée aux parents (langue système de HA)."""
+    def request_names(self, req: TimeRequest) -> dict[str, str | None]:
+        """Noms (sans langue) de l'enfant, de la ressource et du service d'une demande ; à défaut
+        leur identifiant (l'écran « Demandes » affiche aussi la demande d'un enfant retiré)."""
         cfg = self._require_config()
-        lang = server_language(self._hass)
-        # L'écran « Demandes » affiche aussi les demandes d'un enfant retiré entre-temps.
-        params: dict[str, object] = {"kid": self._kid_name(req.kid_id)}
+        resource: str | None = None
         if req.resource_id is not None:
             try:
-                params["resource"] = cfg.resource(req.resource_id).name
+                resource = cfg.resource(req.resource_id).name
             except KeyError:
-                params["resource"] = req.resource_id
+                resource = req.resource_id
+        return {
+            "kid": self._kid_name(req.kid_id),
+            "resource": resource,
+            "service": None if req.service is None else self.service_name(req.service),
+        }
+
+    def request_message(self, req: TimeRequest) -> str:
+        """Texte de la notification envoyée aux parents (langue système de HA).
+
+        Même choix de gabarit que `requestMessage` de `www/lib.js` (écran « Demandes »)."""
+        lang = server_language(self._hass)
+        names = self.request_names(req)
+        params: dict[str, object] = {"kid": names["kid"]}
+        if names["resource"] is not None:
+            params["resource"] = names["resource"]
         if req.proposed is not None:
             params["duration"] = duration_label(req.proposed, lang)
         if req.kind == RequestKind.HOMEWORK:
@@ -760,8 +774,8 @@ class ParentalEngine:
             return self._text(key, **params)
         if req.kind == RequestKind.TIMER:
             return self._text("request.timer", kid=params["kid"], duration=params["duration"])
-        if req.service is not None:
-            params["service"] = self.service_name(req.service)
+        if names["service"] is not None:
+            params["service"] = names["service"]
         parts = [p for p in ("duration", "service", "resource") if p in params]
         if req.proposed is None:
             # Ni la durée ni la ressource seule : « jusqu'au prochain changement ».

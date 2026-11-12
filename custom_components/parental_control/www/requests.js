@@ -1,8 +1,8 @@
 // Écran « Demandes » (panneau hors barre latérale, ouvert en touchant la notification) : demandes
 // de temps en attente et récentes. Les boutons ne s'affichent qu'aux parents ; le moteur revérifie.
-// Le message et les boutons de chaque demande viennent du serveur (langue du système HA) ; le reste
-// de l'écran suit la langue de l'utilisateur.
-import { esc, requestRemaining, requestOutcome, requestsScreen } from "./lib.js";
+// Tout l'écran, message et boutons de chaque demande compris, suit la langue de l'utilisateur : le
+// serveur n'envoie que des champs sans langue (noms, durée proposée, choix).
+import { esc, requestRemaining, requestOutcome, requestsScreen, requestMessage, choiceTitle } from "./lib.js";
 import { BASE_CSS, applyTheme } from "./style.js";
 import { t, lang, errorText } from "./i18n.js";
 
@@ -136,7 +136,9 @@ class ParentalControlRequests extends HTMLElement {
   _pendingCard(req, canAnswer, now) {
     const busy = this._busy === req.id;
     const buttons = canAnswer
-      ? `<div class="pills">${req.choices.map(([choice, title], i) => {
+      ? `<div class="pills">${req.choices.map((c, i) => {
+        const { choice } = c;
+        const title = choiceTitle(c, this._hass);
         const cls = choice === "refuse" ? "rouge" : i === 0 ? "vert" : "bleu";
         const icon = choice === "refuse" ? "mdi:close" : "mdi:check";
         return `<button class="pill ${cls}" data-request="${esc(req.id)}" data-choice="${esc(choice)}"${this._busy ? " disabled" : ""}>`
@@ -144,14 +146,14 @@ class ParentalControlRequests extends HTMLElement {
       }).join("")}</div>`
       : "";
     const error = this._error?.id === req.id ? `<div class="error">${esc(this._error.text)}</div>` : "";
-    return `<ha-card><p class="msg">${esc(req.message)}</p>`
+    return `<ha-card><p class="msg">${esc(requestMessage(req, this._hass))}</p>`
       + `<div class="when">${esc(busy ? t(this._hass, "requests.sending") : requestRemaining(req.expires, now, this._hass))}</div>`
       + `${buttons}${error}</ha-card>`;
   }
 
   _recentCard(req) {
     const cls = req.status === "accepted" ? "ok" : req.status === "refused" ? "bad" : "muted";
-    return `<ha-card><p class="msg">${esc(req.message)}</p><div class="when ${cls}">${esc(requestOutcome(req, this._hass))}</div></ha-card>`;
+    return `<ha-card><p class="msg">${esc(requestMessage(req, this._hass))}</p><div class="when ${cls}">${esc(requestOutcome(req, this._hass))}</div></ha-card>`;
   }
 
   _body() {
