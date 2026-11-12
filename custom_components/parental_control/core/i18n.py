@@ -200,6 +200,21 @@ MESSAGES: dict[str, dict[str, str]] = {
 }
 
 
+class _Missing:
+    """Paramètre absent : le champ `{nom}` (ou `{nom:format}`) reste tel quel."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+
+    def __format__(self, spec: str) -> str:
+        return "{" + self._name + (f":{spec}" if spec else "") + "}"
+
+
+class _Params(dict):
+    def __missing__(self, key: str) -> _Missing:
+        return _Missing(key)
+
+
 def base_language(lang: str | None) -> str:
     """`en` ou `fr` : langue de base de `lang` (`fr-CA` → `fr`), `en` sans catalogue."""
     if not lang:
@@ -213,7 +228,7 @@ def msg(lang: str | None, key: str, **params: object) -> str:
     template = MESSAGES[base_language(lang)].get(key) or MESSAGES[DEFAULT_LANGUAGE].get(key)
     if template is None:
         return key
-    return template.format(**params) if params else template
+    return template.format_map(_Params(params))
 
 
 def duration_text(lang: str | None, minutes: int | None) -> str:

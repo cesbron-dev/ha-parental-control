@@ -105,3 +105,9 @@ def test_global_device_name_translated():
                            ("translations/en.json", "Parental control"),
                            ("translations/fr.json", "Contrôle parental")):
         assert _load(name)["device"]["global"]["name"] == expected
+
+
+def test_missing_parameter_kept():
+    """Un paramètre manquant reste en place au lieu de lever une exception."""
+    assert msg("en", "warn.kid", name="Hugo") == "Hugo: screens end in {minutes} min"
+    assert msg("fr", "duration.hours_minutes", hours=1) == "1 h {minutes:02d}"

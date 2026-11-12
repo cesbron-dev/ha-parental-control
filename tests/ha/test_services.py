@@ -311,8 +311,9 @@ async def test_import_missing_device_rejected_config_unchanged(make_env) -> None
     new = dict(EX, request_notify=["notify.mobile_app_inconnu"])
     with pytest.raises(ServiceValidationError) as err:
         await env.call("import_config", {"config": new}, env.admin_ctx)
-    assert err.value.translation_key == "invalid_config"
-    assert "notify.mobile_app_inconnu" in err.value.translation_placeholders["error"]
+    assert err.value.translation_key == "config_phone_not_found"
+    assert err.value.translation_placeholders == {
+        "path": "request_notify", "target": "notify.mobile_app_inconnu"}
     assert env.engine.config == before
 
 
@@ -321,8 +322,8 @@ async def test_import_invalid_config_raises_validation_error(make_env) -> None:
     with pytest.raises(ServiceValidationError) as err:
         await env.call("import_config", {"config": dict(EX, version=99)},
                        env.admin_ctx)
-    assert err.value.translation_key == "invalid_config"
-    assert "version" in err.value.translation_placeholders["error"]
+    assert err.value.translation_key == "config_unsupported_version"
+    assert err.value.translation_placeholders == {"path": "version", "version": "99"}
     assert env.engine.config == parse_config(EX)
 
 

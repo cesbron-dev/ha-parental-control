@@ -45,7 +45,7 @@ ATTR_CONFIG = "config"
 
 _CODE = {vol.Optional(CONF_CODE): cv.string}
 _MINUTES = vol.All(vol.Coerce(int), vol.Range(min=1, max=240))
-_TARGET_MSG = "exactement un de kid_id ou resource_id"
+_TARGET_MSG = "exactly one of kid_id or resource_id"
 
 HOMEWORK_SCHEMA = vol.Schema({vol.Required(ATTR_KID_ID): cv.string, **_CODE})
 ADD_BONUS_SCHEMA = vol.All(
@@ -175,8 +175,8 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
         except ConfigError as err:
             raise ServiceValidationError(
                 translation_domain=DOMAIN,
-                translation_key="invalid_config",
-                translation_placeholders={"error": str(err)},
+                translation_key=f"config_{err.code}",
+                translation_placeholders={"path": err.path, **err.params},
             ) from err
         await engine.set_config(cfg)
 

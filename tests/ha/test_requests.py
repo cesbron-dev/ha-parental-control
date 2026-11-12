@@ -342,6 +342,17 @@ async def test_parent_non_admin_accepts_with_other_duration(
     assert "Demande de Hugo acceptée par Julie : 1 h" in logbook_messages(entries)
 
 
+async def test_answer_logbook_in_english(hass, make_env, julie, julie_user) -> None:
+    env = await _parents_env(make_env, julie_user)
+    hass.config.language = "en"
+    entries = async_capture_events(hass, "logbook_entry")
+    req_id = await _ask(env)
+    req = env.engine.requests.get(req_id)
+    await _answer(env, _actions(julie)[str(req.options.index(60))], julie_user.id)
+    assert "Request from Hugo accepted by Julie: 1 h" in logbook_messages(entries)
+    assert [e.data["name"] for e in entries][-1] == "Parental control"
+
+
 async def test_tablet_user_cannot_answer(make_env, julie, julie_user) -> None:
     env = await _parents_env(make_env, julie_user)
     req_id = await _ask(env)
