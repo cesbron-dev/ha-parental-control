@@ -111,3 +111,13 @@ def test_missing_parameter_kept():
     """Un paramètre manquant reste en place au lieu de lever une exception."""
     assert msg("en", "warn.kid", name="Hugo") == "Hugo: screens end in {minutes} min"
     assert msg("fr", "duration.hours_minutes", hours=1) == "1 h {minutes:02d}"
+
+
+def test_error_texts_match_translations():
+    """`error.<clé>` (raison d'une demande échouée) reprend le message `exceptions.<clé>`."""
+    keys = {k.removeprefix("error.") for k in MESSAGES["en"] if k.startswith("error.")}
+    for lang in ("en", "fr"):
+        exceptions = _load(f"translations/{lang}.json")["exceptions"]
+        assert keys == {k for k in exceptions if not k.startswith("config_")}
+        for key in keys:
+            assert MESSAGES[lang][f"error.{key}"] == exceptions[key]["message"]

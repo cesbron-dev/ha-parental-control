@@ -149,6 +149,8 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "status": r.status.value,
             "granted": r.granted,
             "reason": r.reason,
+            "reason_code": r.reason_code,
+            "reason_params": dict(r.reason_params),
             "expires": _value(r.expires),
         }
         for r in engine.requests.visible(now)
@@ -187,6 +189,8 @@ def serialize_requests(engine: ParentalEngine, *, can_answer: bool) -> dict[str,
                 "expires": _value(r.expires),
                 "granted": r.granted,
                 "reason": r.reason,
+                "reason_code": r.reason_code,
+                "reason_params": dict(r.reason_params),
                 "answered_by": r.answered_by,
                 # Mêmes boutons que la notification ; seul l'identifiant du choix est exposé.
                 "choices": [list(c) for c in engine.request_choices(r)] if pending else [],

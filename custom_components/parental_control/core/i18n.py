@@ -73,6 +73,22 @@ MESSAGES: dict[str, dict[str, str]] = {
         "request.refuse": "Refuse",
         "request.reason.impossible": "Action not possible",
         "request.reason.unknown_choice": "Unknown choice",
+        # Raisons d'échec d'une demande : messages de la section `exceptions` des traductions.
+        "error.code_required": "A parent code is required for this action.",
+        "error.code_invalid": "Invalid parent code.",
+        "error.not_configured": "Parental control has no configuration yet.",
+        "error.unknown_kid": "Unknown child: {kid_id}.",
+        "error.unknown_resource": "Unknown resource: {resource_id}.",
+        "error.invalid_target": "This target is not valid for this action.",
+        "error.timer_active": "A timer is already running for this child.",
+        "error.not_in_quota": "Timers can only be started during a quota period.",
+        "error.quota_exhausted": "The daily quota is exhausted.",
+        "error.code_locked": "Too many wrong parent codes. Try again in {seconds} s.",
+        "error.nintendo_use_bonus": "For the Switch, use add_bonus.",
+        "error.requests_disabled": "No parent receives the requests.",
+        "error.request_pending": "An identical request is already pending.",
+        "error.too_many_requests": "Too many pending requests.",
+        "error.invalid_request": "Invalid request.",
         # Journal de bord des demandes.
         "log.refused": "Request from {kid} refused by {parent}",
         "log.failed": "Request from {kid} accepted by {parent}, but not possible: {reason}",
@@ -164,6 +180,21 @@ MESSAGES: dict[str, dict[str, str]] = {
         "request.refuse": "Refuser",
         "request.reason.impossible": "Action impossible",
         "request.reason.unknown_choice": "Choix inconnu",
+        "error.code_required": "Un code parent est requis pour cette action.",
+        "error.code_invalid": "Code parent invalide.",
+        "error.not_configured": "Le contrôle parental n'est pas encore configuré.",
+        "error.unknown_kid": "Enfant inconnu : {kid_id}.",
+        "error.unknown_resource": "Ressource inconnue : {resource_id}.",
+        "error.invalid_target": "Cette cible n'est pas valide pour cette action.",
+        "error.timer_active": "Un minuteur est déjà en cours pour cet enfant.",
+        "error.not_in_quota": "Un minuteur ne peut démarrer que pendant une période de quota.",
+        "error.quota_exhausted": "Le quota du jour est épuisé.",
+        "error.code_locked": "Trop de codes parent erronés. Réessayez dans {seconds} s.",
+        "error.nintendo_use_bonus": "Pour la Switch, utilisez add_bonus.",
+        "error.requests_disabled": "Aucun parent ne reçoit les demandes.",
+        "error.request_pending": "Une demande identique est déjà en attente.",
+        "error.too_many_requests": "Trop de demandes en attente.",
+        "error.invalid_request": "Demande invalide.",
         "log.refused": "Demande de {kid} refusée par {parent}",
         "log.failed": "Demande de {kid} acceptée par {parent}, mais impossible : {reason}",
         "log.accepted": "Demande de {kid} acceptée par {parent}",
@@ -229,6 +260,15 @@ def msg(lang: str | None, key: str, **params: object) -> str:
     if template is None:
         return key
     return template.format_map(_Params(params))
+
+
+def request_reason(lang: str | None, code: str, params: dict[str, str] | None = None) -> str:
+    """Texte de la raison d'échec d'une demande : `request.reason.<code>` (`impossible`,
+    `unknown_choice`), sinon `error.<code>` (clé d'erreur d'une action parentale), sinon le code."""
+    for key in (f"request.reason.{code}", f"error.{code}"):
+        if key in MESSAGES[DEFAULT_LANGUAGE]:
+            return msg(lang, key, **(params or {}))
+    return code
 
 
 def duration_text(lang: str | None, minutes: int | None) -> str:

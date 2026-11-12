@@ -57,9 +57,13 @@ class TimeRequest:
     expires: datetime
     status: RequestStatus = RequestStatus.PENDING
     granted: int | None = None
-    reason: str | None = None
+    reason: str | None = None  # texte rendu dans la langue système de HA
     resolved_at: datetime | None = None
     answered_by: str | None = None
+    # Raison d'échec indépendante de la langue : `impossible`, `unknown_choice` ou la clé
+    # d'erreur de l'action parentale (`not_in_quota`…), avec ses paramètres (textes).
+    reason_code: str | None = None
+    reason_params: dict[str, str] = field(default_factory=dict)
 
     @property
     def key(self) -> tuple[str, str, str | None, str | None]:
@@ -168,11 +172,15 @@ class RequestBook:
         *,
         granted: int | None = None,
         reason: str | None = None,
+        reason_code: str | None = None,
+        reason_params: dict[str, str] | None = None,
         answered_by: str | None = None,
     ) -> None:
         req.status = status
         req.granted = granted
         req.reason = reason
+        req.reason_code = reason_code
+        req.reason_params = dict(reason_params or {})
         req.answered_by = answered_by
         req.resolved_at = now
 

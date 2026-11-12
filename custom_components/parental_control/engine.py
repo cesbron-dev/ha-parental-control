@@ -60,6 +60,7 @@ from .core.model import (
     ResourceKind,
     SegmentType,
 )
+from .core.i18n import request_reason
 from .core.requests import (
     RequestBook,
     RequestError,
@@ -871,16 +872,19 @@ class ParentalEngine:
         req = self._requests.claim(request_id, token, dt_util.now())
         if req is None:
             return None
-        status, granted, reason = (
-            RequestStatus.FAILED, None, self._text("request.reason.impossible")
-        )
+        status: RequestStatus = RequestStatus.FAILED
+        granted: int | None = None
+        failure: tuple[str, dict[str, str]] | None = ("impossible", {})
         try:
-            status, granted, reason = await self._apply_answer(req, choice)
+            status, granted, failure = await self._apply_answer(req, choice)
         finally:
             # Toujours un statut définitif : la réservation (`claim`) ne doit pas rester.
+            code, params = failure if failure is not None else (None, {})
+            reason = None if code is None else request_reason(self.language, code, params)
             self._requests.finish(
                 req, status, dt_util.now(),
-                granted=granted, reason=reason, answered_by=answered_by,
+                granted=granted, reason=reason, reason_code=code, reason_params=params,
+                answered_by=answered_by,
             )
             self.clear_request_notification(req)
             who = {"kid": self._kid_name(req.kid_id), "parent": answered_by}
@@ -904,19 +908,19 @@ class ParentalEngine:
 
     async def _apply_answer(
         self, req: TimeRequest, choice: str
-    ) -> tuple[RequestStatus, int | None, str | None]:
-        """Statut, durée accordée et raison d'échec de la réponse `choice`."""
+    ) -> tuple[RequestStatus, int | None, tuple[str, dict[str, str]] | None]:
+        """Statut, durée accordée et raison d'échec (code, paramètres) de la réponse `choice`."""
         if choice == "refuse":
             return RequestStatus.REFUSED, None, None
         if req.kind == RequestKind.HOMEWORK:
             if choice != "accept":
-                return RequestStatus.FAILED, None, self._text("request.reason.unknown_choice")
+                return RequestStatus.FAILED, None, ("unknown_choice", {})
             minutes = None
         else:
             # Comparaison de chaînes : ni « 01 », ni chiffres d'autres écritures.
             indexes = {str(i): i for i in range(len(req.options))}
             if choice not in indexes:
-                return RequestStatus.FAILED, None, self._text("request.reason.unknown_choice")
+                return RequestStatus.FAILED, None, ("unknown_choice", {})
             minutes = req.options[indexes[choice]]
         kid_id = None if req.resource_id else req.kid_id
         try:
@@ -949,9 +953,10 @@ class ParentalEngine:
             else:
                 await self.homework_done(req.kid_id)
         except ServiceValidationError as err:
-            return RequestStatus.FAILED, None, str(err) or err.translation_key
+            params = {k: str(v) for k, v in (err.translation_placeholders or {}).items()}
+            return RequestStatus.FAILED, None, (err.translation_key or "impossible", params)
         except (KeyError, ValueError):
-            return RequestStatus.FAILED, None, self._text("request.reason.impossible")
+            return RequestStatus.FAILED, None, ("impossible", {})
         return RequestStatus.ACCEPTED, minutes, None
 
     def _expire_requests(self, now: datetime) -> None:

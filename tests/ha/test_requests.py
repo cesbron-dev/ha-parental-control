@@ -20,7 +20,7 @@ from custom_components.parental_control.core.model import ResourceKind
 from custom_components.parental_control.core.requests import RequestKind
 from custom_components.parental_control.parents import trusted_phone_owners
 from custom_components.parental_control.request_listener import parse_action
-from custom_components.parental_control.serialize import serialize_snapshot
+from custom_components.parental_control.serialize import serialize_requests, serialize_snapshot
 from tests.fixtures import EX
 from tests.ha.test_engine import (
     SATURDAY,
@@ -531,6 +531,7 @@ async def test_unknown_choice_marks_failed(make_env, julie, julie_user) -> None:
     base = _actions(julie)["0"].rsplit(":", 1)[0]
     await _answer(env, f"{base}:accept", julie_user.id)  # « accept » : devoirs seulement
     assert req.status == "failed" and req.reason == "Choix inconnu"
+    assert (req.reason_code, req.reason_params) == ("unknown_choice", {})
     assert env.engine.decisions.exceptions == []
     assert len(_clears(julie, req_id)) == 1
 
@@ -544,7 +545,15 @@ async def test_accept_impossible_marks_failed(
     await tick(hass, freezer, 6)  # 20:01 : hors de la plage quota
     await _answer(env, _actions(julie)["0"], julie_user.id)
     req = env.engine.requests.get(req_id)
-    assert req.status == "failed" and req.reason
+    assert req.status == "failed"
+    assert (req.reason_code, req.reason_params) == ("not_in_quota", {})
+    assert req.reason == "Un minuteur ne peut démarrer que pendant une période de quota."
+    (item,) = serialize_snapshot(env.engine, display=True)["requests"]
+    assert (item["reason_code"], item["reason_params"], item["reason"]) == (
+        "not_in_quota", {}, req.reason)
+    (item,) = serialize_requests(env.engine, can_answer=True)["requests"]
+    assert (item["reason_code"], item["reason_params"], item["reason"]) == (
+        "not_in_quota", {}, req.reason)
     assert env.engine.decisions.timers == []
     assert any(
         m.startswith("Demande de Hugo acceptée par Julie, mais impossible : ")
@@ -591,7 +600,27 @@ async def test_answer_after_config_removed_kid(make_env, julie, julie_user) -> N
     await env.engine.set_config(parse_config(_with_owners(cfg, env, julie_user)))
     await _answer(env, _actions(julie)["accept"], julie_user.id)
     req = env.engine.requests.get(req_id)
-    assert req.status == "failed" and req.reason
+    assert req.status == "failed"
+    assert (req.reason_code, req.reason_params) == ("unknown_kid", {"kid_id": "hugo"})
+    assert req.reason == "Enfant inconnu : hugo."
+
+
+async def test_accept_unexpected_error_marks_impossible(
+    hass, make_env, julie, julie_user
+) -> None:
+    env = await _parents_env(make_env, julie_user, at(SATURDAY, 10, 0))
+    hass.config.language = "en"
+    req_id = await _ask(env, {"kind": "timer", "kid_id": "hugo", "minutes": 30})
+
+    async def broken(*_args, **_kwargs):
+        raise KeyError("hugo")
+
+    env.engine.start_timer = broken
+    await _answer(env, _actions(julie)["0"], julie_user.id)
+    req = env.engine.requests.get(req_id)
+    assert req.status == "failed"
+    assert (req.reason_code, req.reason_params, req.reason) == (
+        "impossible", {}, "Action not possible")
 
 
 async def test_late_answer_after_expiry_ignored(

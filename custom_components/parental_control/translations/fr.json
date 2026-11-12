@@ -111,9 +111,6 @@
     "code_locked": {
       "message": "Trop de codes parent erronés. Réessayez dans {seconds} s."
     },
-    "invalid_config": {
-      "message": "Configuration invalide : {error}"
-    },
     "nintendo_use_bonus": {
       "message": "Pour la Switch, utilisez add_bonus."
     },
