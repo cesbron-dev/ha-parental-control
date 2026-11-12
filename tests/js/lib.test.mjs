@@ -766,3 +766,17 @@ test("code inconnu sans texte du serveur : le code en dernier recours", async ()
   assert.equal(L.requestOutcome({ kind: "open", status: "failed", reason_code: "nouveau_code" }, FR),
     "Acceptée, mais impossible : nouveau_code");
 });
+
+test("frise : capteur de statut lu dans l'instantané, toucher désactivé sinon", async () => {
+  const L = await import("../../custom_components/parental_control/www/lib.js");
+  const hass = { states: { "sensor.hugo_status": {}, "sensor.mon_fils": {} } };
+  assert.equal(L.statusEntity({ status_entity: "sensor.mon_fils" }, hass), "sensor.mon_fils");
+  assert.equal(L.statusEntity({ status_entity: "sensor.hugo_status" }, hass), "sensor.hugo_status");
+  // champ absent ou nul : jamais d'identifiant deviné
+  assert.equal(L.statusEntity({}, hass), null);
+  assert.equal(L.statusEntity({ status_entity: null }, hass), null);
+  assert.equal(L.statusEntity(undefined, hass), null);
+  // entité inconnue de HA (pas encore créée, désactivée) : pas de toucher
+  assert.equal(L.statusEntity({ status_entity: "sensor.absent" }, hass), null);
+  assert.equal(L.statusEntity({ status_entity: "sensor.hugo_status" }, {}), null);
+});

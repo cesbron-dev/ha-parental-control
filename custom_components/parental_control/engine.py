@@ -428,6 +428,15 @@ class ParentalEngine:
         """`en` ou `fr` : langue système de HA, celle des textes produits par le serveur."""
         return server_language(self._hass)
 
+    def status_entity_id(self, kid_id: str) -> str | None:
+        """Identifiant réel du capteur « Statut » de l'enfant (registre des entités), ou None.
+
+        HA le dérive du nom traduit et du nom de l'appareil, et l'utilisateur peut le renommer :
+        seul l'identifiant unique (`<entrée>_kid_<id>_status`, cf. `KidStatusSensor`) est stable.
+        """
+        unique_id = f"{self._entry.entry_id}_kid_{kid_id}_status"
+        return er.async_get(self._hass).async_get_entity_id("sensor", DOMAIN, unique_id)
+
     def _text(self, key: str, **params: object) -> str:
         """Texte du serveur dans la langue système de HA."""
         return text(self._hass, key, **params)

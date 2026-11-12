@@ -66,6 +66,19 @@ async def test_reason_and_global_device_follow_system_language(
     assert device(env, "global").name == device_name
 
 
+async def test_display_snapshot_carries_status_entity_id(make_env) -> None:  # noqa: F811
+    """La frise ouvre le détail du statut par l'identifiant réel, lu dans le registre : il
+    suit la langue et un renommage, pas `sensor.<id>_statut`."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    kid = serialize_snapshot(env.engine, display=True)["kids"]["hugo"]
+    assert kid["status_entity"] == "sensor.hugo_status"
+    er.async_get(env.hass).async_update_entity("sensor.hugo_status", new_entity_id="sensor.mon_fils")
+    kid = serialize_snapshot(env.engine, display=True)["kids"]["hugo"]
+    assert kid["status_entity"] == "sensor.mon_fils"
+    # Hors affichage (attributs d'entité) : pas de champ.
+    assert "status_entity" not in serialize_snapshot(env.engine)["kids"]["hugo"]
+
+
 async def test_kid_status_sensor_reflects_snapshot(make_env) -> None:  # noqa: F811
     env = await make_env(at(TUESDAY, 16, 30))
     assert entity_id(env, "sensor", "kid_hugo_status") == "sensor.hugo_status"

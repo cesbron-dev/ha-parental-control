@@ -2,7 +2,7 @@
 // trait « maintenant », exceptions ouvertes en hachuré bleu).
 import {
   esc, shouldSubscribe, timelineGeometry, exceptionsForKid, exceptionSpans, dayTypeLabel, segmentClass, statusClass, nextStepLabel, simulationBadge,
-  reasonText,
+  reasonText, statusEntity,
 } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import { BASE_CSS, TIMELINE_CSS, applyTheme } from "./style.js";
@@ -170,7 +170,7 @@ class ParentalTimelineCard extends HTMLElement {
     const { bars, nowPct } = timelineGeometry(kid.timeline, now);
     const spans = exceptionSpans(exceptionsForKid(this._state, id), now);
     const step = nextStepLabel(kid, this._hass);
-    const tap = !!this._hass?.states?.[`sensor.${id}_statut`];
+    const tap = statusEntity(kid, this._hass) !== null;
     const segs = bars
       .map((b) => `<div class="${segmentClass(b.type)}" style="left:${b.left}%;width:${b.width}%"></div>`)
       .join("");
@@ -189,8 +189,8 @@ class ParentalTimelineCard extends HTMLElement {
   _onClick(ev) {
     const el = ev.target.closest("[data-kid]");
     if (!el) return;
-    const entityId = `sensor.${el.dataset.kid}_statut`;
-    if (!this._hass?.states?.[entityId]) return;
+    const entityId = statusEntity(this._state?.kids?.[el.dataset.kid], this._hass);
+    if (!entityId) return;
     this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
   }
 }

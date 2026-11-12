@@ -510,6 +510,13 @@ export function statusClass(status) {
   return "bad";
 }
 
+// Capteur « Statut » d'un enfant (`status_entity` de l'instantané, lu par le serveur dans le
+// registre des entités) s'il existe dans HA ; sinon null (pas de toucher sur la frise).
+export function statusEntity(kid, hass) {
+  const entityId = kid?.status_entity;
+  return entityId && hass?.states?.[entityId] ? entityId : null;
+}
+
 // Prochaine étape d'un enfant : « reprise HH:MM » s'il est bloqué, « jusqu'à HH:MM » s'il est libre ;
 // chaîne vide sans fin de segment.
 export function nextStepLabel(kid, hass) {

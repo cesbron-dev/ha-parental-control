@@ -113,6 +113,7 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "timeline": kid_timeline(cfg, snap, kid_id, now),
             "on_demand": sorted(cfg.on_demand_for(kid_id)),
             "label_services": _kid_label_services(engine, switches, kid_id, now),
+            "status_entity": engine.status_entity_id(kid_id),
         }
     for resource_id, data in state["resources"].items():
         resource = cfg.resource(resource_id)
