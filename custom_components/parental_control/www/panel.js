@@ -842,11 +842,11 @@ class ParentalControlPanel extends HTMLElement {
 
   // `unk` : service absent du brouillon (supprimé, ou JSON collé à la main).
   _svcClass(service) {
-    return service in L.serviceNames(this._draft) ? "" : "unk";
+    return Object.hasOwn(L.serviceNames(this._draft), service) ? "" : "unk";
   }
 
   _svcTitle(service) {
-    return service in L.serviceNames(this._draft) ? this._svcName(service) : `${service} : service inconnu, à retirer`;
+    return Object.hasOwn(L.serviceNames(this._draft), service) ? this._svcName(service) : `${service} : service inconnu, à retirer`;
   }
 
   // Nom d'un label HA d'après le registre (à défaut son identifiant).
@@ -901,7 +901,9 @@ class ParentalControlPanel extends HTMLElement {
       return `<span class="tag ag ${known ? "" : "unk"}"><ha-icon icon="mdi:shield-outline"></ha-icon>${esc(name)}</span>`;
     });
     const lb = (s.labels ?? []).map((l) => {
-      const count = this._labelSwitches ? L.serviceSwitches(this._labelSwitches, this._hass?.entities, s.id, l.label_id).length : null;
+      // Compte d'après la configuration enregistrée : rien pour un label pas encore enregistré.
+      const count = this._labelSwitches && this._savedLabel(s.id, l.label_id)
+        ? L.serviceSwitches(this._labelSwitches, this._hass?.entities, s.id, l.label_id).length : null;
       const known = !this._labels || this._labels.some((x) => x.label_id === l.label_id);
       const text = count === null ? this._labelName(l.label_id) : `${this._labelName(l.label_id)} · ${count} interrupteur${count > 1 ? "s" : ""}`;
       return `<span class="tag lb ${known ? "" : "unk"}"><ha-icon icon="mdi:label-outline"></ha-icon>${esc(text)}</span>`;
@@ -962,11 +964,16 @@ class ParentalControlPanel extends HTMLElement {
       </div></div>`;
   }
 
+  // Label rattaché au service dans la configuration enregistrée (seule reflétée par `label_switches/list`).
+  _savedLabel(serviceId, labelId) {
+    const saved = (this._original?.services ?? []).find((x) => x.id === serviceId)?.labels ?? [];
+    return saved.some((l) => l.label_id === labelId);
+  }
+
   // « 1 interrupteur : Console du salon » d'après la configuration enregistrée.
   _labelSwitchesText(serviceId, labelId) {
     if (!this._labelSwitches) return "";
-    const saved = (this._original?.services ?? []).find((x) => x.id === serviceId)?.labels ?? [];
-    if (!saved.some((l) => l.label_id === labelId)) return "Enregistrez pour voir les interrupteurs trouvés.";
+    if (!this._savedLabel(serviceId, labelId)) return "Enregistrez pour voir les interrupteurs trouvés.";
     const found = L.serviceSwitches(this._labelSwitches, this._hass?.entities, serviceId, labelId);
     if (!found.length) return "Aucun interrupteur trouvé.";
     const n = found.length;

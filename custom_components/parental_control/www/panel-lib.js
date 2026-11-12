@@ -318,7 +318,8 @@ const listOf = (obj, key) => {
   if (!Array.isArray(obj[key])) obj[key] = [];
   return obj[key];
 };
-const serviceName = (value) => String(value ?? "").trim().toLowerCase() || null;
+// Identifiant tel quel (vient d'un menu de vrais ids) : le réécrire le rendrait inconnu du moteur.
+const serviceName = (value) => String(value ?? "").trim() || null;
 
 // Pastilles d'une liste pour un enfant : services communs (barrés s'il en est retiré), puis les siens.
 export function serviceChips(cfg, kid, list) {
@@ -342,7 +343,7 @@ export function toggleKidService(cfg, kid, list, service) {
 }
 
 // Ajout pour un enfant : un service commun retiré est rétabli, sinon ajout propre (sans doublon).
-// Renvoie le nom retenu (minuscules), ou null s'il est vide.
+// Renvoie l'identifiant retenu, ou null s'il est vide.
 export function addKidService(cfg, kid, list, value) {
   const service = serviceName(value);
   if (!service) return null;
