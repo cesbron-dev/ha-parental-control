@@ -79,7 +79,7 @@ test("bonus minutes: chosen as text in the form, saved as sorted numbers", () =>
 });
 
 test("resource card: on-demand services toggles, shown by default, list from the device", () => {
-  const st = { resources: { tv: { name: "Télé", kind: "media_player", kinds: ["adguard_services", "media_player"], on_demand: ["youtube", "netflix"], leisure: ["tiktok"] } } };
+  const st = { services: {youtube:{name:"YouTube",adguard:true},netflix:{name:"Netflix",adguard:true},tiktok:{name:"TikTok",adguard:true}}, resources: { tv: { name: "Télé", kind: "media_player", kinds: ["adguard_services", "media_player"], on_demand: ["youtube", "netflix"], leisure: ["tiktok"] } } };
   const schema = editorSchema("resource", st, { resource: "tv" });
   assert.ok(field(schema, "show_services").selector.boolean);
   assert.deepEqual(field(schema, "services").selector.select.options, [
@@ -93,6 +93,7 @@ test("resource card: on-demand services toggles, shown by default, list from the
 
 test("kid card: kid choice, sections shown by default, the kid's on-demand services", () => {
   const st = {
+    services: { youtube: { name: "YouTube", adguard: true }, tiktok: { name: "TikTok", adguard: true } },
     kids: { alice: { name: "Alice" }, zoe: { name: "Zoé" } },
     resources: {
       tv: { kinds: ["adguard_services", "media_player"], owners: ["alice", "zoe"], on_demand: ["youtube"] },
@@ -110,13 +111,20 @@ test("kid card: kid choice, sections shown by default, the kid's on-demand servi
     { type: "t", kid: "alice", show_bonus: false });
 });
 
-test("services fields name label services from state.service_names", () => {
+test("services fields: noms du parent, filtre AdGuard / labels", () => {
   const s = {
-    service_names: { "label:internet": "Internet" },
-    kids: { alice: { name: "Alice" } },
-    resources: { ipad: { name: "iPad", owners: ["alice"], kind: "adguard_services", kinds: ["adguard_services"], on_demand: ["label:internet"] } },
+    services: {
+      internet: { name: "Internet", adguard: false, labels: true },
+      jeux: { name: "Jeux vidéo", adguard: true, labels: true },
+    },
+    kids: { alice: { name: "Alice", on_demand: ["internet"], label_services: [{ service: "internet", blocked: false }] } },
+    resources: { ipad: { name: "iPad", owners: ["alice"], kind: "adguard_services", kinds: ["adguard_services"], on_demand: ["internet", "jeux"], label_services: [] } },
   };
-  const label = (schema) => schema.find((f) => f.name === "services").selector.select.options[0].label;
-  assert.equal(label(editorSchema("resource", s, { resource: "ipad" })), "Internet");
-  assert.equal(label(editorSchema("kid", s, { kid: "alice" })), "Internet");
+  const opts = (schema) => schema.find((f) => f.name === "services").selector.select.options;
+  // Appareil AdGuard : « internet » (labels seuls, non ciblé) est masqué.
+  assert.deepEqual(opts(editorSchema("resource", s, { resource: "ipad" })), [{ value: "jeux", label: "Jeux vidéo" }]);
+  // Enfant : AdGuard (jeux) + service que ses interrupteurs visent (internet).
+  assert.deepEqual(opts(editorSchema("kid", s, { kid: "alice" })), [
+    { value: "jeux", label: "Jeux vidéo" }, { value: "internet", label: "Internet" },
+  ]);
 });

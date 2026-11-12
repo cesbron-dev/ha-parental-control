@@ -1,7 +1,7 @@
 // Logique pure des éditeurs visuels de cartes : schéma `ha-form` construit à partir de l'état du
 // moteur (appareils et enfants proposés en liste) et nettoyage de la config produite, sans DOM.
 
-import { serviceLabel } from "./lib.js";
+import { serviceLabel, serviceShownOnResource } from "./lib.js";
 
 const KIND_LABELS = { media_player: "Télé", switch: "Interrupteur", adguard_services: "AdGuard", nintendo: "Nintendo" };
 
@@ -50,12 +50,12 @@ function resourceField(state, current, kind) {
 // Services affichés sur la carte : les services sur demande de l'appareil ; aucun coché : tous.
 function servicesField(state, config) {
   const r = state?.resources?.[config?.resource];
-  const ids = r?.on_demand ?? [];
+  const ids = (r?.on_demand ?? []).filter((s) => serviceShownOnResource(state, r, s));
   return {
     name: "services",
     label: "Services affichés",
     helper: "Aucun coché : tous les services sur demande de l'appareil",
-    selector: { select: { multiple: true, mode: "list", options: withCurrent(ids.map((s) => ({ value: s, label: serviceLabel(s, state?.service_names) })), config?.services) } },
+    selector: { select: { multiple: true, mode: "list", options: withCurrent(ids.map((s) => ({ value: s, label: serviceLabel(s, state?.services) })), config?.services) } },
   };
 }
 
@@ -81,9 +81,16 @@ export function editorSchema(card, state, config) {
   const kids = Object.entries(state?.kids ?? {}).map(([id, k]) => ({ value: id, label: k.name || id }));
   if (card === "kid") {
     const kidField = { name: "kid", label: "Enfant", required: true };
-    const kidOnDemand = [...new Set(Object.values(state?.resources ?? {})
-      .filter((r) => (r.owners ?? []).includes(config?.kid) && (r.kinds ?? [r.kind]).includes("adguard_services"))
-      .flatMap((r) => r.on_demand ?? []))];
+    // Services sur demande de l'enfant : ceux de ses appareils AdGuard qui concernent AdGuard,
+    // plus ceux que ses interrupteurs par label visent.
+    const kid = state?.kids?.[config?.kid];
+    const kidOnDemand = [...new Set([
+      ...Object.values(state?.resources ?? {})
+        .filter((r) => (r.owners ?? []).includes(config?.kid) && (r.kinds ?? [r.kind]).includes("adguard_services"))
+        .flatMap((r) => r.on_demand ?? [])
+        .filter((s) => state?.services?.[s]?.adguard),
+      ...(kid?.label_services ?? []).map((l) => l.service).filter((s) => (kid.on_demand ?? []).includes(s)),
+    ])];
     return [
       kids.length ? { ...kidField, selector: { select: { mode: "dropdown", options: withCurrent(kids, config?.kid) } } }
         : { ...kidField, selector: { text: {} } },
@@ -92,7 +99,7 @@ export function editorSchema(card, state, config) {
       { name: "show_services", label: "Afficher les services sur demande", helper: "Bascules autoriser / bloquer sur tous ses appareils AdGuard", selector: { boolean: {} } },
       {
         name: "services", label: "Services affichés", helper: "Aucun coché : tous ses services sur demande",
-        selector: { select: { multiple: true, mode: "list", options: withCurrent(kidOnDemand.map((s) => ({ value: s, label: serviceLabel(s, state?.service_names) })), config?.services) } },
+        selector: { select: { multiple: true, mode: "list", options: withCurrent(kidOnDemand.map((s) => ({ value: s, label: serviceLabel(s, state?.services) })), config?.services) } },
       },
       { name: "show_bonus", label: "Afficher les bonus de temps d'écran", helper: "Seulement les jours où l'enfant a un quota", selector: { boolean: {} } },
       BONUS_FIELD,
