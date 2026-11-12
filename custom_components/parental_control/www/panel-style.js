@@ -162,7 +162,7 @@ export const CSS = `
   .profile-note { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 14px 0 4px; }
 
   /* Pastilles de services */
-  .group + .group { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--pc-line); }
+  .group + .group, .svc-add + .group { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--pc-line); }
   .group h3 { font-size: 13px; font-weight: 500; margin: 0 0 8px; }
   .group h3 .mut { font-weight: 400; margin-left: 4px; }
   .lz { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
