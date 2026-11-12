@@ -37,7 +37,7 @@ def state(open_: bool, blocked: frozenset[str] = frozenset(),
           opened: frozenset[str] = frozenset()) -> ResourceState:
     return ResourceState(
         open=open_,
-        reason="test",
+        reason_code="blocked",
         until=None,
         used_minutes=None,
         remaining_minutes=None,

@@ -47,6 +47,25 @@ async def call(env: Env, domain: str, service: str, eid: str, context: Context) 
     await env.hass.async_block_till_done()
 
 
+@pytest.mark.parametrize(
+    ("language", "reason", "device_name"),
+    [("en", "Homework to finish", "Parental control"),
+     ("fr", "Devoirs à terminer", "Contrôle parental")],
+)
+async def test_reason_and_global_device_follow_system_language(
+    hass, make_env, language, reason, device_name  # noqa: F811
+) -> None:
+    hass.config.language = language
+    env = await make_env(at(TUESDAY, 16, 30))
+    attrs = state(env, "sensor", "kid_hugo_status").attributes
+    assert attrs["reason_code"] == "waiting_homework" and attrs["reason_params"] == {}
+    assert attrs["reason"] == reason
+    kid = serialize_snapshot(env.engine, display=True)["kids"]["hugo"]
+    assert (kid["reason_code"], kid["reason_params"], kid["reason"]) == (
+        "waiting_homework", {}, reason)
+    assert device(env, "global").name == device_name
+
+
 async def test_kid_status_sensor_reflects_snapshot(make_env) -> None:  # noqa: F811
     env = await make_env(at(TUESDAY, 16, 30))
     assert entity_id(env, "sensor", "kid_hugo_status") == "sensor.hugo_status"
@@ -166,7 +185,7 @@ async def test_pause_switch_turn_off_non_admin_rejected(make_env) -> None:  # no
     assert eid is not None
     assert env.hass.states.get(eid).state == STATE_OFF
     glob = device(env, "global")
-    assert glob is not None and glob.name == "Contrôle parental"
+    assert glob is not None and glob.name == "Parental control"  # langue système : en
 
     await call(env, "switch", "turn_on", eid, env.kid_ctx)  # la pause ne demande rien
     assert env.engine.decisions.paused

@@ -23,7 +23,7 @@ dans le budget de l'enfant.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, tzinfo
 from enum import StrEnum
 
@@ -52,19 +52,21 @@ class KidStatus(StrEnum):
 @dataclass(frozen=True)
 class KidState:
     status: KidStatus
-    reason: str
+    reason_code: str
     day_type: DayType
     segment: SegmentType
     segment_end: datetime
     until: datetime | None
     remaining_minutes: float | None
     timer_end: datetime | None
+    # Paramètres du texte `reason.<reason_code>` (heures « HH:MM », noms) ; traduit hors du noyau.
+    reason_params: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
 class ResourceState:
     open: bool
-    reason: str
+    reason_code: str
     until: datetime | None
     used_minutes: float | None
     remaining_minutes: float | None
@@ -72,6 +74,7 @@ class ResourceState:
     # Services ouverts par une exception de service sur cette ressource (AdGuard). Fermée,
     # elle garde alors ses lecteurs allumés : le service ouvert doit rester utilisable.
     opened_services: frozenset[str] = frozenset()
+    reason_params: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -102,8 +105,9 @@ class _Access:
     """Résultat de la règle pour un enfant (et éventuellement une ressource)."""
 
     status: KidStatus
-    reason: str
+    reason_code: str
     until: datetime | None
+    reason_params: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def open(self) -> bool:
@@ -139,10 +143,11 @@ def _current_index(slots: Sequence[Slot], now: datetime) -> int:
     return index
 
 
-def _hhmm(moment: datetime, day: date) -> str:
-    if moment.date() > day and moment.time() == time(0):
-        return "minuit"
-    return f"{moment:%H:%M}"
+def _allowed_until(until: datetime, day: date) -> tuple[str, dict[str, str]]:
+    """Code et paramètres de « écrans autorisés jusqu'à … » (minuit à part)."""
+    if until.date() > day and until.time() == time(0):
+        return "allowed_until_midnight", {}
+    return "allowed_until", {"until": f"{until:%H:%M}"}
 
 
 # --------------------------------------------------------------------------- accès
@@ -266,7 +271,7 @@ def _access(
     suivant est évalué à son propre début (minuteur et quota compris).
     """
     if dec.paused:
-        return _Access(KidStatus.PAUSED, "Écrans en pause", None)
+        return _Access(KidStatus.PAUSED, "paused", None)
 
     today = now.date()
     index = _current_index(slots, now)
@@ -290,16 +295,12 @@ def _access(
                 break
             i += 1
             until = nxt_until
-        return _Access(status, f"Écrans autorisés jusqu'à {_hhmm(until, today)}", until)
+        code, params = _allowed_until(until, today)
+        return _Access(status, code, until, params)
     if status is KidStatus.WAITING_HOMEWORK:
-        return _Access(status, "Devoirs à terminer", slots[index].end)
-    if status is KidStatus.QUOTA_EXHAUSTED:
-        return _Access(status, "Quota épuisé", None)
-    if status is KidStatus.WAITING_TIMER:
-        return _Access(status, "En attente du minuteur", None)
-    if status is KidStatus.ON_DEMAND:
-        return _Access(status, "Sur demande", None)
-    return _Access(status, "Bloqué", None)
+        return _Access(status, "waiting_homework", slots[index].end)
+    # quota_exhausted, waiting_timer, on_demand, blocked : le code est le statut.
+    return _Access(status, status.value, None)
 
 
 def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
@@ -316,7 +317,8 @@ def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
     timer = dec.active_timer(kid.id, now)
     return KidState(
         status=access.status,
-        reason=access.reason,
+        reason_code=access.reason_code,
+        reason_params=access.reason_params,
         day_type=day_type,
         segment=current.type,
         segment_end=current.end,
@@ -330,7 +332,8 @@ def _kid_state(now: datetime, dec: Decisions, kid: Kid, day_type: DayType,
 
 
 def _resource_state(cfg: Config, resource: Resource, *, open_: bool, reason: str,
-                    until: datetime | None) -> ResourceState:
+                    until: datetime | None,
+                    reason_params: Mapping[str, str] | None = None) -> ResourceState:
     # Calculé pour toute ressource, AdGuard ou non : les services par label (interrupteurs)
     # en dépendent. Les services sur demande restent bloqués même ouverte ; seule une
     # exception les ouvre.
@@ -345,7 +348,8 @@ def _resource_state(cfg: Config, resource: Resource, *, open_: bool, reason: str
         blocked = frozenset(s for s in blocked if cfg.has_labels(s))
     return ResourceState(
         open=open_,
-        reason=reason,
+        reason_code=reason,
+        reason_params=dict(reason_params or {}),
         until=until if open_ else None,
         used_minutes=None,
         remaining_minutes=None,
@@ -383,22 +387,23 @@ def _rule_resource_state(cfg: Config, resource: Resource, now: datetime,
         until = _shared_until(first, access_at, midnight)
         if len(resource.owners) > 1 and len(open_owners) < len(resource.owners):
             names = ", ".join(cfg.kid(k).name for k in open_owners)
-            reason = f"Ouverte pour {names}"
+            reason, params = "open_for", {"names": names}
         else:
-            reason = f"Écrans autorisés jusqu'à {_hhmm(until, today)}"
-        return _resource_state(cfg, resource, open_=True, reason=reason, until=until)
+            reason, params = _allowed_until(until, today)
+        return _resource_state(cfg, resource, open_=True, reason=reason, until=until,
+                               reason_params=params)
 
     statuses = {accesses[k].status for k in resource.owners}
     if KidStatus.WAITING_HOMEWORK in statuses:
-        reason = "Devoirs à terminer"
+        reason = "waiting_homework"
     elif KidStatus.QUOTA_EXHAUSTED in statuses:
-        reason = "Quota épuisé"
+        reason = "quota_exhausted"
     elif KidStatus.WAITING_TIMER in statuses:
-        reason = "En attente du minuteur"
+        reason = "waiting_timer"
     elif statuses == {KidStatus.ON_DEMAND}:
-        reason = "Sur demande"
+        reason = "on_demand"
     else:
-        reason = "Bloqué"
+        reason = "blocked"
     return _resource_state(cfg, resource, open_=False, reason=reason, until=None)
 
 
@@ -466,7 +471,7 @@ def _apply_exceptions(
             if not e.open:
                 closed_at[e.target.resource_id] = e.created  # type: ignore[index]
             resource = cfg.resource(e.target.resource_id)  # type: ignore[arg-type]
-            reason = "Ouverte manuellement" if e.open else "Fermée manuellement"
+            reason = "opened_manually" if e.open else "closed_manually"
             state = _resource_state(cfg, resource, open_=e.open, reason=reason, until=e.until)
             result[resource.id] = replace(state,
                                           used_minutes=result[resource.id].used_minutes,
@@ -484,7 +489,8 @@ def _apply_exceptions(
                 blocked.add(service)
         result[resource.id] = ResourceState(
             open=state.open,
-            reason=state.reason,
+            reason_code=state.reason_code,
+            reason_params=state.reason_params,
             until=state.until,
             used_minutes=state.used_minutes,
             remaining_minutes=state.remaining_minutes,
@@ -547,14 +553,15 @@ def _expired_exceptions(now: datetime, cfg: Config, dec: Decisions,
 def _paused_resource_state(now: datetime, cfg: Config, dec: Decisions, resource: Resource,
                            apply_exceptions: bool) -> ResourceState:
     """Pause : tout fermé ; les services fermés par exception restent bloqués en plus."""
-    state = _resource_state(cfg, resource, open_=False, reason="Écrans en pause", until=None)
+    state = _resource_state(cfg, resource, open_=False, reason="paused", until=None)
     if not apply_exceptions:
         return state
     closed = {s for s, open_ in _service_overrides(
         cfg, _active_exceptions(now, dec), resource).items() if not open_}
     return ResourceState(
         open=False,
-        reason=state.reason,
+        reason_code=state.reason_code,
+        reason_params=state.reason_params,
         until=None,
         used_minutes=None,
         remaining_minutes=None,

@@ -19,6 +19,11 @@
       "already_configured": "Parental control is already configured."
     }
   },
+  "device": {
+    "global": {
+      "name": "Parental control"
+    }
+  },
   "options": {
     "step": {
       "init": {

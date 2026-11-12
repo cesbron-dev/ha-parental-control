@@ -422,6 +422,11 @@ class ParentalEngine:
             self._discover_labels()
         await self.async_evaluate("labels")
 
+    @property
+    def language(self) -> str:
+        """`en` ou `fr` : langue système de HA, celle des textes produits par le serveur."""
+        return server_language(self._hass)
+
     def _text(self, key: str, **params: object) -> str:
         """Texte du serveur dans la langue système de HA."""
         return text(self._hass, key, **params)

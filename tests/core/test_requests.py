@@ -163,7 +163,7 @@ def test_action_choices_homework():
 def test_duration_label():
     assert duration_label(15) == "15 min"
     assert duration_label(60) == "1 h"
-    assert duration_label(90) == "1 h 30"
+    assert duration_label(90) == "1 h 30 min"
     assert duration_label(120) == "2 h"
     assert duration_label(None) == "Until the next change"
     assert duration_label(None, "fr") == "Jusqu'au prochain changement"

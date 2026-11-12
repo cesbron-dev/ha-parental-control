@@ -90,7 +90,7 @@ class MediaPlayerAdapter:
         """État fermé de la pause (aussi décrit en simulation)."""
         return ResourceState(
             open=False,
-            reason="pause",
+            reason_code="paused",
             until=None,
             used_minutes=None,
             remaining_minutes=None,

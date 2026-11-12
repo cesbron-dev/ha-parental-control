@@ -19,6 +19,11 @@
       "already_configured": "Le contrôle parental est déjà configuré."
     }
   },
+  "device": {
+    "global": {
+      "name": "Contrôle parental"
+    }
+  },
   "options": {
     "step": {
       "init": {

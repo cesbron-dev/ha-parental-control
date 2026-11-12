@@ -38,8 +38,20 @@ MESSAGES: dict[str, dict[str, str]] = {
         # Durées.
         "duration.minutes": "{minutes} min",
         "duration.hours": "{hours} h",
-        "duration.hours_minutes": "{hours} h {minutes:02d}",
+        "duration.hours_minutes": "{hours} h {minutes} min",
         "duration.until_next_change": "Until the next change",
+        # Raisons de l'évaluateur (`reason_code`, `reason_params`).
+        "reason.allowed_until": "Screens allowed until {until}",
+        "reason.allowed_until_midnight": "Screens allowed until midnight",
+        "reason.open_for": "Open for {names}",
+        "reason.waiting_homework": "Homework to finish",
+        "reason.quota_exhausted": "Quota exhausted",
+        "reason.waiting_timer": "Waiting for the timer",
+        "reason.on_demand": "On demand",
+        "reason.blocked": "Blocked",
+        "reason.paused": "Screens paused",
+        "reason.opened_manually": "Opened manually",
+        "reason.closed_manually": "Closed manually",
         # Demandes : message aux parents, boutons, raisons d'échec.
         "request.homework": "{kid} says their homework is done",
         "request.bonus": "{kid} asks for a {duration} bonus",
@@ -121,6 +133,17 @@ MESSAGES: dict[str, dict[str, str]] = {
         "duration.hours": "{hours} h",
         "duration.hours_minutes": "{hours} h {minutes:02d}",
         "duration.until_next_change": "Jusqu'au prochain changement",
+        "reason.allowed_until": "Écrans autorisés jusqu'à {until}",
+        "reason.allowed_until_midnight": "Écrans autorisés jusqu'à minuit",
+        "reason.open_for": "Ouverte pour {names}",
+        "reason.waiting_homework": "Devoirs à terminer",
+        "reason.quota_exhausted": "Quota épuisé",
+        "reason.waiting_timer": "En attente du minuteur",
+        "reason.on_demand": "Sur demande",
+        "reason.blocked": "Bloqué",
+        "reason.paused": "Écrans en pause",
+        "reason.opened_manually": "Ouverte manuellement",
+        "reason.closed_manually": "Fermée manuellement",
         "request.homework": "{kid} dit avoir terminé ses devoirs",
         "request.bonus": "{kid} demande un bonus de {duration}",
         "request.bonus_on": "{kid} demande un bonus de {duration} sur {resource}",
@@ -194,7 +217,8 @@ def msg(lang: str | None, key: str, **params: object) -> str:
 
 
 def duration_text(lang: str | None, minutes: int | None) -> str:
-    """Durée lisible : « 15 min », « 1 h », « 1 h 30 » ; `None` = jusqu'au prochain changement."""
+    """Durée lisible (en : « 1 h 30 min », fr : « 1 h 30 ») ; `None` = jusqu'au prochain
+    changement."""
     if minutes is None:
         return msg(lang, "duration.until_next_change")
     hours, mins = divmod(minutes, 60)

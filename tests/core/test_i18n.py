@@ -81,3 +81,27 @@ def test_config_error_translations_match_catalogue():
             assert exceptions[f"config_{code}"]["message"] == (
                 "{path}" + sep + MESSAGES[lang][f"config.{code}"]
             ), (name, code)
+
+
+def test_reason_texts():
+    """Chaque code de raison de l'évaluateur a son texte, en anglais et en français."""
+    assert msg("en", "reason.allowed_until", until="16:00") == "Screens allowed until 16:00"
+    assert msg("fr", "reason.allowed_until", until="16:00") == "Écrans autorisés jusqu'à 16:00"
+    assert msg("en", "reason.blocked") == "Blocked"
+    assert msg("fr", "reason.blocked") == "Bloqué"
+
+
+def test_english_durations():
+    from custom_components.parental_control.core.i18n import duration_text
+
+    assert [duration_text("en", m) for m in (45, 120, 90, 65)] == [
+        "45 min", "2 h", "1 h 30 min", "1 h 5 min"]
+    assert [duration_text("fr", m) for m in (45, 120, 90, 65)] == [
+        "45 min", "2 h", "1 h 30", "1 h 05"]
+
+
+def test_global_device_name_translated():
+    for name, expected in (("strings.json", "Parental control"),
+                           ("translations/en.json", "Parental control"),
+                           ("translations/fr.json", "Contrôle parental")):
+        assert _load(name)["device"]["global"]["name"] == expected

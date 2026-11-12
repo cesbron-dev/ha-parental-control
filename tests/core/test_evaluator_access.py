@@ -41,7 +41,7 @@ def test_hugo_free_window(cfg):
     assert g.segment is SegmentType.FREE
     assert g.segment_end == at(16, 0)
     assert g.day_type is DayType.SCHOOL
-    assert g.reason == "Écrans autorisés jusqu'à 16:00"
+    assert g.reason_code == "allowed_until" and g.reason_params == {"until": "16:00"}
     assert g.remaining_minutes is None and g.timer_end is None
     assert snap.expired_exception_ids == frozenset()
     assert snap.resources["tv"].open
@@ -84,9 +84,11 @@ def test_after_19_blocked_even_with_homework(cfg):
     snap = evaluate(at(19, 30), cfg, dec, SCHOOL)
     g = snap.kids["hugo"]
     assert g.status is KidStatus.BLOCKED
+    assert g.reason_code == "blocked" and g.reason_params == {}
     assert g.until is None
     assert g.segment_end == at(0, 0, TUESDAY + timedelta(days=1))
     assert snap.resources["iphone_hugo"].open is False
+    assert snap.resources["iphone_hugo"].reason_code == "blocked"
 
 
 def test_shared_tv_open_if_any_owner_allowed(cfg):

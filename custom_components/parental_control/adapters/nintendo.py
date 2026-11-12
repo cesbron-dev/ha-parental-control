@@ -120,7 +120,7 @@ class NintendoAdapter:
     def pause_state(self) -> ResourceState:
         return ResourceState(
             open=False,
-            reason="pause",
+            reason_code="paused",
             until=None,
             used_minutes=None,
             remaining_minutes=None,

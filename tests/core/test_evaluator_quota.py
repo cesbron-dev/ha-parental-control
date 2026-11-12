@@ -50,7 +50,7 @@ def test_tv_quota_open_until_exhausted(weekend_cfg):
     assert tv.open is False
     assert tv.remaining_minutes == 0
     assert tv.until is None
-    assert tv.reason == "Quota épuisé"
+    assert tv.reason_code == "quota_exhausted"
 
 
 def test_tv_bonus_extends_resource_quota(weekend_cfg):
@@ -91,7 +91,7 @@ def test_tv_without_device_quota_uses_most_generous_kid_quota(make_cfg):
     tv = evaluate(at(10), cfg, with_usage(120), WEEKEND).resources["tv"]
     assert tv.open is False
     assert tv.remaining_minutes == 0
-    assert tv.reason == "Quota épuisé"
+    assert tv.reason_code == "quota_exhausted"
 
 
 def test_tv_fallback_quota_adds_kid_and_device_bonus(make_cfg):
@@ -147,7 +147,7 @@ def test_adguard_only_device_unchanged(make_cfg):
     cfg = make_cfg(lambda d: (_tv_without_device_quota(d), mixed_tv(d)))
     phone = evaluate(at(10), cfg, with_usage(500), WEEKEND).resources["iphone_hugo"]
     assert phone.open is False
-    assert phone.reason == "En attente du minuteur"
+    assert phone.reason_code == "waiting_timer"
     assert phone.remaining_minutes is None
     dec = Decisions(timers=[Timer("hugo", at(8), at(9, 50)), Timer("hugo", at(10), at(10, 30))])
     phone = evaluate(at(10), cfg, dec, WEEKEND).resources["iphone_hugo"]
@@ -161,7 +161,7 @@ def test_adguard_only_device_unchanged(make_cfg):
 def test_adguard_closed_without_timer(weekend_cfg):
     snap = evaluate(at(10), weekend_cfg, Decisions(), WEEKEND)
     assert snap.resources["iphone_hugo"].open is False
-    assert snap.resources["iphone_hugo"].reason == "En attente du minuteur"
+    assert snap.resources["iphone_hugo"].reason_code == "waiting_timer"
     g = snap.kids["hugo"]
     assert g.status is KidStatus.WAITING_TIMER
     assert g.remaining_minutes == 120
@@ -207,9 +207,9 @@ def test_quota_exhausted_status(weekend_cfg):
     g = snap.kids["hugo"]
     assert g.status is KidStatus.QUOTA_EXHAUSTED
     assert g.remaining_minutes == 0
-    assert g.reason == "Quota épuisé"
+    assert g.reason_code == "quota_exhausted"
     assert snap.resources["iphone_hugo"].open is False
-    assert snap.resources["iphone_hugo"].reason == "Quota épuisé"
+    assert snap.resources["iphone_hugo"].reason_code == "quota_exhausted"
 
 
 def test_quota_exhausted_even_with_running_timer(weekend_cfg):
@@ -255,7 +255,7 @@ def test_until_next_decision_expires_on_rule_change(cfg):
     dec = Decisions(exceptions=[_tv_close_until_next_decision(cfg, tue(15, 40))])
     snap = evaluate(tue(16, 30), cfg, dec, SCHOOL)
     assert snap.expired_exception_ids == frozenset({"e1"})
-    assert snap.resources["tv"].reason != "Fermée manuellement"
+    assert snap.resources["tv"].reason_code != "closed_manually"
 
 
 def test_until_next_decision_holds_while_rule_unchanged(cfg):
@@ -263,7 +263,7 @@ def test_until_next_decision_holds_while_rule_unchanged(cfg):
     snap = evaluate(tue(15, 55), cfg, dec, SCHOOL)
     assert snap.expired_exception_ids == frozenset()
     assert snap.resources["tv"].open is False
-    assert snap.resources["tv"].reason == "Fermée manuellement"
+    assert snap.resources["tv"].reason_code == "closed_manually"
 
 
 def test_exception_without_signature_never_auto_expires(cfg):
@@ -271,7 +271,7 @@ def test_exception_without_signature_never_auto_expires(cfg):
                         created=tue(15, 40), until=None, signature=None)
     snap = evaluate(tue(16, 30), cfg, Decisions(exceptions=[e]), SCHOOL)
     assert snap.expired_exception_ids == frozenset()
-    assert snap.resources["tv"].reason == "Fermée manuellement"
+    assert snap.resources["tv"].reason_code == "closed_manually"
 
 
 def test_rule_signature_covers_kid_service_targets(cfg):
@@ -332,7 +332,7 @@ def test_tv_quota_falls_back_to_weekend_on_vacances(weekend_cfg):
     vacances = {k: DayType.HOLIDAYS for k in WEEKEND}
     tv = evaluate(at(10), weekend_cfg, with_usage(500), vacances).resources["tv"]
     assert tv.open is False
-    assert tv.reason == "Quota épuisé"
+    assert tv.reason_code == "quota_exhausted"
     tv = evaluate(at(10), weekend_cfg, with_usage(170), vacances).resources["tv"]
     assert tv.open is True
     assert tv.remaining_minutes == 10

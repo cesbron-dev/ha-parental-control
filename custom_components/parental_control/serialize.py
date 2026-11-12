@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from homeassistant.util import dt as dt_util
 
 from .core.decisions import ManualException
+from .core.i18n import msg
 from .core.display import exception_end, kid_timeline
 from .core.label_services import switch_blocked
 from .core.model import ResourceKind
@@ -31,6 +32,15 @@ def _value(value: Any) -> Any:
 
 def _dataclass(obj: Any) -> dict[str, Any]:
     return {f.name: _value(getattr(obj, f.name)) for f in fields(obj)}
+
+
+def _state(obj: Any, lang: str) -> dict[str, Any]:
+    """État d'enfant ou de ressource : `reason_code`, `reason_params` (copie) et `reason`, le
+    texte rendu dans la langue système de HA (attributs d'entité)."""
+    data = _dataclass(obj)
+    data["reason_params"] = dict(obj.reason_params)
+    data["reason"] = msg(lang, f"reason.{obj.reason_code}", **obj.reason_params)
+    return data
 
 
 def serialize_exception(exc: ManualException) -> dict[str, Any]:
@@ -59,10 +69,11 @@ def serialize_snapshot(engine: ParentalEngine, display: bool = False) -> dict[st
     kids: dict[str, dict[str, Any]] = {}
     resources: dict[str, dict[str, Any]] = {}
     if snap is not None:
+        lang = engine.language
         for kid_id, kid in snap.kids.items():
-            kids[kid_id] = _dataclass(kid) | {"closes_at": _value(closures.get(f"kid:{kid_id}"))}
+            kids[kid_id] = _state(kid, lang) | {"closes_at": _value(closures.get(f"kid:{kid_id}"))}
         for resource_id, resource in snap.resources.items():
-            resources[resource_id] = _dataclass(resource)
+            resources[resource_id] = _state(resource, lang)
     exceptions = [serialize_exception(e) for e in engine.decisions.exceptions]
     state = {
         "kids": kids,
