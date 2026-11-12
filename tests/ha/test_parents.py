@@ -21,6 +21,7 @@ from custom_components.parental_control.parents import (
     phone_status,
     trusted_phone_owners,
 )
+from custom_components.parental_control.store import ParentalStore
 from tests.fixtures import EX
 
 JULIE = "notify.mobile_app_iphone_de_julie"
@@ -378,3 +379,31 @@ async def test_setup_entry_runs_migration(hass, users, make_env) -> None:
         raw=True,
     )
     assert env.engine.config.request_notify_owners == {JULIE: users["julie"].id}
+
+
+async def test_v2_store_not_resaved_before_owner_migration(hass, users) -> None:
+    """Ancien format v2 sans `request_notify_owners` : `load` ne réécrit pas la config, sinon
+    la clé (vide) enregistrée avant la migration l'empêcherait après un arrêt intempestif."""
+    v2 = {**EX, "version": 2, "request_notify": [JULIE]}
+    await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_save(v2)
+    store = ParentalStore(hass)
+    cfg_loaded, _ = await store.load()
+    assert cfg_loaded is not None and store.owners_migration_pending
+    stored = await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_load()
+    assert stored["version"] == 2 and "request_notify_owners" not in stored
+
+
+async def test_setup_v2_store_migrates_owners_and_saves_v3(hass, users, make_env) -> None:
+    """Config v2 stockée, sans propriétaires, avec un téléphone : au démarrage, le téléphone
+    est associé et la configuration enregistrée en version 3."""
+    add_phone(hass, "iPhone de Julie", users["julie"].id)
+    env = await make_env(
+        datetime(2026, 11, 3, 16, 30, tzinfo=ZoneInfo("America/Toronto")),
+        {**EX, "version": 2, "request_notify": [JULIE]},
+        raw=True,
+    )
+    assert env.engine.config.request_notify_owners == {JULIE: users["julie"].id}
+    await hass.async_block_till_done()
+    stored = await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_load()
+    assert stored["version"] == 3
+    assert stored["request_notify_owners"] == {JULIE: users["julie"].id}

@@ -45,10 +45,12 @@ class ParentalStore:
             try:
                 cfg = parse_config(raw_cfg)
                 self.owners_migration_pending = "request_notify_owners" not in raw_cfg
-                if raw_cfg.get("version") == 2:
-                    # Ancien format (identifiants français) : réécrit en version 3.
+                if raw_cfg.get("version") == 2 and not self.owners_migration_pending:
+                    # Ancien format (identifiants français) : réécrit en version 3. Si les
+                    # téléphones restent à associer, la migration des propriétaires
+                    # (`migrate_phone_owners`) enregistre elle-même la version 3 : l'écrire ici
+                    # avant elle mémoriserait la clé vide et empêcherait l'association.
                     await self.save_config(cfg)
-                    self.owners_migration_pending = "request_notify_owners" not in raw_cfg
             except ConfigError as err:
                 # Les décisions restent valables : une config corrigée les retrouvera.
                 _LOGGER.error("Stored configuration invalid, engine inactive: %s", err)

@@ -873,6 +873,8 @@ async def test_v2_stored_config_resaved_as_v3(hass, hass_storage) -> None:
     v2 = copy.deepcopy(EX)
     v2["version"] = 2
     v2["calendar_map"] = {"vacances": "vacances"}
+    # Propriétaires déjà présents : rien à migrer, la réécriture se fait au chargement.
+    v2["request_notify_owners"] = {}
     hass_storage["parental_control.config"] = {
         "version": 1, "minor_version": 1, "key": "parental_control.config", "data": v2,
     }
