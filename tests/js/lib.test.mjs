@@ -41,6 +41,8 @@ const {
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
+const FR = { locale: { language: "fr" } };
+const EN = { locale: { language: "en" } };
 
 // Services du parent (`state.services`) : AdGuard seuls, à labels seuls ou mixtes.
 const AG = (name) => ({ name, icon: null, adguard: true, labels: false });
@@ -70,10 +72,10 @@ const exc = (id, target, extra = {}) => ({
 });
 
 test("fmtDuration", () => {
-  assert.equal(fmtDuration(65), "1h 05m");
-  assert.equal(fmtDuration(0), "0h 00m");
-  assert.equal(fmtDuration(-5), "0h 00m");
-  assert.equal(fmtDuration(120), "2h 00m");
+  assert.equal(fmtDuration(65, FR), "1h 05m");
+  assert.equal(fmtDuration(0, FR), "0h 00m");
+  assert.equal(fmtDuration(-5, FR), "0h 00m");
+  assert.equal(fmtDuration(120, FR), "2h 00m");
 });
 
 test("serviceLabel", () => {
@@ -119,9 +121,9 @@ test("resourceView exposes kinds and icon (mixed device)", () => {
 
 test("exceptionsForResource: service exception follows kinds, not kind", () => {
   const st = state([exc("e1", { resource_id: "tv", service: "youtube" })]);
-  assert.equal(exceptionsForResource(st, "tv").length, 0);
+  assert.equal(exceptionsForResource(st, "tv", FR).length, 0);
   st.resources.tv.kinds = ["adguard_services", "media_player"];
-  assert.equal(exceptionsForResource(st, "tv").length, 1);
+  assert.equal(exceptionsForResource(st, "tv", FR).length, 1);
 });
 
 test("resourceView ok", () => {
@@ -153,24 +155,24 @@ test("exceptionsForResource kid and global", () => {
     exc("r2", { resource_id: "net" }),
     exc("closed", { resource_id: "tv" }, { open: false }),
   ]);
-  const tv = exceptionsForResource(s, "tv");
+  const tv = exceptionsForResource(s, "tv", FR);
   assert.deepEqual(tv.map((e) => [e.id, e.scope]), [["r", "resource"], ["k", "kid"], ["g", "all"]]);
   assert.equal(tv[1].kid, "Hugo");
   assert.equal(tv[0].label, "Tout l'appareil");
-  assert.deepEqual(exceptionsForResource(s, "switch").map((e) => e.id), ["k2", "g"]);
+  assert.deepEqual(exceptionsForResource(s, "switch", FR).map((e) => e.id), ["k2", "g"]);
 });
 
 test("exceptionsForResource service only on adguard_services", () => {
   const s = state([exc("s", { kid_id: "hugo", service: "youtube" })]);
-  assert.deepEqual(exceptionsForResource(s, "tv"), []);
-  const net = exceptionsForResource(s, "net");
+  assert.deepEqual(exceptionsForResource(s, "tv", FR), []);
+  const net = exceptionsForResource(s, "net", FR);
   assert.equal(net.length, 1);
   assert.equal(net[0].label, "YouTube");
   assert.equal(net[0].service, "youtube");
 });
 
 test("exceptionsForResource empty state", () => {
-  assert.deepEqual(exceptionsForResource(null, "tv"), []);
+  assert.deepEqual(exceptionsForResource(null, "tv", FR), []);
 });
 
 test("exceptionsForKid", () => {
@@ -191,24 +193,24 @@ test("exceptionsForKid", () => {
 
 test("formatPill with until", () => {
   const e = { label: "YouTube", scope: "resource", until: "2026-10-30T15:41:10-04:00", endsAt: null };
-  assert.equal(formatPill(e, NOW), "YouTube · 42 min");
+  assert.equal(formatPill(e, NOW, FR), "YouTube · 42 min");
   const long = { ...e, until: "2026-10-30T16:15:00-04:00" };
-  assert.equal(formatPill(long, NOW), "YouTube · 1 h 15");
+  assert.equal(formatPill(long, NOW, FR), "YouTube · 1 h 15");
 });
 
 test("formatPill without until uses ends_at in local time", () => {
   const e = { label: "Tout l'appareil", scope: "resource", until: null, endsAt: "2026-10-30T22:45:00-04:00" };
-  assert.equal(formatPill(e, NOW), "Tout l'appareil · jusqu'à 22:45");
+  assert.equal(formatPill(e, NOW, FR), "Tout l'appareil · jusqu'à 22:45");
   // même instant exprimé en UTC : l'heure affichée reste locale
-  assert.equal(formatPill({ ...e, endsAt: "2026-10-31T02:45:00Z" }, NOW), "Tout l'appareil · jusqu'à 22:45");
+  assert.equal(formatPill({ ...e, endsAt: "2026-10-31T02:45:00Z" }, NOW, FR), "Tout l'appareil · jusqu'à 22:45");
 });
 
 test("formatPill open ended and scopes", () => {
   const e = { label: "Tout l'appareil", scope: "resource", until: null, endsAt: null };
-  assert.equal(formatPill(e, NOW), "Tout l'appareil · jusqu'à nouvel ordre");
-  assert.equal(formatPill({ ...e, scope: "kid", kid: "Hugo" }, NOW),
+  assert.equal(formatPill(e, NOW, FR), "Tout l'appareil · jusqu'à nouvel ordre");
+  assert.equal(formatPill({ ...e, scope: "kid", kid: "Hugo" }, NOW, FR),
     "Tout l'appareil · jusqu'à nouvel ordre · Hugo · tous ses appareils");
-  assert.equal(formatPill({ ...e, scope: "all" }, NOW),
+  assert.equal(formatPill({ ...e, scope: "all" }, NOW, FR),
     "Tout l'appareil · jusqu'à nouvel ordre · tout le monde");
 });
 
@@ -243,25 +245,25 @@ test("esc", () => {
 });
 
 test("reasonLine adds local until", () => {
-  assert.equal(reasonLine({ reason: "Soirée", until: null }), "Soirée");
-  assert.equal(reasonLine({ reason: "Exception", until: "2026-10-31T02:45:00Z" }), "Exception · jusqu'à 22:45");
-  assert.equal(reasonLine({ reason: "", until: "2026-10-30T07:05:00-04:00" }), "jusqu'à 07:05");
-  assert.equal(reasonLine({ reason: "", until: null }), "");
+  assert.equal(reasonLine({ reason: "Soirée", until: null }, FR), "Soirée");
+  assert.equal(reasonLine({ reason: "Exception", until: "2026-10-31T02:45:00Z" }, FR), "Exception · jusqu'à 22:45");
+  assert.equal(reasonLine({ reason: "", until: "2026-10-30T07:05:00-04:00" }, FR), "jusqu'à 07:05");
+  assert.equal(reasonLine({ reason: "", until: null }, FR), "");
 });
 
 test("reasonLine does not repeat an hour already in the engine reason", () => {
-  assert.equal(reasonLine({ reason: "Écrans autorisés jusqu'à 20:00", until: "2026-10-31T20:00:00-04:00", open: true }),
+  assert.equal(reasonLine({ reason: "Écrans autorisés jusqu'à 20:00", until: "2026-10-31T20:00:00-04:00", open: true }, FR),
     "Écrans autorisés jusqu'à 20:00");
 });
 
 test("reasonLine shows resume time of a closed resource", () => {
-  assert.equal(reasonLine({ reason: "Bloqué", until: null, open: false, resumesAt: "2026-10-31T08:00:00-04:00" }),
+  assert.equal(reasonLine({ reason: "Bloqué", until: null, open: false, resumesAt: "2026-10-31T08:00:00-04:00" }, FR),
     "Bloqué · reprise 08:00");
   // ouverte : pas de « reprise »
-  assert.equal(reasonLine({ reason: "Ok", until: null, open: true, resumesAt: "2026-10-31T08:00:00-04:00" }), "Ok");
+  assert.equal(reasonLine({ reason: "Ok", until: null, open: true, resumesAt: "2026-10-31T08:00:00-04:00" }, FR), "Ok");
   // `until` connu : il l'emporte
   assert.equal(reasonLine({ reason: "Fermée", until: "2026-10-30T21:00:00-04:00", open: false,
-    resumesAt: "2026-10-31T08:00:00-04:00" }), "Fermée · jusqu'à 21:00");
+    resumesAt: "2026-10-31T08:00:00-04:00" }, FR), "Fermée · jusqu'à 21:00");
 });
 
 test("resourceView resumesAt is the earliest end of the owners' blocked segments", () => {
@@ -282,9 +284,9 @@ test("resourceView resumesAt is the earliest end of the owners' blocked segments
 });
 
 test("stateBadge", () => {
-  assert.deepEqual(stateBadge({ paused: true, open: true }), { label: "Pause", cls: "warn" });
-  assert.deepEqual(stateBadge({ paused: false, open: true }), { label: "Autorisé", cls: "ok" });
-  assert.deepEqual(stateBadge({ paused: false, open: false }), { label: "Bloqué", cls: "bad" });
+  assert.deepEqual(stateBadge({ paused: true, open: true }, FR), { label: "Pause", cls: "warn" });
+  assert.deepEqual(stateBadge({ paused: false, open: true }, FR), { label: "Autorisé", cls: "ok" });
+  assert.deepEqual(stateBadge({ paused: false, open: false }, FR), { label: "Bloqué", cls: "bad" });
 });
 
 test("bonusLabel", () => {
@@ -296,22 +298,22 @@ test("bonusLabel", () => {
 });
 
 test("quotaBar", () => {
-  assert.equal(quotaBar({ used: null, remaining: null }), null);
-  assert.deepEqual(quotaBar({ used: 10, remaining: 20 }), { pct: (10 / 30) * 100, text: "0h 10m / 0h 30m", over: false });
+  assert.equal(quotaBar({ used: null, remaining: null }, FR), null);
+  assert.deepEqual(quotaBar({ used: 10, remaining: 20 }, FR), { pct: (10 / 30) * 100, text: "0h 10m / 0h 30m", over: false });
   // sans temps restant, la ressource n'a pas de quota : pas de barre (télé à « 0h 00m / 0h 00m »)
-  assert.equal(quotaBar({ used: 45, remaining: null }), null);
-  assert.equal(quotaBar({ used: 0, remaining: null }), null);
-  assert.deepEqual(quotaBar({ used: null, remaining: 60 }), { pct: 0, text: "0h 00m / 1h 00m", over: false });
-  assert.deepEqual(quotaBar({ used: 0, remaining: 0 }), { pct: 0, text: "0h 00m / 0h 00m", over: false });
+  assert.equal(quotaBar({ used: 45, remaining: null }, FR), null);
+  assert.equal(quotaBar({ used: 0, remaining: null }, FR), null);
+  assert.deepEqual(quotaBar({ used: null, remaining: 60 }, FR), { pct: 0, text: "0h 00m / 1h 00m", over: false });
+  assert.deepEqual(quotaBar({ used: 0, remaining: 0 }, FR), { pct: 0, text: "0h 00m / 0h 00m", over: false });
 });
 
 test("dayTypeLabel", () => {
-  assert.equal(dayTypeLabel("school"), "Jour d'école");
-  assert.equal(dayTypeLabel("weekend"), "Fin de semaine");
-  assert.equal(dayTypeLabel("day_off"), "Congé pédago");
-  assert.equal(dayTypeLabel("holidays"), "Vacances");
-  assert.equal(dayTypeLabel("autre"), "autre");
-  assert.equal(dayTypeLabel(undefined), "");
+  assert.equal(dayTypeLabel("school", FR), "Jour d'école");
+  assert.equal(dayTypeLabel("weekend", FR), "Fin de semaine");
+  assert.equal(dayTypeLabel("day_off", FR), "Congé pédago");
+  assert.equal(dayTypeLabel("holidays", FR), "Vacances");
+  assert.equal(dayTypeLabel("autre", FR), "autre");
+  assert.equal(dayTypeLabel(undefined, FR), "");
 });
 
 test("segmentClass", () => {
@@ -328,10 +330,10 @@ test("statusClass", () => {
 });
 
 test("nextStepLabel", () => {
-  assert.equal(nextStepLabel({ status: "blocked", segment_end: "2026-10-31T07:00:00-04:00" }), "reprise 07:00");
-  assert.equal(nextStepLabel({ status: "allowed", segment_end: "2026-10-30T20:30:00-04:00" }), "jusqu'à 20:30");
-  assert.equal(nextStepLabel({ status: "blocked", segment_end: null }), "");
-  assert.equal(nextStepLabel(undefined), "");
+  assert.equal(nextStepLabel({ status: "blocked", segment_end: "2026-10-31T07:00:00-04:00" }, FR), "reprise 07:00");
+  assert.equal(nextStepLabel({ status: "allowed", segment_end: "2026-10-30T20:30:00-04:00" }, FR), "jusqu'à 20:30");
+  assert.equal(nextStepLabel({ status: "blocked", segment_end: null }, FR), "");
+  assert.equal(nextStepLabel(undefined, FR), "");
 });
 
 test("exceptionSpans", () => {
@@ -459,7 +461,7 @@ test("kid card: services over the kid's AdGuard devices, its exceptions, homewor
   assert.deepEqual(kidServiceToggles(state, "alice", ["tiktok", "netflix"]).map((t) => t.service), ["tiktok"]);
   assert.deepEqual(kidServiceToggles(state, "inconnu"), []);
 
-  assert.deepEqual(kidExceptions(state, "alice").map((e) => [e.id, e.label, e.scope]), [
+  assert.deepEqual(kidExceptions(state, "alice", FR).map((e) => [e.id, e.label, e.scope]), [
     ["a", "YouTube · Télé", "resource"],
     ["d", "TikTok", "all"],
     ["e", "Tous ses appareils", "resource"],
@@ -509,16 +511,16 @@ test("findRequest distingue service et ressource, et renvoie la plus récente", 
 });
 
 test("requestLine : un libellé par statut", () => {
-  assert.equal(requestLine(req("a")), "Demande envoyée · en attente");
-  assert.equal(requestLine(req("a", { status: "accepted", granted: 30 })), "Accepté : 30 min");
-  assert.equal(requestLine(req("a", { status: "accepted", granted: 60 })), "Accepté : 1 h");
-  assert.equal(requestLine(req("a", { status: "accepted", granted: 90 })), "Accepté : 1 h 30");
-  assert.equal(requestLine(req("a", { status: "accepted", granted: 65 })), "Accepté : 1 h 05");
-  assert.equal(requestLine(req("a", { status: "accepted", granted: null })), "Accepté : jusqu'au prochain changement");
-  assert.equal(requestLine(req("a", { kind: "homework", status: "accepted" })), "Accepté");
-  assert.equal(requestLine(req("a", { status: "refused" })), "Refusé");
-  assert.equal(requestLine(req("a", { status: "expired" })), "Pas de réponse");
-  assert.equal(requestLine(req("a", { status: "failed", reason: "Déjà ouvert" })), "Impossible : Déjà ouvert");
+  assert.equal(requestLine(req("a"), FR), "Demande envoyée · en attente");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 30 }), FR), "Accepté : 30 min");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 60 }), FR), "Accepté : 1 h");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 90 }), FR), "Accepté : 1 h 30");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: 65 }), FR), "Accepté : 1 h 05");
+  assert.equal(requestLine(req("a", { status: "accepted", granted: null }), FR), "Accepté : jusqu'au prochain changement");
+  assert.equal(requestLine(req("a", { kind: "homework", status: "accepted" }), FR), "Accepté");
+  assert.equal(requestLine(req("a", { status: "refused" }), FR), "Refusé");
+  assert.equal(requestLine(req("a", { status: "expired" }), FR), "Pas de réponse");
+  assert.equal(requestLine(req("a", { status: "failed", reason: "Déjà ouvert" }), FR), "Impossible : Déjà ouvert");
 });
 
 test("requestsFor filtre par enfant ou par ressource", () => {
@@ -536,21 +538,21 @@ test("ownerChoices : nom de l'enfant, à défaut son id", () => {
 });
 
 test("requestRemaining : minutes avant l'expiration, arrondies au-dessus", () => {
-  assert.equal(requestRemaining("2026-10-30T15:12:00-04:00", NOW), "Expire dans 12 min");
-  assert.equal(requestRemaining("2026-10-30T15:00:20-04:00", NOW), "Expire dans 1 min");
-  assert.equal(requestRemaining("2026-10-30T15:00:00-04:00", NOW), "Expire maintenant");
-  assert.equal(requestRemaining(null, NOW), "Expire maintenant");
+  assert.equal(requestRemaining("2026-10-30T15:12:00-04:00", NOW, FR), "Expire dans 12 min");
+  assert.equal(requestRemaining("2026-10-30T15:00:20-04:00", NOW, FR), "Expire dans 1 min");
+  assert.equal(requestRemaining("2026-10-30T15:00:00-04:00", NOW, FR), "Expire maintenant");
+  assert.equal(requestRemaining(null, NOW, FR), "Expire maintenant");
 });
 
 test("requestOutcome : qui a répondu et ce qui a été accordé", () => {
   const r = (extra) => ({ kind: "open", answered_by: "Julie", ...extra });
-  assert.equal(requestOutcome(r({ status: "accepted", granted: 30 })), "Acceptée par Julie : 30 min");
-  assert.equal(requestOutcome(r({ status: "accepted", granted: null })), "Acceptée par Julie : jusqu'au prochain changement");
-  assert.equal(requestOutcome(r({ kind: "homework", status: "accepted" })), "Acceptée par Julie");
-  assert.equal(requestOutcome(r({ status: "refused" })), "Refusée par Julie");
-  assert.equal(requestOutcome(r({ status: "expired", answered_by: null })), "Expirée sans réponse");
-  assert.equal(requestOutcome(r({ status: "failed", reason: "Déjà ouvert" })), "Acceptée par Julie, mais impossible : Déjà ouvert");
-  assert.equal(requestOutcome(r({ status: "refused", answered_by: null })), "Refusée");
+  assert.equal(requestOutcome(r({ status: "accepted", granted: 30 }), FR), "Acceptée par Julie : 30 min");
+  assert.equal(requestOutcome(r({ status: "accepted", granted: null }), FR), "Acceptée par Julie : jusqu'au prochain changement");
+  assert.equal(requestOutcome(r({ kind: "homework", status: "accepted" }), FR), "Acceptée par Julie");
+  assert.equal(requestOutcome(r({ status: "refused" }), FR), "Refusée par Julie");
+  assert.equal(requestOutcome(r({ status: "expired", answered_by: null }), FR), "Expirée sans réponse");
+  assert.equal(requestOutcome(r({ status: "failed", reason: "Déjà ouvert" }), FR), "Acceptée par Julie, mais impossible : Déjà ouvert");
+  assert.equal(requestOutcome(r({ status: "refused", answered_by: null }), FR), "Refusée");
 });
 
 test("requestsScreen : en attente d'abord (plus ancienne en tête), puis récentes", () => {
@@ -677,11 +679,65 @@ test("allowChoices: services AdGuard, services à labels de l'appareil, noms de 
       tv: { kinds: ["media_player"], on_demand: [], leisure: [] },
     },
   };
-  assert.deepEqual(allowChoices(state, "tablette"), [
+  assert.deepEqual(allowChoices(state, "tablette", FR), [
     { value: null, label: "Tout l'appareil" },
     { value: "internet", label: "Internet (sur demande)" },
   ]);
-  assert.deepEqual(allowChoices(state, "ipad").map((c) => c.value), [null, "tiktok", "youtube"]);
-  assert.deepEqual(allowChoices(state, "tv"), [{ value: null, label: "Tout l'appareil" }]);
-  assert.deepEqual(allowChoices(state, "inconnu"), [{ value: null, label: "Tout l'appareil" }]);
+  assert.deepEqual(allowChoices(state, "ipad", FR).map((c) => c.value), [null, "tiktok", "youtube"]);
+  assert.deepEqual(allowChoices(state, "tv", FR), [{ value: null, label: "Tout l'appareil" }]);
+  assert.deepEqual(allowChoices(state, "inconnu", FR), [{ value: null, label: "Tout l'appareil" }]);
+});
+
+test("textes des cartes en anglais", async () => {
+  const L = await import("../../custom_components/parental_control/www/lib.js");
+  assert.equal(L.fmtDuration(65, EN), "1 h 5 min");
+  assert.equal(L.fmtDuration(0, EN), "0 min");
+  assert.equal(L.quotaBar({ used: 10, remaining: 50 }, EN).text, "10 min / 1 h");
+  assert.deepEqual(L.stateBadge({ paused: false, open: true }, EN), { label: "Allowed", cls: "ok" });
+  assert.deepEqual(L.stateBadge({ paused: true, open: true }, EN), { label: "Paused", cls: "warn" });
+  assert.equal(L.dayTypeLabel("day_off", EN), "Day off");
+  assert.match(L.nextStepLabel({ status: "blocked", segment_end: "2026-10-31T07:00:00-04:00" }, EN), /^resumes 7:00\sAM$/);
+  const e = { label: "YouTube", scope: "kid", kid: "Hugo", until: "2026-10-30T16:15:00-04:00", endsAt: null };
+  assert.equal(L.formatPill(e, NOW, EN), "YouTube · 1 h 15 min · Hugo · all their devices");
+  assert.equal(L.formatPill({ ...e, until: null, scope: "all" }, NOW, EN), "YouTube · until further notice · everyone");
+  assert.equal(L.requestLine({ kind: "open", status: "accepted", granted: 90 }, EN), "Accepted: 1 h 30 min");
+  assert.equal(L.requestLine({ kind: "open", status: "pending" }, EN), "Request sent · waiting");
+  assert.equal(L.requestRemaining("2026-10-30T15:12:00-04:00", NOW, EN), "Expires in 12 min");
+  assert.equal(L.requestOutcome({ kind: "open", status: "refused", answered_by: "Julie" }, EN), "Refused by Julie");
+  assert.equal(L.requestOutcome({ kind: "open", status: "accepted", granted: null, answered_by: "Julie" }, EN),
+    "Accepted by Julie: until the next change");
+  assert.deepEqual(L.allowChoices({ resources: {} }, "x", EN), [{ value: null, label: "Whole device" }]);
+  // sans hass : anglais
+  assert.equal(L.dayTypeLabel("school"), "School day");
+});
+
+test("raison du moteur traduite dans la langue de l'utilisateur, texte du serveur en repli", async () => {
+  const L = await import("../../custom_components/parental_control/www/lib.js");
+  const kid = { reason_code: "allowed_until", reason_params: { until: "20:00" }, reason: "Screens allowed until 20:00" };
+  assert.equal(L.reasonText(kid, FR), "Écrans autorisés jusqu'à 20:00");
+  assert.equal(L.reasonText(kid, EN), "Screens allowed until 20:00");
+  assert.equal(L.reasonText({ reason_code: "nouveau_code", reason: "Texte du serveur" }, FR), "Texte du serveur");
+  assert.equal(L.reasonText({ reason: "Ancien" }, FR), "Ancien");
+  assert.equal(L.reasonText({}, FR), "");
+  // la vue d'une ressource garde le code, la ligne de raison le traduit et ne répète pas l'heure
+  const s = state();
+  s.resources.net = { ...s.resources.net, reason_code: "allowed_until", reason_params: { until: "18:00" }, reason: "x" };
+  const v = L.resourceView(s, "net");
+  assert.equal(L.reasonLine(v, FR), "Écrans autorisés jusqu'à 18:00");
+  s.resources.tv = { ...s.resources.tv, reason_code: "blocked", reason_params: {} };
+  assert.equal(L.reasonLine(L.resourceView(s, "tv"), EN), "Blocked");
+});
+
+test("échec d'une demande : code traduit, texte du serveur en repli", async () => {
+  const L = await import("../../custom_components/parental_control/www/lib.js");
+  const failed = (extra) => ({ kind: "open", status: "failed", answered_by: "Julie", reason: "Server text", ...extra });
+  assert.equal(L.requestLine(failed({ reason_code: "quota_exhausted", reason_params: {} }), FR),
+    "Impossible : Le quota du jour est épuisé.");
+  assert.equal(L.requestLine(failed({ reason_code: "impossible", reason_params: {} }), EN), "Not possible: Action not possible");
+  assert.equal(L.requestOutcome(failed({ reason_code: "unknown_kid", reason_params: { kid_id: "hugo" } }), EN),
+    "Accepted by Julie, but not possible: Unknown child: hugo.");
+  assert.equal(L.requestOutcome(failed({ reason_code: "unknown_choice", reason_params: {} }), FR),
+    "Acceptée par Julie, mais impossible : Choix inconnu");
+  assert.equal(L.requestLine(failed({ reason_code: "autre_code" }), FR), "Impossible : Server text");
+  assert.equal(L.requestLine(failed({ reason_code: null }), FR), "Impossible : Server text");
 });

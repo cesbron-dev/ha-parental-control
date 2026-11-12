@@ -1,5 +1,6 @@
 // Style « verre » commun aux cartes, pilules et confirmation en deux appuis.
 import { esc, needsCode, bonusLabel, requestsFor, requestLine } from "./lib.js";
+import { t } from "./i18n.js";
 
 export const CONFIRM_MS = 3000;
 const ERROR_MS = 6000;
@@ -110,11 +111,11 @@ export function applyTheme(el, hass) {
   el.toggleAttribute("light", !dark);
 }
 
-// Pilule cliquable ; `label` est échappé ici. Armée, elle affiche « Confirmer ? ».
-// `trailing` : icône en fin de pilule (✕) ; `lock` : petit cadenas (code parent demandé).
-export function pill({ action, icon, label, cls = "", confirm = false, armed = false, disabled = false, lock = false, trailing = null }) {
+// Pilule cliquable ; `label` est échappé ici. Armée, elle affiche « Confirmer ? » dans la langue de
+// `hass`. `trailing` : icône en fin de pilule (✕) ; `lock` : petit cadenas (code parent demandé).
+export function pill({ action, icon, label, cls = "", confirm = false, armed = false, disabled = false, lock = false, trailing = null, hass = null }) {
   return `<div class="pill ${cls} ${armed ? "armed" : ""}" data-action="${esc(action)}"${confirm ? " data-confirm" : ""}${disabled ? " disabled" : ""}>`
-    + `<ha-icon icon="${armed ? "mdi:check" : icon}"></ha-icon>${armed ? "Confirmer ?" : esc(label)}`
+    + `<ha-icon icon="${armed ? "mdi:check" : icon}"></ha-icon>${esc(armed ? t(hass, "pill.confirm") : label)}`
     + `${trailing && !armed ? `<ha-icon icon="${trailing}"></ha-icon>` : ""}`
     + `${lock && !armed ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`;
 }
@@ -156,7 +157,7 @@ export function bonusPills(hass, minutes, armed, parent = false) {
   const lock = needsCode(hass, "bonus", parent);
   return minutes.map((m) => {
     const action = `bonus:${m}`;
-    return pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: armed === action, lock });
+    return pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: armed === action, lock, hass });
   });
 }
 
@@ -185,6 +186,6 @@ export class ErrorNotice {
 }
 
 // Lignes d'état des demandes de temps d'une carte (sous les pastilles, comme la ligne d'erreur).
-export function requestLines(state, target) {
-  return requestsFor(state, target).map((r) => `<div class="reqline">${esc(requestLine(r))}</div>`).join("");
+export function requestLines(state, target, hass) {
+  return requestsFor(state, target).map((r) => `<div class="reqline">${esc(requestLine(r, hass))}</div>`).join("");
 }

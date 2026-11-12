@@ -1,12 +1,7 @@
 // Bibliothèque partagée des cartes Contrôle parental : fonctions pures, sans DOM.
-
-const pad = (n) => String(n).padStart(2, "0");
-
-// Heure locale « HH:MM » d'une date ISO.
-const hhmm = (iso) => {
-  const d = new Date(iso);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+// Les fonctions qui produisent du texte prennent `hass` en dernier paramètre (langue de
+// l'utilisateur, anglais sans `hass`).
+import { t, hasKey, formatTime, formatDuration, durationText } from "./i18n.js";
 
 // Échappe un texte venant du moteur avant de l'insérer dans du HTML.
 export function esc(s) {
@@ -15,10 +10,29 @@ export function esc(s) {
   })[c]);
 }
 
-// Durée en minutes -> « 1h 05m » (négatif ou invalide -> « 0h 00m »).
-export function fmtDuration(minutes) {
+// Durée en minutes des jauges : « 1h 05m » en français, « 1 h 5 min » en anglais (négatif ou
+// invalide -> zéro).
+export function fmtDuration(minutes, hass) {
   const total = Math.max(0, Math.round(Number(minutes) || 0));
-  return `${Math.floor(total / 60)}h ${pad(total % 60)}m`;
+  return durationText(hass, "duration.compact", total);
+}
+
+// Raison du moteur d'un enfant ou d'une ressource dans la langue de l'utilisateur
+// (`reason_code` et `reason_params`) ; code inconnu ou absent : texte du serveur (`reason`).
+export function reasonText(item, hass) {
+  const code = item?.reason_code;
+  if (code && hasKey(`reason.${code}`)) return t(hass, `reason.${code}`, item.reason_params ?? {});
+  return item?.reason ?? "";
+}
+
+// Raison de l'échec d'une demande : `request.reason.<code>`, puis `error.<code>` (erreur d'une
+// action du parent), sinon le texte du serveur.
+function requestReason(req, hass) {
+  const code = req?.reason_code;
+  const params = req?.reason_params ?? {};
+  if (code && hasKey(`request.reason.${code}`)) return t(hass, `request.reason.${code}`, params);
+  if (code && hasKey(`error.${code}`)) return t(hass, `error.${code}`, params);
+  return req?.reason ?? "";
 }
 
 // `services` : services du parent (`state.services`, `{id: {name, icon, adguard, labels}}`).
@@ -77,41 +91,43 @@ export function ownerChoices(state, owners) {
 }
 
 // Durée d'une demande, comme `duration_label` du moteur : « 15 min », « 1 h », « 1 h 30 ».
-function requestDuration(minutes) {
-  if (minutes == null) return "jusqu'au prochain changement";
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (!h) return `${m} min`;
-  return m ? `${h} h ${pad(m)}` : `${h} h`;
+function requestDuration(minutes, hass) {
+  if (minutes == null) return t(hass, "request.until_next_change");
+  return formatDuration(hass, minutes);
 }
 
 // Ligne d'état d'une demande, affichée sous les pastilles de la carte.
-export function requestLine(req) {
+export function requestLine(req, hass) {
   switch (req.status) {
-    case "pending": return "Demande envoyée · en attente";
-    case "accepted": return req.kind === "homework" ? "Accepté" : `Accepté : ${requestDuration(req.granted)}`;
-    case "refused": return "Refusé";
-    case "expired": return "Pas de réponse";
-    default: return `Impossible : ${req.reason ?? ""}`;
+    case "pending": return t(hass, "request.line.pending");
+    case "accepted": return req.kind === "homework" ? t(hass, "request.line.accepted")
+      : t(hass, "request.line.accepted_duration", { duration: requestDuration(req.granted, hass) });
+    case "refused": return t(hass, "request.line.refused");
+    case "expired": return t(hass, "request.line.expired");
+    default: return t(hass, "request.line.failed", { reason: requestReason(req, hass) });
   }
 }
 
 // Temps restant avant l'expiration d'une demande en attente, pour l'écran « Demandes ».
-export function requestRemaining(expires, now) {
+export function requestRemaining(expires, now, hass) {
   const minutes = Math.ceil((new Date(expires) - now) / 60000);
-  if (!(minutes > 0)) return "Expire maintenant";
-  return minutes === 1 ? "Expire dans 1 min" : `Expire dans ${minutes} min`;
+  if (!(minutes > 0)) return t(hass, "request.expires_now");
+  return minutes === 1 ? t(hass, "request.expires_in_one") : t(hass, "request.expires_in", { minutes });
 }
 
 // Issue d'une demande traitée, pour l'écran « Demandes » : qui a répondu et ce qui a été accordé.
-export function requestOutcome(req) {
-  const by = req.answered_by ? ` par ${req.answered_by}` : "";
+export function requestOutcome(req, hass) {
+  const parent = req.answered_by || null;
+  const by = parent ? "_by" : "";
+  const key = (name) => `request.outcome.${name}`;
   switch (req.status) {
     case "accepted":
-      return req.kind === "homework" ? `Acceptée${by}` : `Acceptée${by} : ${requestDuration(req.granted)}`;
-    case "refused": return `Refusée${by}`;
-    case "expired": return "Expirée sans réponse";
-    default: return `Acceptée${by}, mais impossible : ${req.reason ?? ""}`;
+      return req.kind === "homework" ? t(hass, key(`accepted${by}`), { parent })
+        : t(hass, key(parent ? "accepted_by_duration" : "accepted_duration"),
+          { parent, duration: requestDuration(req.granted, hass) });
+    case "refused": return t(hass, key(`refused${by}`), { parent });
+    case "expired": return t(hass, key("expired"));
+    default: return t(hass, key(`failed${by}`), { parent, reason: requestReason(req, hass) });
   }
 }
 
@@ -137,29 +153,29 @@ function scopeOf(target) {
 }
 
 // Exceptions ouvertes qui touchent une ressource (cible ressource, enfant propriétaire ou globale).
-export function exceptionsForResource(state, resourceId) {
+export function exceptionsForResource(state, resourceId, hass) {
   const resource = state?.resources?.[resourceId];
   if (!resource) return [];
   const out = [];
   for (const e of state.exceptions ?? []) {
     if (!e.open) continue;
-    const t = e.target ?? {};
-    const touches = t.resource_id
-      ? t.resource_id === resourceId
-      : t.kid_id
-        ? (resource.owners ?? []).includes(t.kid_id)
+    const tg = e.target ?? {};
+    const touches = tg.resource_id
+      ? tg.resource_id === resourceId
+      : tg.kid_id
+        ? (resource.owners ?? []).includes(tg.kid_id)
         : true;
     if (!touches) continue;
     // Une exception de service ne concerne que les appareils AdGuard ou ceux d'un interrupteur par label.
-    if (t.service && !(resource.kinds ?? [resource.kind]).includes("adguard_services")
-      && !(resource.label_services ?? []).includes(t.service)) continue;
-    const scope = scopeOf(t);
+    if (tg.service && !(resource.kinds ?? [resource.kind]).includes("adguard_services")
+      && !(resource.label_services ?? []).includes(tg.service)) continue;
+    const scope = scopeOf(tg);
     out.push({
       id: e.id,
-      label: t.service ? serviceLabel(t.service, state.services) : "Tout l'appareil",
-      service: t.service ?? null,
+      label: tg.service ? serviceLabel(tg.service, state.services) : t(hass, "exception.whole_device"),
+      service: tg.service ?? null,
       scope,
-      kid: scope === "kid" ? (state.kids?.[t.kid_id]?.name ?? t.kid_id) : null,
+      kid: scope === "kid" ? (state.kids?.[tg.kid_id]?.name ?? tg.kid_id) : null,
       until: e.until ?? null,
       endsAt: e.ends_at ?? null,
     });
@@ -172,35 +188,30 @@ export function exceptionsForKid(state, kidId) {
   const out = [];
   for (const e of state?.exceptions ?? []) {
     if (!e.open) continue;
-    const t = e.target ?? {};
-    const touches = t.resource_id
-      ? (state.resources?.[t.resource_id]?.owners ?? []).includes(kidId)
-      : t.kid_id
-        ? t.kid_id === kidId
+    const tg = e.target ?? {};
+    const touches = tg.resource_id
+      ? (state.resources?.[tg.resource_id]?.owners ?? []).includes(kidId)
+      : tg.kid_id
+        ? tg.kid_id === kidId
         : true;
-    if (touches) out.push({ id: e.id, endsAt: e.ends_at ?? null, scope: scopeOf(t) });
+    if (touches) out.push({ id: e.id, endsAt: e.ends_at ?? null, scope: scopeOf(tg) });
   }
   return out;
 }
 
-// Durée restante en minutes arrondies au-dessus : « 42 min », « 1 h 15 ».
-function fmtRemaining(ms) {
-  const m = Math.max(0, Math.ceil(ms / 60000));
-  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${pad(m % 60)}`;
-}
-
-export function formatPill(exc, now) {
+export function formatPill(exc, now, hass) {
   let when;
   if (exc.until) {
-    when = fmtRemaining(new Date(exc.until) - now);
+    // durée restante en minutes arrondies au-dessus : « 42 min », « 1 h 15 »
+    when = formatDuration(hass, Math.max(0, Math.ceil((new Date(exc.until) - now) / 60000)));
   } else if (exc.endsAt) {
-    when = `jusqu'à ${hhmm(exc.endsAt)}`;
+    when = t(hass, "time.until", { time: formatTime(hass, exc.endsAt) });
   } else {
-    when = "jusqu'à nouvel ordre";
+    when = t(hass, "time.until_further_notice");
   }
   let text = `${exc.label} · ${when}`;
-  if (exc.scope === "kid") text += ` · ${exc.kid} · tous ses appareils`;
-  else if (exc.scope === "all") text += " · tout le monde";
+  if (exc.scope === "kid") text += ` · ${t(hass, "exception.kid_all_devices", { kid: exc.kid })}`;
+  else if (exc.scope === "all") text += ` · ${t(hass, "exception.everyone")}`;
   return text;
 }
 
@@ -208,7 +219,8 @@ export function formatPill(exc, now) {
 export function resourceView(state, resourceId) {
   const resources = state?.resources ?? {};
   const base = {
-    status: "ok", name: null, kind: null, kinds: [], icon: null, owners: [], open: false, reason: "", until: null,
+    status: "ok", name: null, kind: null, kinds: [], icon: null, owners: [], open: false,
+    reason: "", reason_code: null, reason_params: {}, until: null,
     used: null, remaining: null, leisure: [], onDemand: [], nintendo: null, paused: !!state?.paused, resumesAt: null,
   };
   if (Object.keys(resources).length === 0) return { ...base, status: "unavailable" };
@@ -223,6 +235,8 @@ export function resourceView(state, resourceId) {
     owners: r.owners ?? [],
     open: !!r.open,
     reason: r.reason ?? "",
+    reason_code: r.reason_code ?? null,
+    reason_params: r.reason_params ?? {},
     until: r.until ?? null,
     used: r.used_minutes ?? null,
     remaining: r.remaining_minutes ?? null,
@@ -265,13 +279,13 @@ export function serviceToggles(state, resourceId, only = null) {
 // demande d'abord : ils ne s'ouvrent que par une autorisation, puis loisirs). Même filtre que
 // `serviceToggles` : un service concernant AdGuard est proposé sur un appareil AdGuard, un service
 // à labels seulement si l'appareil est la cible d'un de ses interrupteurs (`label_services`).
-export function allowChoices(state, resourceId) {
-  const choices = [{ value: null, label: "Tout l'appareil" }];
+export function allowChoices(state, resourceId, hass) {
+  const choices = [{ value: null, label: t(hass, "exception.whole_device") }];
   const r = state?.resources?.[resourceId];
   if (!r) return choices;
   const shown = (s) => serviceShownOnResource(state, r, s);
   const onDemand = (r.on_demand ?? []).filter(shown);
-  for (const s of onDemand) choices.push({ value: s, label: `${serviceLabel(s, state.services)} (sur demande)` });
+  for (const s of onDemand) choices.push({ value: s, label: t(hass, "exception.on_demand", { service: serviceLabel(s, state.services) }) });
   for (const s of (r.leisure ?? []).filter(shown)) {
     if (!onDemand.includes(s)) choices.push({ value: s, label: serviceLabel(s, state.services) });
   }
@@ -334,22 +348,22 @@ export function kidServiceToggles(state, kidId, only = null) {
 
 // Autorisations en cours qui touchent un enfant, pour ses pilules (formatPill) : libellé selon la
 // cible (service, appareil, tous ses appareils), sans répéter le nom de l'enfant.
-export function kidExceptions(state, kidId) {
+export function kidExceptions(state, kidId, hass) {
   const out = [];
   for (const e of state?.exceptions ?? []) {
     if (!e.open) continue;
-    const t = e.target ?? {};
-    const resource = t.resource_id ? state.resources?.[t.resource_id] : null;
-    if (t.resource_id && !(resource?.owners ?? []).includes(kidId)) continue;
-    if (t.kid_id && t.kid_id !== kidId) continue;
+    const tg = e.target ?? {};
+    const resource = tg.resource_id ? state.resources?.[tg.resource_id] : null;
+    if (tg.resource_id && !(resource?.owners ?? []).includes(kidId)) continue;
+    if (tg.kid_id && tg.kid_id !== kidId) continue;
     // Où : l'appareil, tous ceux de l'enfant, ou tous (formatPill ajoute alors « tout le monde »).
-    const where = resource ? (resource.name || t.resource_id) : t.kid_id ? "tous ses appareils" : "";
-    const label = t.service
-      ? [serviceLabel(t.service, state.services), where].filter(Boolean).join(" · ")
-      : where ? where.charAt(0).toUpperCase() + where.slice(1) : "Tous les appareils";
+    const where = resource ? (resource.name || tg.resource_id) : tg.kid_id ? t(hass, "exception.their_devices") : "";
+    const label = tg.service
+      ? [serviceLabel(tg.service, state.services), where].filter(Boolean).join(" · ")
+      : where ? where.charAt(0).toUpperCase() + where.slice(1) : t(hass, "exception.all_devices");
     out.push({
-      id: e.id, label, service: t.service ?? null,
-      scope: t.resource_id || t.kid_id ? "resource" : "all",
+      id: e.id, label, service: tg.service ?? null,
+      scope: tg.resource_id || tg.kid_id ? "resource" : "all",
       kid: null, until: e.until ?? null, endsAt: e.ends_at ?? null,
     });
   }
@@ -388,22 +402,25 @@ function blockedSegmentEnd(kids, owners) {
 }
 
 // Ligne de raison : raison du moteur, puis l'heure locale du prochain changement s'il est connu.
-export function reasonLine(view) {
+export function reasonLine(view, hass) {
   const parts = [];
-  if (view.reason) parts.push(view.reason);
-  // le moteur met parfois déjà l'heure dans sa raison (« Écrans autorisés jusqu'à 20:00 »)
+  const reason = reasonText(view, hass);
+  if (reason) parts.push(reason);
   if (view.until) {
-    const until = `jusqu'à ${hhmm(view.until)}`;
-    if (!view.reason?.includes(until)) parts.push(until);
+    // le moteur met parfois déjà l'heure dans sa raison (« Écrans autorisés jusqu'à 20:00 ») ;
+    // sans code (ancien moteur), on la cherche dans le texte
+    const until = t(hass, "time.until", { time: formatTime(hass, view.until) });
+    const repeated = view.reason_code ? view.reason_code === "allowed_until" : reason.includes(until);
+    if (!repeated) parts.push(until);
   }
-  else if (!view.open && view.resumesAt) parts.push(`reprise ${hhmm(view.resumesAt)}`);
+  else if (!view.open && view.resumesAt) parts.push(t(hass, "time.resumes", { time: formatTime(hass, view.resumesAt) }));
   return parts.join(" · ");
 }
 
 // Badge d'état d'une ressource : la pause l'emporte sur l'état ouvert/fermé.
-export function stateBadge(view) {
-  if (view.paused) return { label: "Pause", cls: "warn" };
-  return view.open ? { label: "Autorisé", cls: "ok" } : { label: "Bloqué", cls: "bad" };
+export function stateBadge(view, hass) {
+  if (view.paused) return { label: t(hass, "status.paused"), cls: "warn" };
+  return view.open ? { label: t(hass, "status.allowed"), cls: "ok" } : { label: t(hass, "status.blocked"), cls: "bad" };
 }
 
 // Libellé d'une pilule bonus : « +15m », « +1h », « +1h30m ».
@@ -411,7 +428,7 @@ export function bonusLabel(minutes) {
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
   if (!h) return `+${m}m`;
-  return m ? `+${h}h${pad(m)}m` : `+${h}h`;
+  return m ? `+${h}h${String(m).padStart(2, "0")}m` : `+${h}h`;
 }
 
 const DEFAULT_BONUS = [15, 30, 60];
@@ -442,14 +459,14 @@ export function switchGauge(hass, view) {
 }
 
 // Barre « utilisé / autorisé » (autorisé = utilisé + restant) ; null si la ressource n'a pas de quota.
-export function quotaBar(view) {
+export function quotaBar(view, hass) {
   // sans temps restant, la ressource n'a pas de quota du jour
   if (view.remaining == null) return null;
   const used = view.used ?? 0;
   const total = used + (view.remaining ?? 0);
   return {
     pct: total > 0 ? Math.min(100, (used / total) * 100) : 0,
-    text: `${fmtDuration(used)} / ${fmtDuration(total)}`,
+    text: `${fmtDuration(used, hass)} / ${fmtDuration(total, hass)}`,
     over: total > 0 && used >= total,
   };
 }
@@ -469,16 +486,10 @@ export function timelineGeometry(segments, now) {
   return { bars, nowPct: pct(now) };
 }
 
-const DAY_TYPES = {
-  school: "Jour d'école",
-  weekend: "Fin de semaine",
-  day_off: "Congé pédago",
-  holidays: "Vacances",
-};
-
 // Libellé du type de jour du moteur ; type inconnu affiché tel quel, absent -> chaîne vide.
-export function dayTypeLabel(type) {
-  return DAY_TYPES[type] ?? (type ? String(type) : "");
+export function dayTypeLabel(type, hass) {
+  if (!type) return "";
+  return hasKey(`daytype.${type}`) ? t(hass, `daytype.${type}`) : String(type);
 }
 
 // Classe de couleur d'un segment de la frise ; un type inconnu est traité comme bloqué.
@@ -495,10 +506,10 @@ export function statusClass(status) {
 
 // Prochaine étape d'un enfant : « reprise HH:MM » s'il est bloqué, « jusqu'à HH:MM » s'il est libre ;
 // chaîne vide sans fin de segment.
-export function nextStepLabel(kid) {
+export function nextStepLabel(kid, hass) {
   if (!kid?.segment_end) return "";
   const open = kid.status === "allowed" || kid.status === "on_demand";
-  return `${open ? "jusqu'à" : "reprise"} ${hhmm(kid.segment_end)}`;
+  return t(hass, open ? "time.until" : "time.resumes", { time: formatTime(hass, kid.segment_end) });
 }
 
 // Plages hachurées (en % de la journée locale de `now`) des exceptions ouvertes : de `now` à `endsAt`,
@@ -531,6 +542,6 @@ export function keypadInput(value, key) {
 }
 
 // Pastille d'en-tête des cartes : rappelle que le moteur simule sans rien piloter.
-export function simulationBadge(state) {
-  return state?.simulation ? '<span class="sim">SIMULATION</span>' : "";
+export function simulationBadge(state, hass) {
+  return state?.simulation ? `<span class="sim">${esc(t(hass, "common.simulation"))}</span>` : "";
 }

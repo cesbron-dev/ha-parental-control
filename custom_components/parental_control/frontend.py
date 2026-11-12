@@ -26,11 +26,11 @@ _WWW = Path(__file__).parent / "www"
 
 
 def files_version(folder: Path) -> str:
-    """Empreinte courte du contenu des fichiers de `folder` (noms compris)."""
+    """Empreinte courte du contenu des fichiers de `folder` et de ses sous-dossiers (chemins compris)."""
     digest = hashlib.sha256()
-    for path in sorted(folder.iterdir()):
+    for path in sorted(folder.rglob("*")):
         if path.is_file():
-            digest.update(path.name.encode())
+            digest.update(path.relative_to(folder).as_posix().encode())
             digest.update(path.read_bytes())
     return digest.hexdigest()[:12]
 

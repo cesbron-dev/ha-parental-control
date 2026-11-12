@@ -1,7 +1,10 @@
 // Écran « Demandes » (panneau hors barre latérale, ouvert en touchant la notification) : demandes
 // de temps en attente et récentes. Les boutons ne s'affichent qu'aux parents ; le moteur revérifie.
+// Le message et les boutons de chaque demande viennent du serveur (langue du système HA) ; le reste
+// de l'écran suit la langue de l'utilisateur.
 import { esc, requestRemaining, requestOutcome, requestsScreen } from "./lib.js";
 import { BASE_CSS, applyTheme } from "./style.js";
+import { t, lang } from "./i18n.js";
 
 const CSS = `
   ${BASE_CSS}
@@ -41,11 +44,19 @@ class ParentalControlRequests extends HTMLElement {
   }
 
   set hass(hass) {
+    const relang = lang(hass) !== lang(this._hass);
     this._hass = hass;
     applyTheme(this, hass);
     const menu = this.shadowRoot.querySelector("ha-menu-button");
     if (menu) menu.hass = hass;
-    if (this.isConnected) this._subscribe();
+    if (this.isConnected) {
+      this._subscribe();
+      // la langue de l'utilisateur a changé : titre compris, l'écran est redessiné
+      if (relang && menu) {
+        this.shadowRoot.querySelector("h1").textContent = t(hass, "requests.title");
+        this._render();
+      }
+    }
   }
 
   set narrow(narrow) {
@@ -134,29 +145,30 @@ class ParentalControlRequests extends HTMLElement {
       : "";
     const error = this._error?.id === req.id ? `<div class="error">${esc(this._error.text)}</div>` : "";
     return `<ha-card><p class="msg">${esc(req.message)}</p>`
-      + `<div class="when">${busy ? "Envoi de la réponse…" : esc(requestRemaining(req.expires, now))}</div>`
+      + `<div class="when">${esc(busy ? t(this._hass, "requests.sending") : requestRemaining(req.expires, now, this._hass))}</div>`
       + `${buttons}${error}</ha-card>`;
   }
 
   _recentCard(req) {
     const cls = req.status === "accepted" ? "ok" : req.status === "refused" ? "bad" : "muted";
-    return `<ha-card><p class="msg">${esc(req.message)}</p><div class="when ${cls}">${esc(requestOutcome(req))}</div></ha-card>`;
+    return `<ha-card><p class="msg">${esc(req.message)}</p><div class="when ${cls}">${esc(requestOutcome(req, this._hass))}</div></ha-card>`;
   }
 
   _body() {
-    if (this._data === undefined) return `<p class="empty">Chargement…</p>`;
-    if (this._data === null) return `<p class="empty">Contrôle parental indisponible pour le moment.</p>`;
+    const hass = this._hass;
+    if (this._data === undefined) return `<p class="empty">${esc(t(hass, "common.loading"))}</p>`;
+    if (this._data === null) return `<p class="empty">${esc(t(hass, "requests.unavailable"))}</p>`;
     const { pending, recent } = requestsScreen(this._data.requests);
     const now = new Date();
     const canAnswer = !!this._data.can_answer;
     let html = pending.length
       ? pending.map((r) => this._pendingCard(r, canAnswer, now)).join("")
-      : `<p class="empty">Aucune demande en attente.</p>`;
+      : `<p class="empty">${esc(t(hass, "requests.none_pending"))}</p>`;
     if (pending.length && !canAnswer) {
-      html += `<p class="note">Seuls les parents dont le téléphone est dans la liste des demandes peuvent répondre.</p>`;
+      html += `<p class="note">${esc(t(hass, "requests.only_parents"))}</p>`;
     }
     if (recent.length) {
-      html += `<h2>Récentes</h2><div class="recent">${recent.map((r) => this._recentCard(r)).join("")}</div>`;
+      html += `<h2>${esc(t(hass, "requests.recent"))}</h2><div class="recent">${recent.map((r) => this._recentCard(r)).join("")}</div>`;
     }
     return html;
   }
@@ -165,7 +177,7 @@ class ParentalControlRequests extends HTMLElement {
     // Le bouton de menu est gardé d'un rendu à l'autre (il porte hass et narrow).
     if (!this.shadowRoot.querySelector("main")) {
       this.shadowRoot.innerHTML = `<style>${CSS}</style>`
-        + `<header><ha-menu-button></ha-menu-button><h1>Demandes</h1></header><main></main>`;
+        + `<header><ha-menu-button></ha-menu-button><h1>${esc(t(this._hass, "requests.title"))}</h1></header><main></main>`;
       const menu = this.shadowRoot.querySelector("ha-menu-button");
       menu.hass = this._hass;
       menu.narrow = this._narrow;

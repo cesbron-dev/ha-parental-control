@@ -28,8 +28,9 @@ test("pill escapes label and shows armed state", () => {
   assert.match(html, /&lt;i&gt;x&lt;\/i&gt;/);
   assert.match(html, /data-confirm/);
   assert.match(html, /mdi:power/);
-  const armed = pill({ action: "a", icon: "mdi:power", label: "Arrêter", armed: true, lock: true });
+  const armed = pill({ action: "a", icon: "mdi:power", label: "Arrêter", armed: true, lock: true, hass: { locale: { language: "fr" } } });
   assert.match(armed, /Confirmer \?/);
+  assert.match(pill({ action: "a", icon: "mdi:power", label: "Stop", armed: true, hass: { language: "en" } }), /Confirm\?/);
   assert.match(armed, /mdi:check/);
   assert.match(armed, /class="pill[^"]*\barmed\b/);
   assert.match(pill({ action: "a", icon: "mdi:plus", label: "Autoriser…", lock: true }), /mdi:lock/);

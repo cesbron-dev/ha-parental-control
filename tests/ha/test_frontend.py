@@ -28,6 +28,16 @@ def test_files_version_follows_content(tmp_path: Path) -> None:
     assert files_version(tmp_path) != first
 
 
+def test_files_version_follows_subfolders(tmp_path: Path) -> None:
+    # Les catalogues de traduction (www/i18n/) sont importés par les cartes : ils comptent aussi.
+    (tmp_path / "a.js").write_text("un")
+    (tmp_path / "i18n").mkdir()
+    (tmp_path / "i18n" / "fr.js").write_text("deux")
+    first = files_version(tmp_path)
+    (tmp_path / "i18n" / "fr.js").write_text("trois")
+    assert files_version(tmp_path) != first
+
+
 @pytest.fixture(autouse=True)
 def frontend(hass: HomeAssistant) -> None:
     # Le composant `frontend` complet exige le paquet `home-assistant-frontend` : on pose son registre.
@@ -51,6 +61,7 @@ async def test_registers_static_path_and_module_once(hass: HomeAssistant, http) 
     assert config.cache_headers is True  # chemin versionné par le contenu : cache long sans risque
     assert Path(config.path).joinpath("parental-cards.js").is_file()
     assert Path(config.path).joinpath("lib.js").is_file()
+    assert Path(config.path).joinpath("i18n", "en.js").is_file()
     assert sorted(hass.data["frontend_extra_module_url"].urls) == [_URL]
 
 
