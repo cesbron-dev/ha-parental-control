@@ -249,3 +249,35 @@ test("aucun texte français codé en dur dans www (hors i18n/fr.js)", async () =
   assert.ok(files.length > 10, "fichiers trouvés");
   assert.deepEqual(found, []);
 });
+
+test("erreurs WebSocket et d'action traduites (errorText)", async () => {
+  const { errorText } = await import("../../custom_components/parental_control/www/i18n.js");
+  const EN = { locale: { language: "en" } };
+  const FR = { locale: { language: "fr" } };
+  // erreurs de action : `error.<translation_key>`
+  const action = { code: "service_validation_error", message: "Validation error: x", translation_key: "unknown_kid",
+    translation_placeholders: { kid_id: "zoe" } };
+  assert.equal(errorText(EN, action), "Unknown child: zoe.");
+  assert.equal(errorText(FR, action), fr.error.unknown_kid.replace("{kid_id}", "zoe"));
+  // codes WebSocket de l'intégration : `ws_error.<code>`
+  for (const code of ["not_loaded", "unauthorized", "not_pending", "invalid_choice"]) {
+    const err = { code, message: "Server text" };
+    assert.equal(errorText(EN, err), en.ws_error[code], code);
+    assert.equal(errorText(FR, err), fr.ws_error[code], code);
+    assert.notEqual(fr.ws_error[code], en.ws_error[code], code);
+  }
+  // inconnu : message du serveur, puis code, puis texte brut
+  assert.equal(errorText(FR, { code: "unknown_command", message: "Unknown command." }), "Unknown command.");
+  assert.equal(errorText(FR, { code: "boom" }), "boom");
+  assert.equal(errorText(FR, { message: "Text", translation_key: "nouvelle_cle" }), "Text");
+  assert.equal(errorText(FR, "boom"), "boom");
+  assert.equal(errorText(FR, null), "");
+});
+
+test("chaque code d'erreur WebSocket de l'intégration a son texte", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../../custom_components/parental_control/websocket.py", import.meta.url), "utf8");
+  const codes = new Set([...source.matchAll(/send_error\(\s*msg\["id"\],\s*"(\w+)"/g)].map(([, code]) => code));
+  codes.delete("invalid_config"); // traduite par `config_error.*` (translation_key)
+  assert.deepEqual([...codes].sort(), Object.keys(en.ws_error).sort());
+});

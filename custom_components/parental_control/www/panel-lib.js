@@ -1,7 +1,7 @@
 // Logique pure du panneau « Règles » : édition en place du brouillon de configuration (même forme
 // que `parental_control/config/get`), sans DOM. Le moteur reste seul juge de la validité (config/set).
 // Les fonctions qui produisent un texte prennent `hass` (langue de l'utilisateur, anglais sans lui).
-import { t, lang } from "./i18n.js";
+import { t, lang, errorText } from "./i18n.js";
 
 const ucfirst = (text) => text.charAt(0).toUpperCase() + text.slice(1);
 // « 1 intégration », « 2 intégrations » : clés `<key>_one` et `<key>_other`, règle de la langue.
@@ -42,7 +42,8 @@ export function kinds(hass) {
 }
 
 // Erreur de `config/set` : `invalid_config` traduite d'après `translation_key` (`config_<code>` ->
-// `config_error.<code>`) et `translation_placeholders` (dont `path`) ; sinon le message du serveur.
+// `config_error.<code>`) et `translation_placeholders` (dont `path`) ; les autres erreurs par
+// `errorText` (erreur d'action, code WebSocket), sinon le message du serveur.
 export function configErrorText(hass, err) {
   if (err === null || err === undefined) return "";
   if (typeof err !== "object") return String(err);
@@ -51,7 +52,7 @@ export function configErrorText(hass, err) {
   if (key.startsWith("config_") && t(hass, catalogueKey) !== catalogueKey) {
     return t(hass, catalogueKey, err.translation_placeholders ?? {});
   }
-  return String(err.message ?? err.code ?? "");
+  return errorText(hass, err);
 }
 
 // Noms lisibles des intégrations HA les plus courantes ; les autres gardent leur identifiant.

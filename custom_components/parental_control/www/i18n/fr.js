@@ -79,6 +79,13 @@ export default {
     too_many_requests: "Trop de demandes en attente.",
     invalid_request: "Demande invalide.",
   },
+  // erreurs WebSocket de l'intégration (code de `connection.send_error`)
+  ws_error: {
+    not_loaded: "Le contrôle parental n'est pas chargé.",
+    unauthorized: "Réservé aux parents.",
+    not_pending: "Cette demande a déjà reçu une réponse ou a expiré.",
+    invalid_choice: "Choix inconnu.",
+  },
   request: {
     until_next_change: "jusqu'au prochain changement",
     reason: {

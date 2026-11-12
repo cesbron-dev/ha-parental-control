@@ -1,4 +1,5 @@
 // Connexion partagée entre les cartes : une seule souscription à l'état par connexion HA.
+import { errorText } from "./i18n.js";
 
 const entries = new WeakMap(); // connexion -> {callbacks, last, unsub}
 
@@ -50,12 +51,13 @@ export async function subscribeState(hass, callback) {
 }
 
 // Appelle un service parental_control ; ajoute `code` seulement s'il est fourni, ne lève jamais.
+// L'erreur est rendue dans la langue de l'utilisateur (`errorText`).
 export async function callAction(hass, service, data, code) {
   try {
     await hass.callService("parental_control", service, code ? { ...data, code } : data);
     return { ok: true };
   } catch (err) {
-    return { ok: false, error: err?.message ?? String(err) };
+    return { ok: false, error: errorText(hass, err) };
   }
 }
 

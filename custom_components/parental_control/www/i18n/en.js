@@ -79,6 +79,13 @@ export default {
     too_many_requests: "Too many pending requests.",
     invalid_request: "Invalid request.",
   },
+  // WebSocket errors of the integration (code of `connection.send_error`)
+  ws_error: {
+    not_loaded: "Parental control is not loaded.",
+    unauthorized: "Only a parent can do this.",
+    not_pending: "This request has already been answered or has expired.",
+    invalid_choice: "Unknown choice.",
+  },
   request: {
     until_next_change: "until the next change",
     reason: {

@@ -813,7 +813,12 @@ test("erreur de configuration traduite (configErrorText)", async () => {
   // repli sur le message du serveur : clé inconnue, pas de clé, autre erreur
   assert.equal(configErrorText(FR, { message: "Server text", translation_key: "config_nouveau" }), "Server text");
   assert.equal(configErrorText(FR, { message: "Server text" }), "Server text");
-  assert.equal(configErrorText(FR, { message: "Server text", translation_key: "code_invalid" }), "Server text");
+  assert.equal(configErrorText(FR, { message: "Server text", translation_key: "nouvelle_cle" }), "Server text");
+  // erreur d'action connue (`error.<clé>`) : traduite
+  assert.equal(configErrorText(FR, { message: "Server text", translation_key: "code_invalid" }), "Code parent invalide.");
+  // erreurs WebSocket non liées à la configuration : traduites aussi
+  assert.equal(configErrorText(FR, { code: "unauthorized", message: "Parents only" }), "Réservé aux parents.");
+  assert.equal(configErrorText(EN, { code: "not_loaded", message: "x" }), "Parental control is not loaded.");
   assert.equal(configErrorText(EN, null), "");
   assert.equal(configErrorText(EN, "boom"), "boom");
 });

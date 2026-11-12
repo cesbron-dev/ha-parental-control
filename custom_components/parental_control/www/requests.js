@@ -4,7 +4,7 @@
 // de l'écran suit la langue de l'utilisateur.
 import { esc, requestRemaining, requestOutcome, requestsScreen } from "./lib.js";
 import { BASE_CSS, applyTheme } from "./style.js";
-import { t, lang } from "./i18n.js";
+import { t, lang, errorText } from "./i18n.js";
 
 const CSS = `
   ${BASE_CSS}
@@ -127,7 +127,7 @@ class ParentalControlRequests extends HTMLElement {
     try {
       await this._hass.callWS({ type: "parental_control/requests/answer", request_id: id, choice: btn.dataset.choice });
     } catch (err) {
-      this._error = { id, text: err?.message ?? String(err) };
+      this._error = { id, text: errorText(this._hass, err) };
     }
     this._busy = null;
     this._render();

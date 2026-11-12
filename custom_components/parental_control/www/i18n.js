@@ -51,6 +51,20 @@ export function t(hass, key, params = {}) {
   return tLang(lang(hass), key, params);
 }
 
+// Texte d'une erreur du serveur dans la langue de l'utilisateur. Le `message` d'une erreur
+// d'action est toujours anglais (et préfixé « Validation error: ») : `translation_key` connue ->
+// `error.<clé>` ; code WebSocket de l'intégration connu -> `ws_error.<code>` ; sinon le message
+// du serveur, à défaut le code.
+export function errorText(hass, err) {
+  if (err === null || err === undefined) return "";
+  if (typeof err !== "object") return String(err);
+  const key = err.translation_key ? `error.${err.translation_key}` : null;
+  if (key && hasKey(key)) return t(hass, key, err.translation_placeholders ?? {});
+  const code = err.code ? `ws_error.${err.code}` : null;
+  if (code && hasKey(code)) return t(hass, code);
+  return String(err.message ?? err.code ?? "");
+}
+
 // Cycle horaire choisi dans le profil HA (`hass.locale.time_format`) ; sinon celui de la langue.
 function hourCycle(hass) {
   const format = hass?.locale?.time_format;

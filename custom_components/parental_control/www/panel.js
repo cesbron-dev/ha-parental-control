@@ -2,7 +2,7 @@
 // l'écrit avec `parental_control/config/set` ; le moteur valide et cite le chemin fautif.
 // Un non-parent ne voit que « Réservé aux parents » (rien d'autre n'est demandé au serveur).
 import { esc, pendingCount } from "./lib.js";
-import { t, lang } from "./i18n.js";
+import { t, lang, errorText } from "./i18n.js";
 import { subscribeState } from "./connection.js";
 import * as L from "./panel-lib.js";
 import { CSS, opt } from "./panel-style.js";
@@ -188,7 +188,7 @@ class ParentalControlPanel extends HTMLElement {
     try {
       this._me = await this._hass.connection.sendMessagePromise({ type: "parental_control/whoami" });
     } catch (err) {
-      this._message = { kind: "error", text: this._t("panel.message.whoami_failed", { error: err?.message ?? err }) };
+      this._message = { kind: "error", text: this._t("panel.message.whoami_failed", { error: errorText(this._hass, err) }) };
       this._render();
       return;
     }
@@ -203,7 +203,7 @@ class ParentalControlPanel extends HTMLElement {
       this._draft = clone(this._original);
       this._newIds.clear();
     } catch (err) {
-      this._message = { kind: "error", text: this._t("panel.message.load_failed", { error: err?.message ?? err }) };
+      this._message = { kind: "error", text: this._t("panel.message.load_failed", { error: errorText(this._hass, err) }) };
     }
     try {
       this._devices = await this._hass.connection.sendMessagePromise({ type: "config/device_registry/list" });
