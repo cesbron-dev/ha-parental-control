@@ -13,8 +13,8 @@ from tests.core.conftest import TZ, family_config_dict, mixed_tv
 
 TUESDAY = date(2026, 10, 27)
 ECOLE = {"hugo": DayType.ECOLE, "zoe": DayType.ECOLE, "alice": DayType.ECOLE}
-SVC = "label:internet"
-DEMANDE = "label:console"
+SVC = "internet"
+DEMANDE = "console"
 
 
 def at(h: int, m: int = 0) -> datetime:
@@ -28,6 +28,11 @@ def exc(target: Target, open_: bool, *, id_: str = "e1", created: datetime | Non
 
 
 def _labels(d: dict) -> None:
+    d["services"] = [
+        *d["services"],
+        {"id": SVC, "name": "Internet", "adguard": [], "labels": [{"label_id": "internet"}]},
+        {"id": DEMANDE, "name": "Console", "adguard": [], "labels": [{"label_id": "console"}]},
+    ]
     d["default_leisure"] = [*d["default_leisure"], SVC]
     d["default_on_demand"] = [DEMANDE]
 
@@ -82,8 +87,8 @@ def test_kid_target_paused_blocks_leisure(make_cfg):
 
 
 def test_unmanaged_service_returns_none(make_cfg):
-    assert _blocked(make_cfg, at(15, 40), [("kid", "hugo")], service="label:autre") is None
-    assert _blocked(make_cfg, at(15, 40), [("resource", "tv")], service="label:autre") is None
+    assert _blocked(make_cfg, at(15, 40), [("kid", "hugo")], service="autre") is None
+    assert _blocked(make_cfg, at(15, 40), [("resource", "tv")], service="autre") is None
     assert _blocked(make_cfg, at(15, 40), [("kid", "inconnu")]) is None
     assert _blocked(make_cfg, at(15, 40), []) is None
 
@@ -136,9 +141,9 @@ def test_pause_keeps_closing_exceptions_and_unmanaged(make_cfg):
     assert _blocked(make_cfg, at(15, 40), [("kid", "hugo")], dec=dec) is True
     # La pause ne touche pas un service non géré.
     assert _blocked(make_cfg, at(15, 40), [("kid", "hugo")], dec=Decisions(paused=True),
-                    service="label:autre") is None
+                    service="autre") is None
     assert _blocked(make_cfg, at(15, 40), [("resource", "tv")], dec=Decisions(paused=True),
-                    service="label:autre") is None
+                    service="autre") is None
 
 
 def test_no_closure_warning_key_for_label_services(make_cfg):
@@ -146,4 +151,4 @@ def test_no_closure_warning_key_for_label_services(make_cfg):
     dec = Decisions(exceptions=[exc(Target(resource_id="iphone_hugo", service=SVC), True,
                                     until=at(20, 30))])
     closures = upcoming_closures(at(20), cfg, dec, ECOLE, {})
-    assert not any(k.startswith("service:") and "label:" in k for k in closures)
+    assert not any(k.startswith("service:") and SVC in k for k in closures)
