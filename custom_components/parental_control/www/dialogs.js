@@ -177,13 +177,13 @@ export function openActionDialog(root, { title, choices = null, durations = null
 // Bonus nintendo : admin -> `call` direct (déjà confirmé par deux appuis) ; sinon fenêtre de saisie du code.
 export function runBonus(root, hass, { resource_id, minutes, title, call, request = null, parent = false }) {
   const data = { resource_id, minutes };
-  if (!needsCode(hass, "bonus", parent)) return call("ajouter_bonus", data);
+  if (!needsCode(hass, "bonus", parent)) return call("add_bonus", data);
   openActionDialog(root, {
     title: `${bonusLabel(minutes)} · ${title}`,
     needCode: true,
     submitLabel: "Ajouter",
     request,
-    onSubmit: ({ code }) => callAction(hass, "ajouter_bonus", data, code),
+    onSubmit: ({ code }) => callAction(hass, "add_bonus", data, code),
   });
 }
 
@@ -198,7 +198,7 @@ export function bonusRequest(hass, state, config, resource_id, minutes, parent =
   return {
     kids: ownerChoices(state, owners),
     pending,
-    onRequest: ({ kid }) => callAction(hass, "demander", {
+    onRequest: ({ kid }) => callAction(hass, "request", {
       kind: "bonus", kid_id: kid, resource_id, minutes, options: bonusMinutes(config),
     }),
   };

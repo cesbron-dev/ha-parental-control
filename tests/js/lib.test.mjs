@@ -214,24 +214,24 @@ test("formatPill open ended and scopes", () => {
 
 test("timelineGeometry projects on local day", () => {
   const g = timelineGeometry([
-    { start: "2026-10-30T06:00:00-04:00", end: "2026-10-30T12:00:00-04:00", type: "libre" },
+    { start: "2026-10-30T06:00:00-04:00", end: "2026-10-30T12:00:00-04:00", type: "free" },
   ], NOW);
   assert.equal(g.bars.length, 1);
   assert.equal(g.bars[0].left, 25);
   assert.equal(g.bars[0].width, 25);
-  assert.equal(g.bars[0].type, "libre");
+  assert.equal(g.bars[0].type, "free");
   assert.equal(g.nowPct, 62.5);
 });
 
 test("timelineGeometry clamps to day", () => {
   const g = timelineGeometry([
-    { start: "2026-10-29T20:00:00-04:00", end: "2026-10-30T06:00:00-04:00", type: "bloque" },
-    { start: "2026-10-30T22:00:00-04:00", end: "2026-10-31T08:00:00-04:00", type: "bloque" },
-    { start: "2026-10-28T00:00:00-04:00", end: "2026-10-29T00:00:00-04:00", type: "libre" },
+    { start: "2026-10-29T20:00:00-04:00", end: "2026-10-30T06:00:00-04:00", type: "blocked" },
+    { start: "2026-10-30T22:00:00-04:00", end: "2026-10-31T08:00:00-04:00", type: "blocked" },
+    { start: "2026-10-28T00:00:00-04:00", end: "2026-10-29T00:00:00-04:00", type: "free" },
   ], NOW);
   assert.deepEqual(g.bars, [
-    { left: 0, width: 25, type: "bloque" },
-    { left: (22 / 24) * 100, width: 100 - (22 / 24) * 100, type: "bloque" },
+    { left: 0, width: 25, type: "blocked" },
+    { left: (22 / 24) * 100, width: 100 - (22 / 24) * 100, type: "blocked" },
   ]);
   assert.deepEqual(timelineGeometry(null, NOW).bars, []);
 });
@@ -266,12 +266,12 @@ test("reasonLine shows resume time of a closed resource", () => {
 
 test("resourceView resumesAt is the earliest end of the owners' blocked segments", () => {
   const s = state();
-  s.kids.hugo = { ...s.kids.hugo, segment: "bloque", segment_end: "2026-10-31T08:00:00-04:00" };
-  s.kids.lea = { ...s.kids.lea, segment: "bloque", segment_end: "2026-10-31T07:30:00-04:00" };
+  s.kids.hugo = { ...s.kids.hugo, segment: "blocked", segment_end: "2026-10-31T08:00:00-04:00" };
+  s.kids.lea = { ...s.kids.lea, segment: "blocked", segment_end: "2026-10-31T07:30:00-04:00" };
   s.resources.tv.owners = ["hugo", "lea"];
   assert.equal(resourceView(s, "tv").resumesAt, "2026-10-31T07:30:00-04:00");
-  // un propriétaire hors segment « bloque » : la reprise n'est pas connue
-  s.kids.lea.segment = "apres_devoirs";
+  // un propriétaire hors segment « blocked » : la reprise n'est pas connue
+  s.kids.lea.segment = "after_homework";
   assert.equal(resourceView(s, "tv").resumesAt, null);
   // propriétaire inconnu : pas de reprise
   s.resources.tv.owners = ["inconnu"];
@@ -306,31 +306,31 @@ test("quotaBar", () => {
 });
 
 test("dayTypeLabel", () => {
-  assert.equal(dayTypeLabel("ecole"), "Jour d'école");
-  assert.equal(dayTypeLabel("fin_de_semaine"), "Fin de semaine");
-  assert.equal(dayTypeLabel("conge_peda"), "Congé pédago");
-  assert.equal(dayTypeLabel("vacances"), "Vacances");
+  assert.equal(dayTypeLabel("school"), "Jour d'école");
+  assert.equal(dayTypeLabel("weekend"), "Fin de semaine");
+  assert.equal(dayTypeLabel("day_off"), "Congé pédago");
+  assert.equal(dayTypeLabel("holidays"), "Vacances");
   assert.equal(dayTypeLabel("autre"), "autre");
   assert.equal(dayTypeLabel(undefined), "");
 });
 
 test("segmentClass", () => {
-  for (const t of ["libre", "apres_devoirs", "quota", "sur_demande", "bloque"]) assert.equal(segmentClass(t), t);
-  assert.equal(segmentClass("inconnu"), "bloque");
+  for (const t of ["free", "after_homework", "quota", "on_demand", "blocked"]) assert.equal(segmentClass(t), t);
+  assert.equal(segmentClass("inconnu"), "blocked");
 });
 
 test("statusClass", () => {
-  assert.equal(statusClass("autorise"), "ok");
-  assert.equal(statusClass("attente_devoirs"), "warn");
-  assert.equal(statusClass("pause"), "warn");
-  assert.equal(statusClass("bloque"), "bad");
-  assert.equal(statusClass("quota_epuise"), "bad");
+  assert.equal(statusClass("allowed"), "ok");
+  assert.equal(statusClass("waiting_homework"), "warn");
+  assert.equal(statusClass("paused"), "warn");
+  assert.equal(statusClass("blocked"), "bad");
+  assert.equal(statusClass("quota_exhausted"), "bad");
 });
 
 test("nextStepLabel", () => {
-  assert.equal(nextStepLabel({ status: "bloque", segment_end: "2026-10-31T07:00:00-04:00" }), "reprise 07:00");
-  assert.equal(nextStepLabel({ status: "autorise", segment_end: "2026-10-30T20:30:00-04:00" }), "jusqu'à 20:30");
-  assert.equal(nextStepLabel({ status: "bloque", segment_end: null }), "");
+  assert.equal(nextStepLabel({ status: "blocked", segment_end: "2026-10-31T07:00:00-04:00" }), "reprise 07:00");
+  assert.equal(nextStepLabel({ status: "allowed", segment_end: "2026-10-30T20:30:00-04:00" }), "jusqu'à 20:30");
+  assert.equal(nextStepLabel({ status: "blocked", segment_end: null }), "");
   assert.equal(nextStepLabel(undefined), "");
 });
 
@@ -435,8 +435,8 @@ test("kid card: services over the kid's AdGuard devices, its exceptions, homewor
   const state = {
     services: SERVICES,
     kids: {
-      alice: { name: "Alice", segment: "apres_devoirs", status: "attente_devoirs", remaining_minutes: null, timer_end: null },
-      zoe: { name: "Zoé", segment: "quota", status: "attente_minuteur", remaining_minutes: 40, timer_end: null },
+      alice: { name: "Alice", segment: "after_homework", status: "waiting_homework", remaining_minutes: null, timer_end: null },
+      zoe: { name: "Zoé", segment: "quota", status: "waiting_timer", remaining_minutes: 40, timer_end: null },
     },
     resources: {
       tv: { name: "Télé", owners: ["alice", "zoe"], kinds: ["adguard_services", "media_player"], on_demand: ["youtube"], blocked_services: [] },
@@ -468,7 +468,7 @@ test("kid card: services over the kid's AdGuard devices, its exceptions, homewor
   assert.equal(kidView(state, "alice").homework, "todo");
   assert.equal(kidView(state, "alice").timer, null);
   assert.deepEqual(kidView(state, "zoe").timer, { running: false, canStart: true });
-  assert.equal(kidView({ ...state, kids: { ...state.kids, alice: { ...state.kids.alice, status: "autorise" } } }, "alice").homework, "done");
+  assert.equal(kidView({ ...state, kids: { ...state.kids, alice: { ...state.kids.alice, status: "allowed" } } }, "alice").homework, "done");
   assert.equal(kidView(state, "x").status, "unknown");
   assert.equal(kidView({ kids: {} }, "x").status, "unavailable");
 

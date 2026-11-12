@@ -5,7 +5,7 @@ import { SEGMENT_COLORS, KID_COLORS, opt, pick } from "./panel-style.js";
 
 const RULER = [0, 3, 6, 9, 12, 15, 18, 21, 24];
 const NARROW = 6; // % de la journée sous lequel une plage n'affiche pas son texte (info-bulle seulement)
-const MODE_SHORT = { suit_frise: "Frise", sur_demande: "Sur demande", bloque: "Bloqué", libre: "Libre" };
+const MODE_SHORT = { schedule: "Frise", on_demand: "Sur demande", blocked: "Bloqué", free: "Libre" };
 const LIST_TITLES = {
   leisure: ["Loisirs", "bloqués hors plages libres"],
   on_demand: ["Sur demande", "toujours bloqués sauf autorisation"],
@@ -162,7 +162,7 @@ export const kidsView = {
   _modesCard(kid) {
     const owned = this._draft.resources.filter((r) => (r.owners ?? []).includes(kid.id));
     const rows = owned.map((r) => {
-      const current = kid.resource_modes[r.id] ?? "suit_frise";
+      const current = kid.resource_modes[r.id] ?? "schedule";
       return `<div class="mode"><span class="nm"><ha-icon icon="${esc(r.icon || this._resIcon(r))}"></ha-icon><span>${esc(r.name)}</span></span>
         <span class="seg">${L.MODES.map((m) => `<button type="button" class="${m.value === current ? "on" : ""}" data-act="set-mode" data-arg="${m.value}" data-res="${esc(r.id)}" title="${esc(m.label)}">${esc(pick(MODE_SHORT, m.value, m.label))}</button>`).join("")}</span></div>`;
     }).join("");

@@ -8,11 +8,11 @@ import { BASE_CSS, TIMELINE_CSS, applyTheme } from "./style.js";
 import { createEditor } from "./editor.js";
 
 const LEGEND = [
-  ["libre", "libre"],
-  ["apres_devoirs", "après devoirs"],
+  ["free", "libre"],
+  ["after_homework", "après devoirs"],
   ["quota", "quota"],
-  ["sur_demande", "sur demande"],
-  ["bloque", "bloqué"],
+  ["on_demand", "sur demande"],
+  ["blocked", "bloqué"],
 ];
 
 const CSS = `

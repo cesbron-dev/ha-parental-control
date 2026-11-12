@@ -225,19 +225,19 @@ class ParentalKidCard extends StateCard {
     const kid_id = this._config.kid;
     const name = this._config.name || kidView(this._state, kid_id).name || kid_id;
     if (action === "homework") {
-      return this._withCode("homework", `Devoirs terminés · ${name}`, "Valider", "devoirs_termines", { kid_id });
+      return this._withCode("homework", `Devoirs terminés · ${name}`, "Valider", "homework_done", { kid_id });
     }
-    if (action === "timer-stop") return this._call("arreter_minuteur", { kid_id });
+    if (action === "timer-stop") return this._call("stop_timer", { kid_id });
     if (action.startsWith("timer:")) {
       const minutes = Number(action.slice(6));
-      return this._withCode("timer", `Minuteur ${minutes} min · ${name}`, "Démarrer", "demarrer_minuteur", { kid_id, minutes });
+      return this._withCode("timer", `Minuteur ${minutes} min · ${name}`, "Démarrer", "start_timer", { kid_id, minutes });
     }
     if (action.startsWith("bonus:")) {
       const minutes = Number(action.slice(6));
-      return this._withCode("bonus", `${bonusLabel(minutes)} · ${name}`, "Ajouter", "ajouter_bonus", { kid_id, minutes });
+      return this._withCode("bonus", `${bonusLabel(minutes)} · ${name}`, "Ajouter", "add_bonus", { kid_id, minutes });
     }
     if (action.startsWith("svc:")) return this._toggleService(action.slice(4), name);
-    if (action.startsWith("cancel:")) return this._call("annuler_exception", { exception_id: action.slice(7) });
+    if (action.startsWith("cancel:")) return this._call("cancel_exception", { exception_id: action.slice(7) });
   }
 
   // Action protégée : directe pour un admin (déjà confirmée par deux appuis), sinon fenêtre du code.
@@ -252,7 +252,7 @@ class ParentalKidCard extends StateCard {
       request = {
         kids: null,
         pending: findRequest(this._state, { kind, kid_id })?.status === "pending",
-        onRequest: () => callAction(this._hass, "demander", { kind, kid_id, ...extra }),
+        onRequest: () => callAction(this._hass, "request", { kind, kid_id, ...extra }),
       };
     }
     openActionDialog(this.shadowRoot, {
@@ -269,7 +269,7 @@ class ParentalKidCard extends StateCard {
     if (!t) return;
     const replace = async (code, open, minutes) => {
       for (const exception_id of t.exceptions) {
-        const res = await callAction(this._hass, "annuler_exception", { exception_id }, code);
+        const res = await callAction(this._hass, "cancel_exception", { exception_id }, code);
         if (!res.ok) return res;
       }
       if (!open && !t.openedElsewhere) return { ok: true };
@@ -290,7 +290,7 @@ class ParentalKidCard extends StateCard {
         onRequest: ({ duration }) => {
           const data = { kind: "open", kid_id, service, options: DURATIONS.map((d) => d.value), replace: t.exceptions };
           if (duration) data.minutes = duration;
-          return callAction(this._hass, "demander", data);
+          return callAction(this._hass, "request", data);
         },
       };
     }

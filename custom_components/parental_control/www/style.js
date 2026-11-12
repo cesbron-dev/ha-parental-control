@@ -90,11 +90,11 @@ export const TIMELINE_CSS = `
   .tl { position: relative; height: 16px; border-radius: 8px; overflow: hidden; margin: 6px 0 2px; background: var(--g-track); }
   .tl.tap { cursor: pointer; }
   .tl div { position: absolute; top: 0; bottom: 0; }
-  .libre { background: linear-gradient(90deg, #2fbf71, #3ddc84); }
-  .apres_devoirs { background: linear-gradient(90deg, #ff9a3c, #ffb347); }
+  .free { background: linear-gradient(90deg, #2fbf71, #3ddc84); }
+  .after_homework { background: linear-gradient(90deg, #ff9a3c, #ffb347); }
   .quota { background: linear-gradient(90deg, #2f7fe0, #5fb3ff); }
-  .sur_demande { background: var(--g-ondemand); }
-  .bloque { background: linear-gradient(90deg, #c0392b, #ff5f6d); }
+  .on_demand { background: var(--g-ondemand); }
+  .blocked { background: linear-gradient(90deg, #c0392b, #ff5f6d); }
   .exc { background: repeating-linear-gradient(45deg, rgba(124,192,255,.9) 0 4px, rgba(124,192,255,.4) 4px 8px); }
   .tl .now { width: 3px; background: var(--g-now); box-shadow: 0 0 6px var(--g-now); }
   .hours { position: relative; height: 1em; margin-top: 10px; font-size: .7rem; color: var(--g-faint); }

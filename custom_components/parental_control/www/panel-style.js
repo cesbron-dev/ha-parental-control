@@ -2,7 +2,7 @@
 // variables du thème de l'utilisateur quand elles existent, valeurs sombres en repli.
 import { esc } from "./lib.js";
 
-export const SEGMENT_COLORS = { bloque: "#e0525a", libre: "#35b779", apres_devoirs: "#f0a640", quota: "#4a86f0", sur_demande: "#7c8591" };
+export const SEGMENT_COLORS = { blocked: "#e0525a", free: "#35b779", after_homework: "#f0a640", quota: "#4a86f0", on_demand: "#7c8591" };
 
 // Couleurs proposées pour un enfant (valeur enregistrée : #rrggbb).
 export const KID_COLORS = [

@@ -2,23 +2,23 @@
 // que `parental_control/config/get`), sans DOM. Le moteur reste seul juge de la validité (config/set).
 
 export const DAY_TYPES = [
-  { value: "ecole", label: "École", short: "École", required: true },
-  { value: "fin_de_semaine", label: "Fin de semaine", short: "Fin de semaine", required: true },
-  { value: "conge_peda", label: "Congé pédagogique", short: "Congé péd.", required: false },
-  { value: "vacances", label: "Vacances", short: "Vacances", required: false },
+  { value: "school", label: "École", short: "École", required: true },
+  { value: "weekend", label: "Fin de semaine", short: "Fin de semaine", required: true },
+  { value: "day_off", label: "Congé pédagogique", short: "Congé péd.", required: false },
+  { value: "holidays", label: "Vacances", short: "Vacances", required: false },
 ];
 export const SEGMENT_TYPES = [
-  { value: "bloque", label: "Bloqué" },
-  { value: "libre", label: "Libre" },
-  { value: "apres_devoirs", label: "Après devoirs" },
+  { value: "blocked", label: "Bloqué" },
+  { value: "free", label: "Libre" },
+  { value: "after_homework", label: "Après devoirs" },
   { value: "quota", label: "Quota" },
-  { value: "sur_demande", label: "Sur demande" },
+  { value: "on_demand", label: "Sur demande" },
 ];
 export const MODES = [
-  { value: "suit_frise", label: "Suit la frise" },
-  { value: "sur_demande", label: "Sur demande" },
-  { value: "bloque", label: "Bloqué" },
-  { value: "libre", label: "Libre" },
+  { value: "schedule", label: "Suit la frise" },
+  { value: "on_demand", label: "Sur demande" },
+  { value: "blocked", label: "Bloqué" },
+  { value: "free", label: "Libre" },
 ];
 export const KINDS = [
   { value: "media_player", label: "Lecteur multimédia (télé, Google TV, Chromecast…)", options: ["entity_id"] },
@@ -57,7 +57,7 @@ export function entityChoices(hass, domain) {
     .sort((a, b) => a.label.localeCompare(b.label, "fr"));
 }
 
-const BLOCKED_DAY = () => ({ segments: [{ start: "00:00", type: "bloque" }] });
+const BLOCKED_DAY = () => ({ segments: [{ start: "00:00", type: "blocked" }] });
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
 // Identifiant tiré d'un nom : minuscules, sans accents, mots reliés par `_`.
@@ -94,7 +94,7 @@ export function setPath(obj, path, value) {
 // Brouillon d'une nouvelle installation (aucune config enregistrée) : au format v2, celui que
 // produisent `addResource`/`addIntegration`.
 export function emptyConfig() {
-  return { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], request_notify_owners: {}, kids: [], resources: [] };
+  return { version: 3, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], request_notify_owners: {}, kids: [], resources: [] };
 }
 
 // Ressource avec son arbre d'appareils physiques ? Un JSON mal formé collé dans l'onglet JSON peut
@@ -107,7 +107,7 @@ export function addKid(cfg, name) {
   const id = uniqueId(slugify(name), cfg.kids.map((k) => k.id));
   const profiles = cfg.kids.length
     ? clone(cfg.kids[0].profiles)
-    : { ecole: BLOCKED_DAY(), fin_de_semaine: BLOCKED_DAY() };
+    : { school: BLOCKED_DAY(), weekend: BLOCKED_DAY() };
   const kid = {
     id, name: name || id, emoji: null, color: null, calendar: null,
     leisure_add: [], leisure_remove: [], on_demand_add: [], on_demand_remove: [], resource_modes: {}, profiles,
@@ -215,7 +215,7 @@ const toHHMM = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")
 // Nouveau segment une heure après le dernier (au plus 23:59), bloqué par défaut.
 export function addSegment(segments) {
   const last = toMinutes(segments[segments.length - 1]?.start) ?? 0;
-  segments.push({ start: toHHMM(Math.min(last + 60, 23 * 60 + 59)), type: "bloque" });
+  segments.push({ start: toHHMM(Math.min(last + 60, 23 * 60 + 59)), type: "blocked" });
 }
 
 // Le premier segment (00:00) est obligatoire : il ne se supprime pas.
@@ -225,7 +225,7 @@ export function removeSegment(segments, index) {
 
 // « Suit la frise » est le défaut du moteur : pas d'entrée.
 export function setMode(kid, resourceId, mode) {
-  if (mode === "suit_frise") delete kid.resource_modes[resourceId];
+  if (mode === "schedule") delete kid.resource_modes[resourceId];
   else kid.resource_modes[resourceId] = mode;
 }
 
@@ -243,7 +243,7 @@ export function toggleOwner(resource, kidId) {
 export function toggleProfile(kid, day) {
   if (DAY_TYPES.find((d) => d.value === day)?.required !== false) return;
   if (day in kid.profiles) delete kid.profiles[day];
-  else kid.profiles[day] = clone(kid.profiles.fin_de_semaine ?? BLOCKED_DAY());
+  else kid.profiles[day] = clone(kid.profiles.weekend ?? BLOCKED_DAY());
 }
 
 // Aperçu d'une frise : segments en % de la journée ; les heures invalides sont ignorées.

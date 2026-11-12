@@ -57,7 +57,7 @@ class ParentalControlPanel extends HTMLElement {
     this._subConn = null;
     this._armed = null;
     this._armTimer = null;
-    this._day = "ecole"; // journée affichée dans la carte « Journée type »
+    this._day = "school"; // journée affichée dans la carte « Journée type »
     this._adding = null; // "kid" | "res" | "dev" : petit formulaire d'ajout ouvert
     this._menu = null; // menu ⋮ ouvert ("res")
     this._edit = null; // intégration en cours d'édition ("j:k")
@@ -1070,7 +1070,7 @@ class ParentalControlPanel extends HTMLElement {
             ${this._btn("del-cal", "", { arg: word, icon: "mdi:close", cls: "icon-btn", title: "Retirer" })}`).join("")}</div>` : ""}
           <div class="row" style="margin-top:10px">
             <input data-input="cal-word" data-enter="add-cal" placeholder="mot (ex. pédagogique)" style="flex:1 1 160px">
-            <select data-input="cal-day">${L.DAY_TYPES.map((t) => opt(t.value, t.label, "conge_peda")).join("")}</select>
+            <select data-input="cal-day">${L.DAY_TYPES.map((t) => opt(t.value, t.label, "day_off")).join("")}</select>
             ${this._btn("add-cal", "Ajouter", { cls: "btn" })}
           </div>
         </div>

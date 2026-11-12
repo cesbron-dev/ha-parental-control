@@ -188,7 +188,7 @@ class ParentalResourceCard extends StateCard {
     if (action === "allow") return this._openAllow();
     if (action === "stop") return this._call("exception", { resource_id, open: false });
     if (action.startsWith("svc:")) return this._toggleService(action.slice(4));
-    if (action.startsWith("cancel:")) return this._call("annuler_exception", { exception_id: action.slice(7) });
+    if (action.startsWith("cancel:")) return this._call("cancel_exception", { exception_id: action.slice(7) });
     if (action.startsWith("bonus:")) {
       const title = this._config.name || this._view().name || resource_id;
       const minutes = Number(action.slice(6));
@@ -235,7 +235,7 @@ class ParentalResourceCard extends StateCard {
     if (!t) return;
     const replace = async (code, open, minutes) => {
       for (const exception_id of t.exceptions) {
-        const res = await callAction(this._hass, "annuler_exception", { exception_id }, code);
+        const res = await callAction(this._hass, "cancel_exception", { exception_id }, code);
         if (!res.ok) return res;
       }
       if (!open && !t.openedElsewhere) return { ok: true };
@@ -267,13 +267,13 @@ class ParentalResourceCard extends StateCard {
   }
 
   // Option « Demander » d'une fenêtre (compte non admin) : au nom d'un propriétaire de l'appareil.
-  // `build(kid, {choice, duration})` donne les données du service `demander`.
+  // `build(kid, {choice, duration})` donne les données du service `request`.
   _request(owners, build, pending = false) {
     if (!canRequest(this._hass, this._state, this._parent)) return null;
     return {
       kids: ownerChoices(this._state, owners),
       pending,
-      onRequest: (picked) => callAction(this._hass, "demander", build(picked.kid, picked)),
+      onRequest: (picked) => callAction(this._hass, "request", build(picked.kid, picked)),
     };
   }
 

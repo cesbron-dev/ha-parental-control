@@ -366,22 +366,22 @@ export function kidView(state, kidId) {
     status: "ok",
     kid,
     name: kid.name || kidId,
-    homework: kid.segment === "apres_devoirs" ? (kid.status === "attente_devoirs" ? "todo" : "done") : null,
+    homework: kid.segment === "after_homework" ? (kid.status === "waiting_homework" ? "todo" : "done") : null,
     timer: kid.segment !== "quota" ? null
       : kid.timer_end ? { running: true, end: kid.timer_end }
-        : { running: false, canStart: kid.status === "attente_minuteur" && (remaining ?? 0) > 0 },
+        : { running: false, canStart: kid.status === "waiting_timer" && (remaining ?? 0) > 0 },
     remaining,
   };
 }
 
 // Heure de reprise d'une ressource fermée par la frise, que le moteur ne donne pas (`until` nul) :
-// fin de segment la plus proche, seulement si tous les propriétaires sont dans un segment « bloque »
+// fin de segment la plus proche, seulement si tous les propriétaires sont dans un segment « blocked »
 // (la frise affiche la même heure par enfant). La Switch (« sur demande ») n'a pas de reprise.
 function blockedSegmentEnd(kids, owners) {
   let best = null;
   for (const id of owners ?? []) {
     const kid = kids?.[id];
-    if (!kid || kid.segment !== "bloque" || !kid.segment_end) return null;
+    if (!kid || kid.segment !== "blocked" || !kid.segment_end) return null;
     if (best === null || new Date(kid.segment_end) < new Date(best)) best = kid.segment_end;
   }
   return best;
@@ -470,10 +470,10 @@ export function timelineGeometry(segments, now) {
 }
 
 const DAY_TYPES = {
-  ecole: "Jour d'école",
-  fin_de_semaine: "Fin de semaine",
-  conge_peda: "Congé pédago",
-  vacances: "Vacances",
+  school: "Jour d'école",
+  weekend: "Fin de semaine",
+  day_off: "Congé pédago",
+  holidays: "Vacances",
 };
 
 // Libellé du type de jour du moteur ; type inconnu affiché tel quel, absent -> chaîne vide.
@@ -483,13 +483,13 @@ export function dayTypeLabel(type) {
 
 // Classe de couleur d'un segment de la frise ; un type inconnu est traité comme bloqué.
 export function segmentClass(type) {
-  return ["libre", "apres_devoirs", "quota", "sur_demande"].includes(type) ? type : "bloque";
+  return ["free", "after_homework", "quota", "on_demand"].includes(type) ? type : "blocked";
 }
 
 // Classe de couleur du statut d'un enfant (texte de statut dans la frise).
 export function statusClass(status) {
-  if (status === "autorise") return "ok";
-  if (["attente_devoirs", "attente_minuteur", "sur_demande", "pause"].includes(status)) return "warn";
+  if (status === "allowed") return "ok";
+  if (["waiting_homework", "waiting_timer", "on_demand", "paused"].includes(status)) return "warn";
   return "bad";
 }
 
@@ -497,7 +497,7 @@ export function statusClass(status) {
 // chaîne vide sans fin de segment.
 export function nextStepLabel(kid) {
   if (!kid?.segment_end) return "";
-  const open = kid.status === "autorise" || kid.status === "sur_demande";
+  const open = kid.status === "allowed" || kid.status === "on_demand";
   return `${open ? "jusqu'à" : "reprise"} ${hhmm(kid.segment_end)}`;
 }
 
