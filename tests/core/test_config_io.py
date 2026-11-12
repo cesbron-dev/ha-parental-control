@@ -7,6 +7,7 @@ import pytest
 from custom_components.parental_control.core.config_io import (
     ConfigError,
     dump_config,
+    migrate_v2,
     parse_client_config,
     parse_config,
 )
@@ -26,12 +27,12 @@ def ex():
 
 def test_parse_example_config():
     cfg = parse_config(ex())
-    assert cfg.kid("hugo").profile_for(DayType.ECOLE).segments[1] == Segment(
-        time(15, 25), SegmentType.LIBRE
+    assert cfg.kid("hugo").profile_for(DayType.SCHOOL).segments[1] == Segment(
+        time(15, 25), SegmentType.FREE
     )
     assert cfg.resource("tv").integrations[0].options["entity_id"] == "media_player.tv_salon"
-    assert cfg.resource("tv").quota_minutes[DayType.FIN_DE_SEMAINE] == 180
-    assert cfg.kid("hugo").profile_for(DayType.FIN_DE_SEMAINE).quota_minutes == 120
+    assert cfg.resource("tv").quota_minutes[DayType.WEEKEND] == 180
+    assert cfg.kid("hugo").profile_for(DayType.WEEKEND).quota_minutes == 120
 
 
 def test_round_trip():
@@ -40,34 +41,34 @@ def test_round_trip():
 
 def test_profile_must_start_at_midnight():
     d = ex()
-    d["kids"][0]["profiles"]["ecole"]["segments"][0]["start"] = "00:30"
-    with pytest.raises(ConfigError, match=r"kids\[0\]\.profiles\.ecole\.segments\[0\]"):
+    d["kids"][0]["profiles"]["school"]["segments"][0]["start"] = "00:30"
+    with pytest.raises(ConfigError, match=r"kids\[0\]\.profiles\.school\.segments\[0\]"):
         parse_config(d)
 
 
 def test_segments_strictly_increasing():
     d = ex()
-    segs = d["kids"][0]["profiles"]["ecole"]["segments"]
+    segs = d["kids"][0]["profiles"]["school"]["segments"]
     segs[1]["start"], segs[2]["start"] = "16:00", "15:25"
-    with pytest.raises(ConfigError, match=r"kids\[0\]\.profiles\.ecole\.segments\[2\]"):
+    with pytest.raises(ConfigError, match=r"kids\[0\]\.profiles\.school\.segments\[2\]"):
         parse_config(d)
 
 
 def test_ecole_and_fin_de_semaine_required():
     d = ex()
-    del d["kids"][0]["profiles"]["ecole"]
-    with pytest.raises(ConfigError, match="ecole"):
+    del d["kids"][0]["profiles"]["school"]
+    with pytest.raises(ConfigError, match="school"):
         parse_config(d)
     d = ex()
-    del d["kids"][0]["profiles"]["fin_de_semaine"]
-    with pytest.raises(ConfigError, match="fin_de_semaine"):
+    del d["kids"][0]["profiles"]["weekend"]
+    with pytest.raises(ConfigError, match="weekend"):
         parse_config(d)
 
 
 def test_profile_fallback():
     kid = parse_config(ex()).kid("hugo")
-    assert kid.profile_for(DayType.VACANCES) is kid.profile_for(DayType.FIN_DE_SEMAINE)
-    assert kid.profile_for(DayType.CONGE_PEDA) is kid.profile_for(DayType.FIN_DE_SEMAINE)
+    assert kid.profile_for(DayType.HOLIDAYS) is kid.profile_for(DayType.WEEKEND)
+    assert kid.profile_for(DayType.DAY_OFF) is kid.profile_for(DayType.WEEKEND)
 
 
 def test_unknown_owner_rejected():
@@ -79,7 +80,7 @@ def test_unknown_owner_rejected():
 
 def test_resource_mode_unknown_resource_rejected():
     d = ex()
-    d["kids"][0]["resource_modes"] = {"xbox": "libre"}
+    d["kids"][0]["resource_modes"] = {"xbox": "free"}
     with pytest.raises(ConfigError, match="xbox"):
         parse_config(d)
 
@@ -151,7 +152,7 @@ SWITCH = {"kind": "nintendo", "device_id": "dev", "limit_entity": "number.l",
 
 def test_example_dumps_back_unchanged():
     out = dump_config(parse_config(ex()))
-    assert out["version"] == 2
+    assert out["version"] == 3
     assert out["resources"] == [{"quota_minutes": {}, **r} for r in EX["resources"]]
 
 
@@ -237,7 +238,7 @@ def test_v2_error_paths(resource, path):
 
 def test_v2_round_trip():
     d = _ex_v2([_v2_resource(MIXED_TV, icon="mdi:television",
-                             quota_minutes={"fin_de_semaine": 90}),
+                             quota_minutes={"weekend": 90}),
                 {"id": "sw", "name": "Switch", "owners": ["hugo"],
                  "devices": [{"name": "Switch", "integrations": [SWITCH]}]}])
     cfg = parse_config(d)
@@ -247,7 +248,7 @@ def test_v2_round_trip():
     assert "icon" not in out["resources"][1]
 
 
-@pytest.mark.parametrize("version", [1, 3, None])
+@pytest.mark.parametrize("version", [1, 4, None, True])
 def test_unsupported_version_rejected(version):
     d = ex()
     d["version"] = version
@@ -506,3 +507,50 @@ def test_service_on_means_allowed_must_be_bool():
     d["services"] = [_jeux(labels=[{"label_id": "console", "on_means_allowed": "oui"}])]
     with pytest.raises(ConfigError, match=r"on_means_allowed"):
         parse_config(d)
+
+
+# --- version 3 : identifiants en anglais ---------------------------------------
+
+
+def test_v2_converted_to_v3():
+    v2 = {"version": 2, "calendar_map": {"vacances": "vacances", "pédagogique": "conge_peda"},
+          "kids": [{"id": "hugo", "name": "Hugo",
+                    "resource_modes": {"tv": "suit_frise", "switch": "sur_demande"},
+                    "profiles": {
+                        "ecole": {"segments": [{"start": "00:00", "type": "bloque"},
+                                               {"start": "16:00", "type": "apres_devoirs"}]},
+                        "fin_de_semaine": {"segments": [{"start": "00:00", "type": "libre"}]},
+                        "conge_peda": {"segments": [{"start": "00:00", "type": "sur_demande"}]}}}],
+          "resources": [{"id": "tv", "name": "TV", "owners": ["hugo"],
+                         "quota_minutes": {"fin_de_semaine": 60},
+                         "devices": [{"name": "TV", "integrations": [
+                             {"kind": "media_player", "entity_id": "media_player.tv"}]}]},
+                        {"id": "switch", "name": "S", "owners": ["hugo"], "devices": [{"name": "S",
+                         "integrations": [{"kind": "media_player", "entity_id": "media_player.s"}]}]}]}
+    cfg = parse_config(v2)
+    out = dump_config(cfg)
+    assert out["version"] == 3
+    assert out["calendar_map"] == {"vacances": "holidays", "pédagogique": "day_off"}
+    kid = out["kids"][0]
+    assert set(kid["profiles"]) == {"school", "weekend", "day_off"}
+    assert [s["type"] for s in kid["profiles"]["school"]["segments"]] == ["blocked", "after_homework"]
+    assert kid["resource_modes"] == {"tv": "schedule", "switch": "on_demand"}
+    assert out["resources"][0]["quota_minutes"] == {"weekend": 60}
+
+
+def test_v2_input_not_mutated():
+    v2 = {"version": 2, "kids": [], "resources": []}
+    assert migrate_v2(v2)["version"] == 3
+    assert v2["version"] == 2
+
+
+def test_client_config_v2_accepted():
+    assert parse_client_config({"version": 2, "kids": [], "resources": []}) is not None
+
+
+def test_v2_unknown_value_still_rejected():
+    v2 = ex()
+    v2["version"] = 2
+    v2["kids"][0]["profiles"]["school"]["segments"][0]["type"] = "inconnu"
+    with pytest.raises(ConfigError, match="inconnu"):
+        parse_config(v2)

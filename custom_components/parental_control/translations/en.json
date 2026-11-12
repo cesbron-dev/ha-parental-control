@@ -40,13 +40,13 @@
       "status": {
         "name": "Status",
         "state": {
-          "autorise": "Allowed",
-          "bloque": "Blocked",
-          "attente_devoirs": "Waiting for homework",
-          "attente_minuteur": "Waiting for a timer",
-          "quota_epuise": "Quota exhausted",
-          "sur_demande": "On request",
-          "pause": "Paused"
+          "allowed": "Allowed",
+          "blocked": "Blocked",
+          "waiting_homework": "Waiting for homework",
+          "waiting_timer": "Waiting for a timer",
+          "quota_exhausted": "Quota exhausted",
+          "on_demand": "On request",
+          "paused": "Paused"
         }
       },
       "used_time": {
@@ -110,7 +110,7 @@
       "message": "Invalid configuration: {error}"
     },
     "nintendo_use_bonus": {
-      "message": "For the Switch, use add_bonus (ajouter_bonus)."
+      "message": "For the Switch, use add_bonus."
     },
     "requests_disabled": {
       "message": "No parent receives the requests."
@@ -126,7 +126,7 @@
     }
   },
   "services": {
-    "devoirs_termines": {
+    "homework_done": {
       "name": "Homework done",
       "description": "Marks today's homework as done for a child, which unlocks the after-homework period. Unlocks: parent code required from a non-admin account.",
       "fields": {
@@ -140,7 +140,7 @@
         }
       }
     },
-    "ajouter_bonus": {
+    "add_bonus": {
       "name": "Add bonus",
       "description": "Adds bonus minutes for today to a child or to a resource (exactly one of the two). Unlocks: parent code required from a non-admin account.",
       "fields": {
@@ -192,7 +192,7 @@
         }
       }
     },
-    "annuler_exception": {
+    "cancel_exception": {
       "name": "Cancel exception",
       "description": "Removes a manual exception. Cancelling a closure re-opens and requires the parent code from a non-admin account.",
       "fields": {
@@ -206,7 +206,7 @@
         }
       }
     },
-    "demarrer_minuteur": {
+    "start_timer": {
       "name": "Start timer",
       "description": "Starts a screen-time timer for a child during a quota period, capped to the remaining quota. Unlocks: parent code required from a non-admin account.",
       "fields": {
@@ -224,7 +224,7 @@
         }
       }
     },
-    "arreter_minuteur": {
+    "stop_timer": {
       "name": "Stop timer",
       "description": "Stops the running timer of a child. No code required.",
       "fields": {
@@ -248,7 +248,7 @@
         }
       }
     },
-    "importer_configuration": {
+    "import_config": {
       "name": "Import configuration",
       "description": "Replaces the whole configuration (kids, resources, schedules). Administrators only.",
       "fields": {
@@ -258,7 +258,7 @@
         }
       }
     },
-    "demander": {
+    "request": {
       "name": "Request time",
       "description": "A child asks the parents for time. No code required: a parent must answer from the notification. Returns the request id.",
       "fields": {

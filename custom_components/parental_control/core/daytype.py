@@ -39,12 +39,12 @@ def day_type(
                 matched.append((event.start, summary, dtype))
 
     types = {t for _, _, t in matched}
-    if DayType.VACANCES in types:
-        return DayType.VACANCES
-    if DayType.CONGE_PEDA in types:
-        return DayType.CONGE_PEDA
-    low = sorted((m for m in matched if m[2] in (DayType.ECOLE, DayType.FIN_DE_SEMAINE)),
+    if DayType.HOLIDAYS in types:
+        return DayType.HOLIDAYS
+    if DayType.DAY_OFF in types:
+        return DayType.DAY_OFF
+    low = sorted((m for m in matched if m[2] in (DayType.SCHOOL, DayType.WEEKEND)),
                  key=lambda m: (m[0], m[1]))
     if low:
         return low[0][2]
-    return DayType.ECOLE if day.weekday() < 5 else DayType.FIN_DE_SEMAINE
+    return DayType.SCHOOL if day.weekday() < 5 else DayType.WEEKEND

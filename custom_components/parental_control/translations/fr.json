@@ -40,13 +40,13 @@
       "status": {
         "name": "Statut",
         "state": {
-          "autorise": "Autorisé",
-          "bloque": "Bloqué",
-          "attente_devoirs": "En attente des devoirs",
-          "attente_minuteur": "En attente d'un minuteur",
-          "quota_epuise": "Quota épuisé",
-          "sur_demande": "Sur demande",
-          "pause": "En pause"
+          "allowed": "Autorisé",
+          "blocked": "Bloqué",
+          "waiting_homework": "En attente des devoirs",
+          "waiting_timer": "En attente d'un minuteur",
+          "quota_exhausted": "Quota épuisé",
+          "on_demand": "Sur demande",
+          "paused": "En pause"
         }
       },
       "used_time": {
@@ -110,7 +110,7 @@
       "message": "Configuration invalide : {error}"
     },
     "nintendo_use_bonus": {
-      "message": "Pour la Switch, utilisez ajouter_bonus."
+      "message": "Pour la Switch, utilisez add_bonus."
     },
     "requests_disabled": {
       "message": "Aucun parent ne reçoit les demandes."
@@ -126,7 +126,7 @@
     }
   },
   "services": {
-    "devoirs_termines": {
+    "homework_done": {
       "name": "Devoirs terminés",
       "description": "Marque les devoirs du jour comme terminés pour un enfant, ce qui débloque la période après les devoirs. Débloque : code parent exigé depuis un compte non administrateur.",
       "fields": {
@@ -140,7 +140,7 @@
         }
       }
     },
-    "ajouter_bonus": {
+    "add_bonus": {
       "name": "Ajouter un bonus",
       "description": "Ajoute des minutes de bonus pour aujourd'hui à un enfant ou à une ressource (exactement l'un des deux). Débloque : code parent exigé depuis un compte non administrateur.",
       "fields": {
@@ -192,7 +192,7 @@
         }
       }
     },
-    "annuler_exception": {
+    "cancel_exception": {
       "name": "Annuler une exception",
       "description": "Retire une exception manuelle. Annuler une fermeture rouvre et exige le code parent depuis un compte non administrateur.",
       "fields": {
@@ -206,7 +206,7 @@
         }
       }
     },
-    "demarrer_minuteur": {
+    "start_timer": {
       "name": "Démarrer un minuteur",
       "description": "Démarre un minuteur de temps d'écran pour un enfant pendant une période de quota, plafonné au quota restant. Débloque : code parent exigé depuis un compte non administrateur.",
       "fields": {
@@ -224,7 +224,7 @@
         }
       }
     },
-    "arreter_minuteur": {
+    "stop_timer": {
       "name": "Arrêter le minuteur",
       "description": "Arrête le minuteur en cours d'un enfant. Aucun code exigé.",
       "fields": {
@@ -248,7 +248,7 @@
         }
       }
     },
-    "importer_configuration": {
+    "import_config": {
       "name": "Importer la configuration",
       "description": "Remplace toute la configuration (enfants, ressources, horaires). Réservé aux administrateurs.",
       "fields": {
@@ -258,7 +258,7 @@
         }
       }
     },
-    "demander": {
+    "request": {
       "name": "Demander du temps",
       "description": "Un enfant demande du temps aux parents. Aucun code exigé : un parent doit répondre depuis la notification. Renvoie l'identifiant de la demande.",
       "fields": {

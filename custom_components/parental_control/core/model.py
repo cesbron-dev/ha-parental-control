@@ -10,25 +10,25 @@ from typing import Any
 
 
 class DayType(StrEnum):
-    ECOLE = "ecole"
-    FIN_DE_SEMAINE = "fin_de_semaine"
-    CONGE_PEDA = "conge_peda"
-    VACANCES = "vacances"
+    SCHOOL = "school"
+    WEEKEND = "weekend"
+    DAY_OFF = "day_off"
+    HOLIDAYS = "holidays"
 
 
 class SegmentType(StrEnum):
-    BLOQUE = "bloque"
-    LIBRE = "libre"
-    APRES_DEVOIRS = "apres_devoirs"
+    BLOCKED = "blocked"
+    FREE = "free"
+    AFTER_HOMEWORK = "after_homework"
     QUOTA = "quota"
-    SUR_DEMANDE = "sur_demande"
+    ON_DEMAND = "on_demand"
 
 
 class ResourceMode(StrEnum):
-    SUIT_FRISE = "suit_frise"
-    SUR_DEMANDE = "sur_demande"
-    BLOQUE = "bloque"
-    LIBRE = "libre"
+    SCHEDULE = "schedule"
+    ON_DEMAND = "on_demand"
+    BLOCKED = "blocked"
+    FREE = "free"
 
 
 class ResourceKind(StrEnum):
@@ -73,7 +73,7 @@ class Kid:
         """Profil du jour ; congé pédagogique et vacances se replient sur la fin de semaine."""
         if day in self.profiles:
             return self.profiles[day]
-        return self.profiles[DayType.FIN_DE_SEMAINE]
+        return self.profiles[DayType.WEEKEND]
 
 
 @dataclass(frozen=True)

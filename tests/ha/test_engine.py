@@ -386,7 +386,7 @@ async def test_decisions_kept_after_invalid_stored_config(
 async def test_calendar_failure_falls_back_to_weekday(hass, freezer, services, caplog) -> None:
     services.calendar_error = HomeAssistantError("calendrier en panne")
     _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
-    assert engine.snapshot.kids["hugo"].day_type is DayType.ECOLE
+    assert engine.snapshot.kids["hugo"].day_type is DayType.SCHOOL
     assert "calendrier en panne" in caplog.text
 
 
@@ -426,12 +426,12 @@ async def test_calendar_failure_keeps_todays_events(hass, freezer, services, cap
         {"start": "2026-10-27", "end": "2026-10-28", "summary": "Congé pédagogique"},
     ]
     _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
-    assert engine.snapshot.kids["hugo"].day_type is DayType.CONGE_PEDA
+    assert engine.snapshot.kids["hugo"].day_type is DayType.DAY_OFF
     services.calendar_error = HomeAssistantError("panne passagère")
     await tick(hass, freezer, 15)  # rafraîchissement des 15 min
     assert len(services.calendar_calls) == 2
     assert "panne passagère" in caplog.text
-    assert engine.snapshot.kids["hugo"].day_type is DayType.CONGE_PEDA
+    assert engine.snapshot.kids["hugo"].day_type is DayType.DAY_OFF
 
 
 async def test_calendar_conge_peda_switches_profile(hass, freezer, services) -> None:
@@ -442,7 +442,7 @@ async def test_calendar_conge_peda_switches_profile(hass, freezer, services) -> 
          "summary": "Réunion vacances"},
     ]
     _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
-    assert engine.snapshot.kids["hugo"].day_type is DayType.CONGE_PEDA
+    assert engine.snapshot.kids["hugo"].day_type is DayType.DAY_OFF
     call = services.calendar_calls[0]
     assert call.data["entity_id"] == "calendar.ecole_primaire"
     assert call.data["start_date_time"] == at(TUESDAY, 0, 0).isoformat()
@@ -451,13 +451,13 @@ async def test_calendar_conge_peda_switches_profile(hass, freezer, services) -> 
 
 async def test_calendar_refreshed_at_midnight(hass, freezer, services) -> None:
     _, engine = await setup(hass, freezer, at(TUESDAY, 23, 50))
-    assert engine.snapshot.kids["hugo"].day_type is DayType.ECOLE
+    assert engine.snapshot.kids["hugo"].day_type is DayType.SCHOOL
     services.calendar_events = [
         {"start": "2026-10-28", "end": "2026-10-29", "summary": "Vacances"},
     ]
     await tick(hass, freezer, 11)  # 00:01
     await tick(hass, freezer)  # 00:02 (après le rafraîchissement de 00:00:05)
-    assert engine.snapshot.kids["hugo"].day_type is DayType.VACANCES
+    assert engine.snapshot.kids["hugo"].day_type is DayType.HOLIDAYS
 
 
 # --- actions -------------------------------------------------------------------
@@ -750,7 +750,7 @@ DST_DAY = date(2026, 11, 1)  # passage à l'heure normale à 02:00 (America/Toro
 def _quota_all_day() -> dict:
     hugo = {**EX["kids"][0], "profiles": {
         **EX["kids"][0]["profiles"],
-        "fin_de_semaine": {"quota_minutes": 120,
+        "weekend": {"quota_minutes": 120,
                            "segments": [{"start": "00:00", "type": "quota"}]},
     }}
     return {**EX, "kids": [hugo]}
@@ -814,7 +814,7 @@ async def test_calendar_refreshed_when_ha_started(hass, freezer, services) -> No
     hass.set_state(CoreState.starting)
     _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
     assert len(services.calendar_calls) == 1
-    assert engine.snapshot.kids["hugo"].day_type is DayType.ECOLE
+    assert engine.snapshot.kids["hugo"].day_type is DayType.SCHOOL
     services.calendar_events = [
         {"start": "2026-10-27", "end": "2026-10-28", "summary": "Congé pédagogique"},
     ]
@@ -822,7 +822,7 @@ async def test_calendar_refreshed_when_ha_started(hass, freezer, services) -> No
     hass.bus.async_fire(EVENT_HOMEASSISTANT_STARTED)
     await hass.async_block_till_done()
     assert len(services.calendar_calls) == 2
-    assert engine.snapshot.kids["hugo"].day_type is DayType.CONGE_PEDA
+    assert engine.snapshot.kids["hugo"].day_type is DayType.DAY_OFF
 
 
 async def test_no_extra_calendar_refresh_when_ha_already_running(
@@ -867,6 +867,22 @@ async def test_invalid_stored_config_creates_persistent_notification(
 
     await entry.runtime_data.set_config(parse_config(EX))  # config corrigée
     assert persistent_notification._async_get_or_create_notifications(hass) == {}
+
+
+async def test_v2_stored_config_resaved_as_v3(hass, hass_storage) -> None:
+    v2 = copy.deepcopy(EX)
+    v2["version"] = 2
+    v2["calendar_map"] = {"vacances": "vacances"}
+    hass_storage["parental_control.config"] = {
+        "version": 1, "minor_version": 1, "key": "parental_control.config", "data": v2,
+    }
+    cfg, _ = await ParentalStore(hass).load()
+    assert cfg is not None and cfg.calendar_map == {"vacances": DayType.HOLIDAYS}
+    await hass.async_block_till_done()
+    assert hass_storage["parental_control.config"]["data"]["version"] == 3
+    assert hass_storage["parental_control.config"]["data"]["calendar_map"] == {
+        "vacances": "holidays"
+    }
 
 
 async def test_new_install_starts_in_simulation(hass) -> None:

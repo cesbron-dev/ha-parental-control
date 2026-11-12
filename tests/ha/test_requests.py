@@ -1,4 +1,4 @@
-"""Demandes de temps : service `demander`, notifications, expiration, état publié."""
+"""Demandes de temps : service `request`, notifications, expiration, état publié."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ async def test_request_sends_actionable_notification_to_each_parent(
     make_env, julie, catalog
 ) -> None:
     env = await _env(make_env)
-    req_id = await env.call("demander", OPEN_CALL, env.kid_ctx, return_response=True)
+    req_id = await env.call("request", OPEN_CALL, env.kid_ctx, return_response=True)
     await env.hass.async_block_till_done()
     marc = env.services.of("notify", "mobile_app_iphone_de_marc")
     assert len(marc) == 1 and len(julie) == 1
@@ -91,7 +91,7 @@ async def test_request_sends_actionable_notification_to_each_parent(
 
 async def test_request_needs_no_code(make_env, julie) -> None:
     env = await _env(make_env)
-    await env.call("demander", OPEN_CALL, env.kid_ctx)
+    await env.call("request", OPEN_CALL, env.kid_ctx)
     assert env.engine.decisions.exceptions == []
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
@@ -99,15 +99,15 @@ async def test_request_needs_no_code(make_env, julie) -> None:
 async def test_request_disabled_without_parents(make_env) -> None:
     env = await _env(make_env, {**EX, "request_notify": []})
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", OPEN_CALL, env.kid_ctx)
+        await env.call("request", OPEN_CALL, env.kid_ctx)
     assert err.value.translation_key == "requests_disabled"
 
 
 async def test_duplicate_request_rejected(make_env, julie) -> None:
     env = await _env(make_env)
-    await env.call("demander", OPEN_CALL, env.kid_ctx)
+    await env.call("request", OPEN_CALL, env.kid_ctx)
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", OPEN_CALL, env.kid_ctx)
+        await env.call("request", OPEN_CALL, env.kid_ctx)
     assert err.value.translation_key == "request_pending"
 
 
@@ -116,7 +116,7 @@ async def test_request_kid_must_own_resource(make_env, julie) -> None:
     cfg["kids"].append({**cfg["kids"][0], "id": "autre", "name": "Autre", "calendar": None})
     env = await _env(make_env, cfg)
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", {**OPEN_CALL, "kid_id": "autre"}, env.kid_ctx)
+        await env.call("request", {**OPEN_CALL, "kid_id": "autre"}, env.kid_ctx)
     assert err.value.translation_key == "invalid_target"
 
 
@@ -124,14 +124,14 @@ async def test_request_invalid_duration_translated(make_env, julie) -> None:
     env = await _env(make_env)
     data = {"kind": "bonus", "kid_id": "hugo"}  # bonus sans durée
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", data, env.kid_ctx)
+        await env.call("request", data, env.kid_ctx)
     assert err.value.translation_key == "invalid_request"
 
 
 async def test_request_expires_after_15_minutes(hass, freezer, make_env, julie) -> None:
     env = await _env(make_env)
     entries = async_capture_events(hass, "logbook_entry")
-    req_id = (await env.call("demander", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
+    req_id = (await env.call("request", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
     await hass.async_block_till_done()
     await tick(hass, freezer, 15)
     assert env.engine.requests.get(req_id).status == "expired"
@@ -143,7 +143,7 @@ async def test_request_expires_after_15_minutes(hass, freezer, make_env, julie) 
 
 async def test_state_exposes_requests_without_token(make_env, julie) -> None:
     env = await _env(make_env)
-    req_id = (await env.call("demander", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
+    req_id = (await env.call("request", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
     req = env.engine.requests.get(req_id)
     payload = serialize_snapshot(env.engine, display=True)
     assert payload["requests_enabled"] is True
@@ -158,7 +158,7 @@ async def test_state_exposes_requests_without_token(make_env, julie) -> None:
 async def test_simulation_prefixes_request_message(make_env, julie, catalog) -> None:
     env = await _env(make_env)
     env.engine.decisions.simulation = True
-    await env.call("demander", OPEN_CALL, env.kid_ctx)
+    await env.call("request", OPEN_CALL, env.kid_ctx)
     await env.hass.async_block_till_done()
     assert julie[0].data["message"] == (
         "[Simulation] Hugo demande 30 min de YouTube sur iPhone Hugo"
@@ -257,7 +257,7 @@ async def _parents_env(make_env, julie_user, moment=None, config=CONFIG, *, marc
 
 
 async def _ask(env, data=OPEN_CALL) -> str:
-    req_id = (await env.call("demander", data, env.kid_ctx, return_response=True))["id"]
+    req_id = (await env.call("request", data, env.kid_ctx, return_response=True))["id"]
     await env.hass.async_block_till_done()
     return req_id
 
@@ -632,7 +632,7 @@ async def test_impossible_request_rejected_at_creation(make_env, julie, data, ke
     env = await _env(make_env)
     data = {k: v for k, v in data.items() if v is not None}
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", data, env.kid_ctx)
+        await env.call("request", data, env.kid_ctx)
     assert err.value.translation_key == key
     assert env.engine.requests.visible(at(TUESDAY, 16, 30)) == []
     assert julie == []
@@ -649,7 +649,7 @@ async def test_request_service_outside_target_rejected(make_env, julie, data) ->
     env = await _env(make_env)
     data = {k: v for k, v in data.items() if v is not None}
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", data, env.kid_ctx)
+        await env.call("request", data, env.kid_ctx)
     assert err.value.translation_key == "invalid_target"
     assert julie == []
 
@@ -659,9 +659,9 @@ async def test_request_on_demand_service_accepted(make_env, julie) -> None:
     cfg["services"].append({"id": "steam", "name": "Steam", "adguard": ["steam"], "labels": []})
     cfg["default_on_demand"] = ["steam"]
     env = await _env(make_env, cfg)
-    await env.call("demander", {**OPEN_CALL, "service": "steam"}, env.kid_ctx)
+    await env.call("request", {**OPEN_CALL, "service": "steam"}, env.kid_ctx)
     kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
-    await env.call("demander", {**kid_wide, "service": "steam"}, env.kid_ctx)
+    await env.call("request", {**kid_wide, "service": "steam"}, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 2
 
 
@@ -675,16 +675,16 @@ async def test_request_label_service_without_adguard_accepted(make_env, julie) -
     env = await _env(make_env, cfg)
     assert not any(r.has(ResourceKind.ADGUARD) for r in env.engine.config.resources)
     kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
-    await env.call("demander", {**kid_wide, "service": "internet"}, env.kid_ctx)
+    await env.call("request", {**kid_wide, "service": "internet"}, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
 
 async def test_too_many_pending_requests_rejected(make_env, julie) -> None:
     env = await _env(make_env)
     for service in ("youtube", "roblox", "tiktok"):
-        await env.call("demander", {**OPEN_CALL, "service": service}, env.kid_ctx)
+        await env.call("request", {**OPEN_CALL, "service": service}, env.kid_ctx)
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", {**OPEN_CALL, "service": "netflix"}, env.kid_ctx)
+        await env.call("request", {**OPEN_CALL, "service": "netflix"}, env.kid_ctx)
     assert err.value.translation_key == "too_many_requests"
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 3
 
@@ -702,7 +702,7 @@ async def test_too_many_pending_requests_rejected(make_env, julie) -> None:
 async def test_possible_request_accepted_at_creation(make_env, julie, data) -> None:
     env = await _env(make_env)
     data = {k: v for k, v in data.items() if v is not None}
-    await env.call("demander", data, env.kid_ctx)
+    await env.call("request", data, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
 

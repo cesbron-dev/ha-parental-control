@@ -9,7 +9,7 @@ from custom_components.parental_control.core.decisions import (
 from custom_components.parental_control.core.display import exception_end, kid_timeline
 from custom_components.parental_control.core.evaluator import evaluate
 from custom_components.parental_control.core.model import DayType, SegmentType
-from tests.core.test_evaluator_access import ECOLE, at
+from tests.core.test_evaluator_access import SCHOOL, at
 
 
 def _exc(target: Target, until=None) -> ManualException:
@@ -17,7 +17,7 @@ def _exc(target: Target, until=None) -> ManualException:
 
 
 def test_kid_timeline_covers_day(cfg):
-    snap = evaluate(at(16, 30), cfg, Decisions(), ECOLE)
+    snap = evaluate(at(16, 30), cfg, Decisions(), SCHOOL)
     tl = kid_timeline(cfg, snap, "hugo", at(16, 30))
     assert tl[0]["start"] == at(0, 0).isoformat()
     assert tl[-1]["end"] == (at(0, 0) + timedelta(days=1)).isoformat()
@@ -28,11 +28,11 @@ def test_kid_timeline_covers_day(cfg):
 def test_kid_timeline_first_segment_starts_at_midnight(cfg):
     # profil dont le premier segment commence à 08:00 (jusqu'à 15:25) : la frise reste sans trou
     kid = cfg.kid("hugo")
-    profile = kid.profiles[DayType.ECOLE]
+    profile = kid.profiles[DayType.SCHOOL]
     segs = (replace(profile.segments[0], start=time(8)),) + profile.segments[1:]
-    kid = replace(kid, profiles={**kid.profiles, DayType.ECOLE: replace(profile, segments=segs)})
+    kid = replace(kid, profiles={**kid.profiles, DayType.SCHOOL: replace(profile, segments=segs)})
     cfg2 = replace(cfg, kids=tuple(kid if k.id == "hugo" else k for k in cfg.kids))
-    snap = evaluate(at(16, 30), cfg2, Decisions(), ECOLE)
+    snap = evaluate(at(16, 30), cfg2, Decisions(), SCHOOL)
     tl = kid_timeline(cfg2, snap, "hugo", at(16, 30))
     assert tl[0]["start"] == at(0, 0).isoformat()
     assert tl[0]["end"] == tl[1]["start"] == at(15, 25).isoformat()
@@ -42,20 +42,20 @@ def test_kid_timeline_first_segment_starts_at_midnight(cfg):
 def test_exception_end_global_takes_minimum(cfg):
     # à 15:40 Hugo est en libre (fin 16:00) alors que Alice est en bloque jusqu'à 16:15 :
     # les fins de segment diffèrent, la fin globale est la plus proche
-    snap = evaluate(at(15, 40), cfg, Decisions(), ECOLE)
+    snap = evaluate(at(15, 40), cfg, Decisions(), SCHOOL)
     ends = {k.segment_end for k in snap.kids.values()}
     assert len(ends) > 1
     assert exception_end(cfg, snap, _exc(Target())) == min(ends)
 
 
 def test_exception_end_uses_until(cfg):
-    snap = evaluate(at(20), cfg, Decisions(), ECOLE)
+    snap = evaluate(at(20), cfg, Decisions(), SCHOOL)
     exc = _exc(Target(resource_id="tv"), until=at(21))
     assert exception_end(cfg, snap, exc) == at(21)
 
 
 def test_exception_end_falls_back_to_segment_end(cfg):
-    snap = evaluate(at(20), cfg, Decisions(), ECOLE)
+    snap = evaluate(at(20), cfg, Decisions(), SCHOOL)
     exc = _exc(Target(resource_id="tv"))
     ends = [snap.kids[o].segment_end for o in cfg.resource("tv").owners]
     assert exception_end(cfg, snap, exc) == min(ends)
@@ -64,6 +64,6 @@ def test_exception_end_falls_back_to_segment_end(cfg):
 
 
 def test_exception_ends_without_change(cfg):
-    snap = evaluate(at(20), cfg, Decisions(), ECOLE)
+    snap = evaluate(at(20), cfg, Decisions(), SCHOOL)
     assert exception_end(cfg, snap, _exc(Target(kid_id="inconnu"))) is None
     assert exception_end(cfg, snap, _exc(Target(resource_id="inconnue"))) is None

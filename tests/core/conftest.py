@@ -31,18 +31,18 @@ def family_config_dict() -> dict:
     alice = copy.deepcopy(hugo)
     alice.update(id="alice", name="Alice", emoji="🦖", color="#FFD93D", calendar=None)
     alice["profiles"] = {
-        "ecole": {
+        "school": {
             "segments": [
-                {"start": "00:00", "type": "bloque"},
-                {"start": "16:15", "type": "apres_devoirs"},
-                {"start": "19:00", "type": "bloque"},
+                {"start": "00:00", "type": "blocked"},
+                {"start": "16:15", "type": "after_homework"},
+                {"start": "19:00", "type": "blocked"},
             ]
         },
-        "fin_de_semaine": {
+        "weekend": {
             "segments": [
-                {"start": "00:00", "type": "bloque"},
-                {"start": "09:00", "type": "libre"},
-                {"start": "19:00", "type": "bloque"},
+                {"start": "00:00", "type": "blocked"},
+                {"start": "09:00", "type": "free"},
+                {"start": "19:00", "type": "blocked"},
             ]
         },
     }
@@ -81,9 +81,9 @@ def weekend_quota(d: dict) -> None:
     """Fin de semaine : les trois enfants suivent le profil quota de Hugo (120 min,
     `00:00 bloque → 08:00 quota → 20:00 bloque`), pour que la TV partagée ne soit
     ouverte que par son propre quota."""
-    hugo_weekend = d["kids"][0]["profiles"]["fin_de_semaine"]
+    hugo_weekend = d["kids"][0]["profiles"]["weekend"]
     for kid in d["kids"]:
-        kid["profiles"]["fin_de_semaine"] = copy.deepcopy(hugo_weekend)
+        kid["profiles"]["weekend"] = copy.deepcopy(hugo_weekend)
 
 
 @pytest.fixture

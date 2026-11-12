@@ -44,6 +44,10 @@ class ParentalStore:
             try:
                 cfg = parse_config(raw_cfg)
                 self.owners_migration_pending = "request_notify_owners" not in raw_cfg
+                if raw_cfg.get("version") == 2:
+                    # Ancien format (identifiants français) : réécrit en version 3.
+                    await self.save_config(cfg)
+                    self.owners_migration_pending = "request_notify_owners" not in raw_cfg
             except ConfigError as err:
                 # Les décisions restent valables : une config corrigée les retrouvera.
                 _LOGGER.error("Configuration enregistrée invalide, moteur inactif : %s", err)

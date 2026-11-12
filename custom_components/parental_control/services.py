@@ -24,15 +24,15 @@ from .security import check_unlock
 if TYPE_CHECKING:
     from . import ParentalConfigEntry
 
-SERVICE_HOMEWORK_DONE = "devoirs_termines"
-SERVICE_ADD_BONUS = "ajouter_bonus"
+SERVICE_HOMEWORK_DONE = "homework_done"
+SERVICE_ADD_BONUS = "add_bonus"
 SERVICE_EXCEPTION = "exception"
-SERVICE_CANCEL_EXCEPTION = "annuler_exception"
-SERVICE_START_TIMER = "demarrer_minuteur"
-SERVICE_STOP_TIMER = "arreter_minuteur"
+SERVICE_CANCEL_EXCEPTION = "cancel_exception"
+SERVICE_START_TIMER = "start_timer"
+SERVICE_STOP_TIMER = "stop_timer"
 SERVICE_PAUSE = "pause"
-SERVICE_IMPORT_CONFIG = "importer_configuration"
-SERVICE_REQUEST = "demander"
+SERVICE_IMPORT_CONFIG = "import_config"
+SERVICE_REQUEST = "request"
 
 ATTR_KID_ID = "kid_id"
 ATTR_RESOURCE_ID = "resource_id"

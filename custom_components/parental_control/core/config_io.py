@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import datetime
 import logging
 from dataclasses import replace
@@ -25,7 +26,27 @@ from .model import (
 
 _LOGGER = logging.getLogger(__name__)
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
+_LEGACY_VERSION = 2
+# Anciennes valeurs (version 2, en français) -> identifiants anglais de la version 3.
+_V2_DAY_TYPES = {
+    "ecole": "school",
+    "fin_de_semaine": "weekend",
+    "conge_peda": "day_off",
+    "vacances": "holidays",
+}
+_V2_SEGMENT_TYPES = {
+    "bloque": "blocked",
+    "libre": "free",
+    "apres_devoirs": "after_homework",
+    "sur_demande": "on_demand",
+}
+_V2_RESOURCE_MODES = {
+    "suit_frise": "schedule",
+    "sur_demande": "on_demand",
+    "bloque": "blocked",
+    "libre": "free",
+}
 # Interrupteur : le rallumer quand l'appareil redevient autorisé (désactivé par défaut).
 TURN_ON_WHEN_ALLOWED = "turn_on_when_allowed"
 DEFAULT_WARN_MINUTES = 5
@@ -131,7 +152,7 @@ def _parse_kid(raw: Any, path: str) -> Kid:
     for key, value in profiles_raw.items():
         day = _enum(DayType, key, f"{path}.profiles.{key}")
         profiles[day] = _parse_profile(value, f"{path}.profiles.{key}")
-    for required in (DayType.ECOLE, DayType.FIN_DE_SEMAINE):
+    for required in (DayType.SCHOOL, DayType.WEEKEND):
         if required not in profiles:
             raise _fail(f"{path}.profiles", f"le profil « {required.value} » est requis")
     modes_raw = _expect_dict(raw.get("resource_modes", {}), f"{path}.resource_modes")
@@ -312,11 +333,57 @@ def parse_config(data: dict) -> Config:
     return _parse(data, strict=False)
 
 
+def _rename(value: Any, table: dict[str, str]) -> Any:
+    """Valeur convertie ; une valeur inconnue est laissée telle quelle (la validation la refuse)."""
+    return table.get(value, value) if isinstance(value, str) else value
+
+
+def _rename_keys(raw: Any, table: dict[str, str]) -> Any:
+    if not isinstance(raw, dict):
+        return raw
+    return {_rename(key, table): value for key, value in raw.items()}
+
+
+def migrate_v2(data: dict) -> dict:
+    """Copie de la configuration version 2 (identifiants français) convertie en version 3.
+
+    Convertit les clés de `profiles`, les valeurs de `calendar_map`, les clés de `quota_minutes`,
+    les `segments[].type` et les valeurs de `resource_modes`. Fonction pure : l'entrée n'est pas
+    modifiée.
+    """
+    out = copy.deepcopy(data)
+    out["version"] = CONFIG_VERSION
+    calendar_map = out.get("calendar_map")
+    if isinstance(calendar_map, dict):
+        out["calendar_map"] = {k: _rename(v, _V2_DAY_TYPES) for k, v in calendar_map.items()}
+    for kid in out.get("kids") or []:
+        if not isinstance(kid, dict):
+            continue
+        modes = kid.get("resource_modes")
+        if isinstance(modes, dict):
+            kid["resource_modes"] = {k: _rename(v, _V2_RESOURCE_MODES) for k, v in modes.items()}
+        profiles = _rename_keys(kid.get("profiles"), _V2_DAY_TYPES)
+        if isinstance(profiles, dict):
+            kid["profiles"] = profiles
+            for profile in profiles.values():
+                segments = profile.get("segments") if isinstance(profile, dict) else None
+                for segment in segments if isinstance(segments, list) else []:
+                    if isinstance(segment, dict) and "type" in segment:
+                        segment["type"] = _rename(segment["type"], _V2_SEGMENT_TYPES)
+    for resource in out.get("resources") or []:
+        if isinstance(resource, dict) and isinstance(resource.get("quota_minutes"), dict):
+            resource["quota_minutes"] = _rename_keys(resource["quota_minutes"], _V2_DAY_TYPES)
+    return out
+
+
 def _parse(data: dict, strict: bool) -> Config:
     data = _expect_dict(data, "config")
     version = data.get("version")
-    if isinstance(version, bool) or version != CONFIG_VERSION:
+    if isinstance(version, bool) or version not in (_LEGACY_VERSION, CONFIG_VERSION):
         raise _fail("version", f"version non prise en charge : {version!r}")
+    if version == _LEGACY_VERSION:
+        _LOGGER.info("Configuration version 2 convertie en version 3 (identifiants en anglais)")
+        data = migrate_v2(data)
 
     kids = tuple(
         _parse_kid(k, f"kids[{i}]") for i, k in enumerate(_expect_list(data.get("kids", []), "kids"))

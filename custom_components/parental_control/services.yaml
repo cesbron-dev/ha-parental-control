@@ -1,4 +1,4 @@
-devoirs_termines:
+homework_done:
   fields:
     kid_id: &kid_id
       required: true
@@ -11,7 +11,7 @@ devoirs_termines:
         text:
           type: password
 
-ajouter_bonus:
+add_bonus:
   fields:
     minutes: &minutes
       required: true
@@ -65,7 +65,7 @@ exception:
           mode: box
     code: *code
 
-annuler_exception:
+cancel_exception:
   fields:
     exception_id:
       required: true
@@ -73,13 +73,13 @@ annuler_exception:
         text:
     code: *code
 
-demarrer_minuteur:
+start_timer:
   fields:
     kid_id: *kid_id
     minutes: *minutes
     code: *code
 
-arreter_minuteur:
+stop_timer:
   fields:
     kid_id: *kid_id
 
@@ -92,14 +92,14 @@ pause:
         boolean:
     code: *code
 
-importer_configuration:
+import_config:
   fields:
     config:
       required: true
       selector:
         object:
 
-demander:
+request:
   fields:
     kind:
       required: true

@@ -967,7 +967,7 @@ class ParentalEngine:
         if target.resource_id is not None:
             resource = self._check_resource(cfg, target.resource_id)
             if resource.has(ResourceKind.NINTENDO):
-                # La Switch ne se pilote que par bonus (`ajouter_bonus`).
+                # La Switch ne se pilote que par bonus (`add_bonus`).
                 raise _invalid("nintendo_use_bonus")
         if target.service is None:
             # Sans service, seule une ressource précise est une cible (spec §5).
