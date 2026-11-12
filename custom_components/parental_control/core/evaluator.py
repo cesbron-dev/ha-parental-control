@@ -36,8 +36,14 @@ from .model import (
     ResourceKind,
     ResourceMode,
     SegmentType,
-    is_label_service,
 )
+
+# TEMP (tâche 1) : l'ancien préfixe « label: » ; retiré avec la refonte de la tâche 2.
+LABEL_PREFIX = "label:"
+
+
+def is_label_service(service: str) -> bool:
+    return service.startswith(LABEL_PREFIX)
 
 
 class KidStatus(StrEnum):

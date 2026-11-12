@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import datetime
+import logging
+from dataclasses import replace
 from typing import Any
 
 from .model import (
@@ -10,7 +12,7 @@ from .model import (
     DayType,
     Integration,
     Kid,
-    LabelService,
+    LabelLink,
     PhysicalDevice,
     Profile,
     Resource,
@@ -18,9 +20,11 @@ from .model import (
     ResourceMode,
     Segment,
     SegmentType,
+    Service,
 )
 
-DEFAULT_LEISURE = ("youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch")
+_LOGGER = logging.getLogger(__name__)
+
 CONFIG_VERSION = 2
 # Interrupteur : le rallumer quand l'appareil redevient autorisé (désactivé par défaut).
 TURN_ON_WHEN_ALLOWED = "turn_on_when_allowed"
@@ -211,26 +215,52 @@ def _parse_resource(raw: Any, path: str) -> Resource:
     )
 
 
-def _parse_label_services(raw: Any, path: str) -> tuple[LabelService, ...]:
-    services: list[LabelService] = []
+def _parse_services(raw: Any, path: str) -> tuple[Service, ...]:
+    services: list[Service] = []
     for i, item in enumerate(_expect_list(raw, path)):
         p = f"{path}[{i}]"
         item = _expect_dict(item, p)
-        label_id = _str(item.get("label_id"), f"{p}.label_id")
-        if any(s.label_id == label_id for s in services):
-            raise _fail(f"{p}.label_id", f"label en double : {label_id!r}")
-        on_means_allowed = item.get("on_means_allowed", False)
-        if not isinstance(on_means_allowed, bool):
-            raise _fail(f"{p}.on_means_allowed", "booléen attendu")
-        services.append(LabelService(label_id, on_means_allowed))
+        service_id = _str(item.get("id"), f"{p}.id")
+        if any(s.id == service_id for s in services):
+            raise _fail(f"{p}.id", f"identifiant en double : {service_id!r}")
+        links: list[LabelLink] = []
+        for j, link in enumerate(_expect_list(item.get("labels", []), f"{p}.labels")):
+            q = f"{p}.labels[{j}]"
+            link = _expect_dict(link, q)
+            label_id = _str(link.get("label_id"), f"{q}.label_id")
+            if any(label_id == lk.label_id for lk in links):
+                raise _fail(f"{q}.label_id", f"label en double : {label_id!r}")
+            on_means_allowed = link.get("on_means_allowed", False)
+            if not isinstance(on_means_allowed, bool):
+                raise _fail(f"{q}.on_means_allowed", "booléen attendu")
+            links.append(LabelLink(label_id, on_means_allowed))
+        services.append(
+            Service(
+                id=service_id,
+                name=_str(item.get("name"), f"{p}.name"),
+                icon=_opt_str(item.get("icon"), f"{p}.icon"),
+                adguard=tuple(_str_list(item.get("adguard", []), f"{p}.adguard")),
+                labels=tuple(links),
+            )
+        )
     return tuple(services)
 
 
 def _check_labels(
-    label_services: tuple[LabelService, ...], kids: tuple[Kid, ...], resources: tuple[Resource, ...]
+    services: tuple[Service, ...], kids: tuple[Kid, ...], resources: tuple[Resource, ...]
 ) -> None:
-    """Un label de cible n'est utilisé qu'une fois et n'est pas aussi un label de service."""
-    service_ids = [s.label_id for s in label_services]
+    """Un label n'est rattaché qu'à un service, et n'est pas aussi un label de cible ;
+    un label de cible n'est utilisé qu'une fois."""
+    attached: dict[str, str] = {}
+    for i, service in enumerate(services):
+        for j, link in enumerate(service.labels):
+            path = f"services[{i}].labels[{j}].label_id"
+            if link.label_id in attached:
+                raise _fail(
+                    path,
+                    f"label {link.label_id!r} déjà rattaché au service {attached[link.label_id]!r}",
+                )
+            attached[link.label_id] = service.id
     seen: set[str] = set()
     targets = [(f"kids[{i}]", k.target_label) for i, k in enumerate(kids)] + [
         (f"resources[{i}]", r.target_label) for i, r in enumerate(resources)
@@ -238,18 +268,50 @@ def _check_labels(
     for path, label in targets:
         if label is None:
             continue
-        if label in service_ids:
-            raise _fail(
-                f"label_services[{service_ids.index(label)}].label_id",
-                f"le label {label!r} est aussi le label de cible de {path}",
-            )
+        if label in attached:
+            for i, service in enumerate(services):
+                for j, link in enumerate(service.labels):
+                    if link.label_id == label:
+                        raise _fail(
+                            f"services[{i}].labels[{j}].label_id",
+                            f"le label {label!r} est aussi le label de cible de {path}",
+                        )
         if label in seen:
             raise _fail(f"{path}.target_label", f"label de cible déjà utilisé : {label!r}")
         seen.add(label)
 
 
+def _known_services(
+    ids: list[str], known: set[str], path: str, strict: bool
+) -> list[str]:
+    """Identifiants de service connus ; les autres lèvent une erreur (strict) ou sont retirés."""
+    kept: list[str] = []
+    for i, service_id in enumerate(ids):
+        if service_id in known:
+            kept.append(service_id)
+        elif strict:
+            raise _fail(f"{path}[{i}]", f"service inconnu : {service_id!r}")
+        else:
+            _LOGGER.info("%s : service inconnu %r retiré", path, service_id)
+    return kept
+
+
+def _filter_kid_services(kid: Kid, index: int, known: set[str], strict: bool) -> Kid:
+    changes = {}
+    for attr in ("leisure_add", "leisure_remove", "on_demand_add", "on_demand_remove"):
+        value = getattr(kid, attr)
+        kept = _known_services(sorted(value), known, f"kids[{index}].{attr}", strict)
+        if len(kept) != len(value):
+            changes[attr] = frozenset(kept)
+    return replace(kid, **changes) if changes else kid
+
+
 def parse_config(data: dict) -> Config:
-    """Valide le JSON de configuration et construit le modèle."""
+    """Valide le JSON de configuration du stockage (tolérant : services inconnus retirés)."""
+    return _parse(data, strict=False)
+
+
+def _parse(data: dict, strict: bool) -> Config:
     data = _expect_dict(data, "config")
     version = data.get("version")
     if isinstance(version, bool) or version != CONFIG_VERSION:
@@ -279,8 +341,18 @@ def parse_config(data: dict) -> Config:
             if rid not in resource_ids:
                 raise _fail(f"kids[{i}].resource_modes.{rid}", f"ressource inconnue : {rid!r}")
 
-    label_services = _parse_label_services(data.get("label_services", []), "label_services")
-    _check_labels(label_services, kids, resources)
+    services = _parse_services(data.get("services", []), "services")
+    _check_labels(services, kids, resources)
+    known = {s.id for s in services}
+    default_leisure = _known_services(
+        _str_list(data.get("default_leisure", []), "default_leisure"),
+        known, "default_leisure", strict,
+    )
+    default_on_demand = _known_services(
+        _str_list(data.get("default_on_demand", []), "default_on_demand"),
+        known, "default_on_demand", strict,
+    )
+    kids = tuple(_filter_kid_services(k, i, known, strict) for i, k in enumerate(kids))
 
     calendar_raw = _expect_dict(data.get("calendar_map", {}), "calendar_map")
     calendar_map = {
@@ -298,20 +370,19 @@ def parse_config(data: dict) -> Config:
     return Config(
         kids=kids,
         resources=resources,
-        default_leisure=tuple(
-            _str_list(data.get("default_leisure", list(DEFAULT_LEISURE)), "default_leisure")
-        ),
+        default_leisure=tuple(default_leisure),
         calendar_map=calendar_map,
         notify=tuple(_str_list(data.get("notify", []), "notify")),
-        default_on_demand=tuple(_str_list(data.get("default_on_demand", []), "default_on_demand")),
+        default_on_demand=tuple(default_on_demand),
         request_notify=request_notify,
         request_notify_owners=request_notify_owners,
-        label_services=label_services,
+        services=services,
     )
 
 
 def parse_client_config(data: dict) -> Config:
-    """`parse_config` d'une configuration reçue d'un client (panneau, import).
+    """`parse_config` strict d'une configuration reçue d'un client (panneau, import) : un
+    identifiant de service inconnu est une erreur.
 
     `request_notify_owners` est retiré avant validation : les propriétaires sont déterminés par
     le serveur (`parents.bind_owners`), une valeur envoyée par le client est donc ignorée —
@@ -319,7 +390,7 @@ def parse_client_config(data: dict) -> Config:
     validation stricte de `parse_config` reste celle du chargement depuis le stockage.
     """
     data = _expect_dict(data, "config")
-    return parse_config({k: v for k, v in data.items() if k != "request_notify_owners"})
+    return _parse({k: v for k, v in data.items() if k != "request_notify_owners"}, strict=True)
 
 
 def _dump_segment(segment: Segment) -> dict:
@@ -375,6 +446,18 @@ def _dump_resource(resource: Resource) -> dict:
     return out
 
 
+def _dump_service(service: Service) -> dict:
+    out: dict[str, Any] = {"id": service.id, "name": service.name}
+    if service.icon is not None:
+        out["icon"] = service.icon
+    out["adguard"] = list(service.adguard)
+    out["labels"] = [
+        {"label_id": lk.label_id, "on_means_allowed": lk.on_means_allowed}
+        for lk in service.labels
+    ]
+    return out
+
+
 def dump_config(cfg: Config) -> dict:
     """Sérialise le modèle au format JSON de configuration."""
     return {
@@ -385,10 +468,7 @@ def dump_config(cfg: Config) -> dict:
         "notify": list(cfg.notify),
         "request_notify": list(cfg.request_notify),
         "request_notify_owners": dict(cfg.request_notify_owners),
-        "label_services": [
-            {"label_id": s.label_id, "on_means_allowed": s.on_means_allowed}
-            for s in cfg.label_services
-        ],
+        "services": [_dump_service(s) for s in cfg.services],
         "kids": [_dump_kid(k) for k in cfg.kids],
         "resources": [_dump_resource(r) for r in cfg.resources],
     }
