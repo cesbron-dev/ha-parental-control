@@ -2,6 +2,10 @@
 
 EX = {
     "version": 2,
+    "services": [
+        {"id": s, "name": s.capitalize(), "adguard": [s], "labels": []}
+        for s in ("youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch", "minecraft")
+    ],
     "default_leisure": ["youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch"],
     "calendar_map": {"pédagogique": "conge_peda", "vacances": "vacances", "relâche": "vacances"},
     "notify": ["notify.mobile_app_iphone_de_olivier"],

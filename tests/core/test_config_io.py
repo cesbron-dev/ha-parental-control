@@ -7,6 +7,7 @@ import pytest
 from custom_components.parental_control.core.config_io import (
     ConfigError,
     dump_config,
+    parse_client_config,
     parse_config,
 )
 from custom_components.parental_control.core.model import (
@@ -359,30 +360,98 @@ def test_request_notify_owners_empty_user_rejected() -> None:
         parse_config(raw)
 
 
+def _jeux(**over):
+    svc = {
+        "id": "jeux",
+        "name": "Jeux vidéo",
+        "icon": "mdi:gamepad-variant",
+        "adguard": ["roblox", "fortnite"],
+        "labels": [{"label_id": "console", "on_means_allowed": True}],
+    }
+    return {**svc, **over}
+
+
 def test_label_fields_absent_keep_defaults():
     d = family_config_dict()
     cfg = parse_config(d)
-    assert cfg.label_services == ()
     assert all(k.target_label is None for k in cfg.kids)
     assert all(r.target_label is None for r in cfg.resources)
-    out = dump_config(cfg)
-    assert "target_label" not in str(out)
-    assert out["label_services"] == []
+    assert "target_label" not in str(dump_config(cfg))
+
+
+def test_services_round_trip():
+    d = family_config_dict()
+    d["services"] = [_jeux()]
+    d["default_leisure"] = ["jeux"]
+    cfg = parse_config(d)
+    assert dump_config(cfg)["services"] == d["services"]
+    assert cfg.adguard_ids(["jeux"]) == {"roblox", "fortnite"}
+    assert cfg.service_for_label("console")[0].id == "jeux"
+    assert cfg.service_for_label("console")[1].on_means_allowed is True
+    assert cfg.service_for_label("autre") is None
+    assert cfg.has_adguard("jeux") and cfg.has_labels("jeux")
+    assert not cfg.has_adguard("inconnu") and not cfg.has_labels("inconnu")
+    assert cfg.adguard_ids(["inconnu"]) == frozenset()
+    assert parse_config(dump_config(cfg)) == cfg
+
+
+def test_service_icon_omitted_when_none():
+    d = family_config_dict()
+    d["services"] = [{"id": "x", "name": "X", "adguard": ["x"], "labels": []}]
+    out = dump_config(parse_config(d))
+    assert "icon" not in out["services"][0]
+
+
+def _unknown_cfg():
+    d = family_config_dict()
+    d["services"] = [_jeux()]
+    d["default_leisure"] = ["youtube", "jeux"]
+    d["default_on_demand"] = ["tiktok"]
+    d["kids"][0]["leisure_add"] = ["roblox"]
+    return d
+
+
+def test_stored_config_drops_unknown_services():
+    cfg = parse_config(_unknown_cfg())
+    assert cfg.default_leisure == ("jeux",)
+    assert cfg.default_on_demand == ()
+    assert cfg.kids[0].leisure_add == frozenset()
+
+
+def test_client_config_rejects_unknown_service():
+    with pytest.raises(ConfigError, match="default_leisure"):
+        parse_client_config(_unknown_cfg())
+
+
+def test_client_config_rejects_unknown_kid_service():
+    d = family_config_dict()
+    d["kids"][0]["on_demand_remove"] = ["nope"]
+    with pytest.raises(ConfigError, match=r"kids\[0\]\.on_demand_remove\[0\]"):
+        parse_client_config(d)
+
+
+def test_legacy_label_services_key_ignored():
+    d = family_config_dict()
+    d.pop("services", None)
+    d["label_services"] = [{"label_id": "internet"}]
+    assert parse_config(d).services == ()
+
+
+def test_missing_default_leisure_is_empty():
+    d = family_config_dict()
+    d.pop("default_leisure", None)
+    assert parse_config(d).default_leisure == ()
 
 
 def test_label_fields_roundtrip():
     d = family_config_dict()
-    d["label_services"] = [{"label_id": "internet", "on_means_allowed": True}]
     d["resources"][0]["target_label"] = "tablette_mael"
     d["kids"][2]["target_label"] = "mael"
     cfg = parse_config(d)
-    assert cfg.label_services[0].service == "label:internet"
-    assert cfg.label_services[0].on_means_allowed is True
     assert cfg.label_target("mael") == ("kid", "mael")
     assert cfg.label_target("tablette_mael") == ("resource", d["resources"][0]["id"])
     assert cfg.label_target("inconnu") is None
     out = dump_config(cfg)
-    assert out["label_services"] == d["label_services"]
     assert out["kids"][2]["target_label"] == "mael"
     assert out["resources"][0]["target_label"] == "tablette_mael"
     assert parse_config(out) == cfg
@@ -390,9 +459,9 @@ def test_label_fields_roundtrip():
 
 def test_label_both_service_and_target_rejected():
     d = family_config_dict()
-    d["label_services"] = [{"label_id": "internet"}]
-    d["kids"][0]["target_label"] = "internet"
-    with pytest.raises(ConfigError, match=r"^label_services"):
+    d["services"] = [_jeux()]
+    d["kids"][0]["target_label"] = "console"
+    with pytest.raises(ConfigError, match=r"^services\[0\]\.labels\[0\]"):
         parse_config(d)
 
 
@@ -404,8 +473,36 @@ def test_target_label_used_twice_rejected():
         parse_config(d)
 
 
-def test_label_service_duplicate_rejected():
+def test_service_duplicate_id_rejected():
     d = family_config_dict()
-    d["label_services"] = [{"label_id": "internet"}, {"label_id": "internet"}]
-    with pytest.raises(ConfigError, match=r"label_services\[1\]"):
+    d["services"] = [_jeux(labels=[]), _jeux(labels=[])]
+    with pytest.raises(ConfigError, match=r"services\[1\]\.id"):
+        parse_config(d)
+
+
+def test_service_empty_name_rejected():
+    d = family_config_dict()
+    d["services"] = [_jeux(name="")]
+    with pytest.raises(ConfigError, match=r"services\[0\]\.name"):
+        parse_config(d)
+
+
+def test_label_in_two_services_rejected():
+    d = family_config_dict()
+    d["services"] = [_jeux(), _jeux(id="autre")]
+    with pytest.raises(ConfigError, match=r"services\[1\]\.labels\[0\]"):
+        parse_config(d)
+
+
+def test_service_adguard_must_be_list():
+    d = family_config_dict()
+    d["services"] = [_jeux(adguard="roblox")]
+    with pytest.raises(ConfigError, match=r"services\[0\]\.adguard"):
+        parse_config(d)
+
+
+def test_service_on_means_allowed_must_be_bool():
+    d = family_config_dict()
+    d["services"] = [_jeux(labels=[{"label_id": "console", "on_means_allowed": "oui"}])]
+    with pytest.raises(ConfigError, match=r"on_means_allowed"):
         parse_config(d)

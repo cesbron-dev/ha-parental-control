@@ -3,23 +3,11 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Final
+from typing import Any
 
-
-# Préfixe des services pilotés par un label Home Assistant (« label:<label_id> »).
-LABEL_PREFIX: Final = "label:"
-
-
-def label_service_id(label_id: str) -> str:
-    """Identifiant de service associé à un label Home Assistant."""
-    return LABEL_PREFIX + label_id
-
-
-def is_label_service(service: str) -> bool:
-    return service.startswith(LABEL_PREFIX)
 
 
 class DayType(StrEnum):
@@ -145,16 +133,31 @@ class Resource:
 
 
 @dataclass(frozen=True)
-class LabelService:
-    """Label HA dont les interrupteurs sont pilotés comme un service."""
+class LabelLink:
+    """Label HA dont les interrupteurs pilotent un service du parent."""
 
     label_id: str
     # Interrupteur allumé = service autorisé (sinon allumé = service coupé).
     on_means_allowed: bool = False
 
+
+@dataclass(frozen=True)
+class Service:
+    """Service défini par le parent : regroupe des services AdGuard et/ou des labels."""
+
+    id: str
+    name: str
+    icon: str | None = None
+    adguard: tuple[str, ...] = ()
+    labels: tuple[LabelLink, ...] = ()
+
     @property
-    def service(self) -> str:
-        return label_service_id(self.label_id)
+    def has_adguard(self) -> bool:
+        return bool(self.adguard)
+
+    @property
+    def has_labels(self) -> bool:
+        return bool(self.labels)
 
 
 @dataclass(frozen=True)
@@ -170,8 +173,8 @@ class Config:
     request_notify: tuple[str, ...] = ()
     # Propriétaire mémorisé de chaque téléphone de demandes : cible notify complète -> user_id.
     request_notify_owners: Mapping[str, str] = field(default_factory=dict)
-    # Labels HA pilotés comme des services.
-    label_services: tuple[LabelService, ...] = ()
+    # Services définis par le parent.
+    services: tuple[Service, ...] = ()
 
     def kid(self, kid_id: str) -> Kid:
         for kid in self.kids:
@@ -184,6 +187,37 @@ class Config:
             if resource.id == resource_id:
                 return resource
         raise KeyError(resource_id)
+
+    def service(self, service_id: str) -> Service | None:
+        for service in self.services:
+            if service.id == service_id:
+                return service
+        return None
+
+    def has_adguard(self, service_id: str) -> bool:
+        service = self.service(service_id)
+        return service is not None and service.has_adguard
+
+    def has_labels(self, service_id: str) -> bool:
+        service = self.service(service_id)
+        return service is not None and service.has_labels
+
+    def adguard_ids(self, service_ids: Iterable[str]) -> frozenset[str]:
+        """Union des identifiants AdGuard des services donnés ; les inconnus sont ignorés."""
+        result: frozenset[str] = frozenset()
+        for service_id in service_ids:
+            service = self.service(service_id)
+            if service is not None:
+                result |= frozenset(service.adguard)
+        return result
+
+    def service_for_label(self, label_id: str) -> tuple[Service, LabelLink] | None:
+        """Premier service (dans l'ordre de la config) auquel le label est rattaché."""
+        for service in self.services:
+            for link in service.labels:
+                if link.label_id == label_id:
+                    return service, link
+        return None
 
     def label_target(self, label_id: str) -> tuple[str, str] | None:
         """Cible d'un label : `("kid", id)` ou `("resource", id)`, `None` s'il ne cible rien."""

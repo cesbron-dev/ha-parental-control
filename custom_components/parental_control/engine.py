@@ -54,15 +54,20 @@ from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
 from .core.label_services import switch_blocked
 from .core.model import (
-    LABEL_PREFIX,
     Config,
     DayType,
     Kid,
     Resource,
     ResourceKind,
     SegmentType,
-    is_label_service,
 )
+
+# TEMP (tâche 1) : l'ancien préfixe « label: » ; retiré avec la refonte de la tâche 3.
+LABEL_PREFIX = "label:"
+
+
+def is_label_service(service: str) -> bool:
+    return service.startswith(LABEL_PREFIX)
 from .core.requests import (
     RequestBook,
     RequestError,

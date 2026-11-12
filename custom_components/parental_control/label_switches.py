@@ -13,7 +13,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 
 from .core.label_services import LabelTarget
-from .core.model import Config, LabelService
+from .core.model import Config, LabelLink as LabelService
 
 PROBLEM_NO_TARGET = "no_target"
 PROBLEM_UNKNOWN_LABEL = "unknown_label"

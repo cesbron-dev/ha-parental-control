@@ -16,7 +16,12 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from ..core.evaluator import ResourceState
-from ..core.model import is_label_service
+
+
+def is_label_service(service: str) -> bool:  # TEMP (tâche 1), retiré à la tâche 3
+    return service.startswith("label:")
+
+
 from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)

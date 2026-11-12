@@ -13,7 +13,12 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_client_config
-from .core.model import is_label_service
+
+
+def is_label_service(service: str) -> bool:  # TEMP (tâche 1), retiré à la tâche 5
+    return service.startswith("label:")
+
+
 from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
 from .parents import bind_owners, is_parent, phone_status, trusted_phone_owners

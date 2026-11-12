@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import label_registry as lr
 
 from .adapters.adguard import ADGUARD_DOMAIN
-from .core.model import Config, label_service_id
+from .core.model import Config
 
 
 def services_catalog(hass: HomeAssistant, cfg: Config | None = None) -> dict[str, str]:
