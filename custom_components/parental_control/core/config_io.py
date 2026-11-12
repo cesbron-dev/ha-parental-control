@@ -8,6 +8,7 @@ import logging
 from dataclasses import replace
 from typing import Any
 
+from .i18n import msg
 from .model import (
     Config,
     DayType,
@@ -59,28 +60,38 @@ _REQUIRED_OPTIONS = {
 }
 
 class ConfigError(ValueError):
-    """Configuration invalide ; le message cite le chemin fautif."""
+    """Configuration invalide : chemin fautif, code d'erreur et paramètres du message.
+
+    `str(err)` donne « <chemin>: <message anglais> » (journaux, appels hors panneau) ; le
+    panneau traduit `code` (clé `config_<code>` des traductions, `config.<code>` du catalogue).
+    """
+
+    def __init__(self, path: str, code: str, **params: str) -> None:
+        self.path = path
+        self.code = code
+        self.params = params
+        super().__init__(f"{path}: {msg('en', f'config.{code}', **params)}")
 
 
-def _fail(path: str, message: str) -> ConfigError:
-    return ConfigError(f"{path} : {message}")
+def _fail(path: str, code: str, **params: Any) -> ConfigError:
+    return ConfigError(path, code, **{k: str(v) for k, v in params.items()})
 
 
 def _expect_dict(value: Any, path: str) -> dict:
     if not isinstance(value, dict):
-        raise _fail(path, "objet attendu")
+        raise _fail(path, "object_expected")
     return value
 
 
 def _expect_list(value: Any, path: str) -> list:
     if not isinstance(value, list):
-        raise _fail(path, "liste attendue")
+        raise _fail(path, "list_expected")
     return value
 
 
 def _str(value: Any, path: str) -> str:
     if not isinstance(value, str) or not value:
-        raise _fail(path, "texte non vide attendu")
+        raise _fail(path, "text_expected")
     return value
 
 
@@ -90,7 +101,7 @@ def _opt_str(value: Any, path: str) -> str | None:
 
 def _int(value: Any, path: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise _fail(path, "entier positif ou nul attendu")
+        raise _fail(path, "integer_expected")
     return value
 
 
@@ -103,29 +114,29 @@ def _enum(enum_cls: Any, value: Any, path: str) -> Any:
         return enum_cls(value)
     except ValueError:
         valid = ", ".join(m.value for m in enum_cls)
-        raise _fail(path, f"valeur inconnue {value!r} (attendu : {valid})") from None
+        raise _fail(path, "unknown_value", value=repr(value), expected=valid) from None
 
 
 def _parse_time(value: Any, path: str) -> datetime.time:
     try:
         return datetime.time.fromisoformat(_str(value, path))
     except ValueError:
-        raise _fail(path, f"heure invalide {value!r} (format HH:MM)") from None
+        raise _fail(path, "invalid_time", value=repr(value)) from None
 
 
 def _parse_segments(raw: Any, path: str) -> tuple[Segment, ...]:
     items = _expect_list(raw, path)
     if not items:
-        raise _fail(path, "au moins un segment est requis")
+        raise _fail(path, "segment_required")
     segments: list[Segment] = []
     for i, item in enumerate(items):
         p = f"{path}[{i}]"
         item = _expect_dict(item, p)
         start = _parse_time(item.get("start"), f"{p}.start")
         if i == 0 and start != datetime.time(0, 0):
-            raise _fail(p, "le premier segment doit commencer à 00:00")
+            raise _fail(p, "first_segment_midnight")
         if segments and start <= segments[-1].start:
-            raise _fail(p, "les heures de début doivent être strictement croissantes")
+            raise _fail(p, "segments_not_increasing")
         segments.append(
             Segment(
                 start,
@@ -154,7 +165,7 @@ def _parse_kid(raw: Any, path: str) -> Kid:
         profiles[day] = _parse_profile(value, f"{path}.profiles.{key}")
     for required in (DayType.SCHOOL, DayType.WEEKEND):
         if required not in profiles:
-            raise _fail(f"{path}.profiles", f"le profil « {required.value} » est requis")
+            raise _fail(f"{path}.profiles", "profile_required", profile=required.value)
     modes_raw = _expect_dict(raw.get("resource_modes", {}), f"{path}.resource_modes")
     modes = {
         _str(rid, f"{path}.resource_modes"): _enum(
@@ -188,9 +199,9 @@ def _parse_integration(kind_raw: Any, options: dict, kind_path: str, path: str) 
         _str(options.get(key), f"{path}.{key}")
     if kind is ResourceKind.SWITCH:
         if not str(options["entity_id"]).startswith("switch."):
-            raise _fail(f"{path}.entity_id", "entité switch.* attendue")
+            raise _fail(f"{path}.entity_id", "switch_entity_expected")
         if not isinstance(options.get(TURN_ON_WHEN_ALLOWED, False), bool):
-            raise _fail(f"{path}.{TURN_ON_WHEN_ALLOWED}", "booléen attendu")
+            raise _fail(f"{path}.{TURN_ON_WHEN_ALLOWED}", "boolean_expected")
     return Integration(kind, options)
 
 
@@ -209,9 +220,9 @@ def _parse_devices(raw: Any, path: str) -> tuple[PhysicalDevice, ...]:
         devices.append(PhysicalDevice(name, tuple(integrations)))
     kinds = [i.kind for d in devices for i in d.integrations]
     if not kinds:
-        raise _fail(path, "au moins une intégration")
+        raise _fail(path, "integration_required")
     if ResourceKind.NINTENDO in kinds and len(kinds) > 1:
-        raise _fail(path, "une console Nintendo ne se regroupe pas")
+        raise _fail(path, "nintendo_alone")
     return tuple(devices)
 
 
@@ -243,17 +254,17 @@ def _parse_services(raw: Any, path: str) -> tuple[Service, ...]:
         item = _expect_dict(item, p)
         service_id = _str(item.get("id"), f"{p}.id")
         if any(s.id == service_id for s in services):
-            raise _fail(f"{p}.id", f"identifiant en double : {service_id!r}")
+            raise _fail(f"{p}.id", "duplicate_id", id=repr(service_id))
         links: list[LabelLink] = []
         for j, link in enumerate(_expect_list(item.get("labels", []), f"{p}.labels")):
             q = f"{p}.labels[{j}]"
             link = _expect_dict(link, q)
             label_id = _str(link.get("label_id"), f"{q}.label_id")
             if any(label_id == lk.label_id for lk in links):
-                raise _fail(f"{q}.label_id", f"label en double : {label_id!r}")
+                raise _fail(f"{q}.label_id", "duplicate_label", label=repr(label_id))
             on_means_allowed = link.get("on_means_allowed", False)
             if not isinstance(on_means_allowed, bool):
-                raise _fail(f"{q}.on_means_allowed", "booléen attendu")
+                raise _fail(f"{q}.on_means_allowed", "boolean_expected")
             links.append(LabelLink(label_id, on_means_allowed))
         services.append(
             Service(
@@ -279,7 +290,9 @@ def _check_labels(
             if link.label_id in attached:
                 raise _fail(
                     path,
-                    f"label {link.label_id!r} déjà rattaché au service {attached[link.label_id]!r}",
+                    "label_already_attached",
+                    label=repr(link.label_id),
+                    service=repr(attached[link.label_id]),
                 )
             attached[link.label_id] = service.id
     seen: set[str] = set()
@@ -295,10 +308,12 @@ def _check_labels(
                     if link.label_id == label:
                         raise _fail(
                             f"services[{i}].labels[{j}].label_id",
-                            f"le label {label!r} est aussi le label de cible de {path}",
+                            "label_is_target",
+                            label=repr(label),
+                            target=path,
                         )
         if label in seen:
-            raise _fail(f"{path}.target_label", f"label de cible déjà utilisé : {label!r}")
+            raise _fail(f"{path}.target_label", "target_label_used", label=repr(label))
         seen.add(label)
 
 
@@ -311,9 +326,10 @@ def _known_services(
         if service_id in known:
             kept.append(service_id)
         elif strict:
-            raise _fail(f"{path}[{i}]" if indexed else path, f"service inconnu : {service_id!r}")
+            raise _fail(f"{path}[{i}]" if indexed else path, "unknown_service",
+                        service=repr(service_id))
         else:
-            _LOGGER.info("%s : service inconnu %r retiré", path, service_id)
+            _LOGGER.info("%s: unknown service %r removed", path, service_id)
     return kept
 
 
@@ -380,9 +396,9 @@ def _parse(data: dict, strict: bool) -> Config:
     data = _expect_dict(data, "config")
     version = data.get("version")
     if isinstance(version, bool) or version not in (_LEGACY_VERSION, CONFIG_VERSION):
-        raise _fail("version", f"version non prise en charge : {version!r}")
+        raise _fail("version", "unsupported_version", version=repr(version))
     if version == _LEGACY_VERSION:
-        _LOGGER.info("Configuration version 2 convertie en version 3 (identifiants en anglais)")
+        _LOGGER.info("Configuration version 2 converted to version 3 (English identifiers)")
         data = migrate_v2(data)
 
     kids = tuple(
@@ -396,18 +412,19 @@ def _parse(data: dict, strict: bool) -> Config:
     kid_ids = [k.id for k in kids]
     for i, kid in enumerate(kids):
         if kid_ids.count(kid.id) > 1:
-            raise _fail(f"kids[{i}].id", f"identifiant en double : {kid.id!r}")
+            raise _fail(f"kids[{i}].id", "duplicate_id", id=repr(kid.id))
     resource_ids = [r.id for r in resources]
     for i, res in enumerate(resources):
         if resource_ids.count(res.id) > 1:
-            raise _fail(f"resources[{i}].id", f"identifiant en double : {res.id!r}")
+            raise _fail(f"resources[{i}].id", "duplicate_id", id=repr(res.id))
         for j, owner in enumerate(res.owners):
             if owner not in kid_ids:
-                raise _fail(f"resources[{i}].owners[{j}]", f"enfant inconnu : {owner!r}")
+                raise _fail(f"resources[{i}].owners[{j}]", "unknown_kid", kid=repr(owner))
     for i, kid in enumerate(kids):
         for rid in kid.resource_modes:
             if rid not in resource_ids:
-                raise _fail(f"kids[{i}].resource_modes.{rid}", f"ressource inconnue : {rid!r}")
+                raise _fail(f"kids[{i}].resource_modes.{rid}", "unknown_resource",
+                            resource=repr(rid))
 
     services = _parse_services(data.get("services", []), "services")
     _check_labels(services, kids, resources)
@@ -433,7 +450,7 @@ def _parse(data: dict, strict: bool) -> Config:
     for target, user_id in owners_raw.items():
         path = f"request_notify_owners.{target}"
         if target not in request_notify:
-            raise _fail(path, "cible absente de request_notify")
+            raise _fail(path, "not_in_request_notify")
         request_notify_owners[target] = _str(user_id, path)
     return Config(
         kids=kids,

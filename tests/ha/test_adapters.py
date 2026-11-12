@@ -358,7 +358,7 @@ async def test_adguard_missing_sensor_logs_once(
         await adapter.apply(desired)
 
     assert fake.calls == []
-    warnings = [r for r in caplog.records if "introuvable" in r.getMessage()]
+    warnings = [r for r in caplog.records if "not found" in r.getMessage()]
     assert len(warnings) == 1
 
 
@@ -371,13 +371,13 @@ async def test_adguard_missing_sensor_waits_for_startup(
     hass.set_state(CoreState.starting)
     with caplog.at_level(logging.WARNING):
         await adapter.apply(desired)
-    assert "introuvable" not in caplog.text
+    assert "not found" not in caplog.text
 
     # toujours absent une fois HA démarré : l'avertissement part
     hass.set_state(CoreState.running)
     with caplog.at_level(logging.WARNING):
         await adapter.apply(desired)
-    assert "introuvable" in caplog.text
+    assert "not found" in caplog.text
 
 
 async def test_adguard_unknown_device_has_no_entities(hass: HomeAssistant, fake) -> None:
@@ -401,7 +401,7 @@ async def test_adguard_global_blocked_services_warns_once(
         await adapter.apply(OPEN)
 
     assert fake.blocks() == ["roblox", "youtube"]
-    warnings = [r for r in caplog.records if "globaux" in r.getMessage()]
+    warnings = [r for r in caplog.records if "global blocked services" in r.getMessage()]
     assert len(warnings) == 1
 
 
@@ -693,6 +693,8 @@ async def test_media_player_describe_closed_and_in_use(hass: HomeAssistant) -> N
     assert adapter.describe(OPEN) == []
     assert adapter.describe_grant(15) == []
     assert calls == []
+    hass.config.language = "en"
+    assert adapter.describe(CLOSED) == [f"would turn off Télé salon ({TV_ENTITY})"]
 
 
 async def test_media_player_describe_not_in_use(hass: HomeAssistant) -> None:
@@ -1031,7 +1033,13 @@ async def test_composite_warn_failure_logged_as_warning(
     adapter = build_adapter(hass, tv_resource("notify.tv_absent"), LEISURE, ident)
     with caplog.at_level(logging.WARNING):
         await adapter.warn("bientôt")
-    records = [r for r in caplog.records if "avertissement" in r.getMessage()]
+    records = [r for r in caplog.records if "warning failed" in r.getMessage()]
     assert len(records) == 1
     assert records[0].levelno == logging.WARNING
     assert TV_LABEL in records[0].getMessage()
+
+
+@pytest.fixture(autouse=True)
+def _french_system_language(hass) -> None:
+    """Textes du serveur (notifications, journal de bord) vérifiés en français."""
+    hass.config.language = "fr"

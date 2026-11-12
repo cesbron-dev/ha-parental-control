@@ -71,6 +71,7 @@ from .core.requests import (
 )
 from .label_switches import LabelSwitch, LabelSwitchIssue, discover
 from .store import INVALID_CONFIG_NOTIFICATION, ParentalStore
+from .texts import server_language, text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,8 +79,6 @@ MAX_ELAPSED = timedelta(minutes=5)
 CALENDAR_REFRESH = timedelta(minutes=15)
 DEFAULT_WARN_MINUTES = 5
 DRIFT_COOLDOWN = timedelta(seconds=30)
-NOTIFY_TITLE = "Contrôle parental"
-SIMULATION_PREFIX = "[Simulation] "
 
 
 def request_tag(request_id: str) -> str:
@@ -258,7 +257,7 @@ class ParentalEngine:
         self._config, self._decisions = await self._store.load()
         _localize(self._decisions)
         if self._config is None:
-            _LOGGER.info("Aucune configuration valide : le moteur reste inactif")
+            _LOGGER.info("No valid configuration: the engine stays inactive")
         else:
             self._prune_unknown(self._config)
         self._decisions.purge(dt_util.now())
@@ -314,7 +313,7 @@ class ParentalEngine:
         )
         if removed:
             _LOGGER.info(
-                "%d décision(s) retirée(s) : enfant ou ressource absent de la config", removed
+                "%d decision(s) removed: child or resource missing from the config", removed
             )
 
     def _cancel_state_listener(self) -> None:
@@ -352,7 +351,7 @@ class ParentalEngine:
                     self._record_simulation,
                 )
             except (KeyError, NotImplementedError) as err:
-                _LOGGER.error("%s : adaptateur impossible à créer : %s", resource.name, err)
+                _LOGGER.error("%s: cannot create adapter: %s", resource.name, err)
         for resource_id, adapter in self._adapters.items():
             for entity_id in adapter.entity_ids():
                 self._entity_owners.setdefault(entity_id, set()).add(resource_id)
@@ -386,8 +385,8 @@ class ParentalEngine:
                 continue
             self._label_reported.add(key)
             _LOGGER.warning(
-                "%s ignoré (%s)",
-                " : ".join(filter(None, (issue.entity_id, self.service_name(issue.service)))),
+                "%s ignored (%s)",
+                ": ".join(filter(None, (issue.entity_id, self.service_name(issue.service)))),
                 self._issue_text(issue.problem),
             )
         if entity_ids:
@@ -398,8 +397,8 @@ class ParentalEngine:
     @staticmethod
     def _issue_text(problem: str) -> str:
         if problem == "no_target":
-            return "aucune cible : ajoutez le label d'un enfant ou d'un appareil"
-        return "label de service introuvable dans le registre des labels"
+            return "no target: add the label of a child or a device"
+        return "service label not found in the label registry"
 
     @callback
     def _entity_registry_filter(self, data: er.EventEntityRegistryUpdatedData) -> bool:
@@ -423,10 +422,14 @@ class ParentalEngine:
             self._discover_labels()
         await self.async_evaluate("labels")
 
+    def _text(self, key: str, **params: object) -> str:
+        """Texte du serveur dans la langue système de HA."""
+        return text(self._hass, key, **params)
+
     def _record_simulation(self, name: str, line: str) -> None:
         """Journal de bord et journal HA : ce que le moteur aurait fait."""
-        _LOGGER.info("Simulation : %s", line)
-        async_log_entry(self._hass, name, f"Simulation : {line}", domain=DOMAIN)
+        _LOGGER.info("Simulation: %s", line)
+        async_log_entry(self._hass, name, self._text("simulation.line", line=line), domain=DOMAIN)
 
     def _schedule(self, coro: Coroutine[Any, Any, None]) -> None:
         self._entry.async_create_task(self._hass, coro, f"{DOMAIN} engine")
@@ -491,7 +494,7 @@ class ParentalEngine:
             cfg = self._config
             if self._stopped or not self._ready or cfg is None:
                 return
-            _LOGGER.debug("Évaluation (%s)", reason)
+            _LOGGER.debug("Evaluation (%s)", reason)
             dec = self._decisions
             now = dt_util.now()
             in_use = self._accumulate_usage(now)
@@ -515,7 +518,7 @@ class ParentalEngine:
             try:
                 in_use[resource_id] = adapter.in_use()
             except Exception as err:  # noqa: BLE001 - un adaptateur n'arrête pas les autres
-                _LOGGER.warning("%s : usage illisible : %s", adapter.resource.name, err)
+                _LOGGER.warning("%s: usage unreadable: %s", adapter.resource.name, err)
                 in_use[resource_id] = False
         last, self._last_eval = self._last_eval, now
         if last is None:
@@ -557,7 +560,7 @@ class ParentalEngine:
                     self._sent_at[resource_id] = now
                 await adapter.apply(desired)
             except Exception as err:  # noqa: BLE001 - un adaptateur n'arrête pas les autres
-                _LOGGER.error("%s : échec de l'application : %s", adapter.resource.name, err)
+                _LOGGER.error("%s: apply failed: %s", adapter.resource.name, err)
                 continue
             self._applied[resource_id] = key
         if self._config is not None:
@@ -594,11 +597,19 @@ class ParentalEngine:
                     self._label_applied[ls.entity_id] = want_on
                 if not unchanged and drifted:  # déjà dans l'état voulu : rien à dire
                     name = self._switch_name(ls.entity_id)
-                    verb = "allumer" if want_on else "éteindre"
-                    what = "bloquer" if blocked else "autoriser"
                     self._record_simulation(
                         name,
-                        f"{name} : {verb} ({what} {self.service_name(ls.service)})",
+                        self._text(
+                            "simulation.switch",
+                            name=name,
+                            action=self._text(
+                                "simulation.turn_on" if want_on else "simulation.turn_off"
+                            ),
+                            effect=self._text(
+                                "simulation.block" if blocked else "simulation.allow"
+                            ),
+                            service=self.service_name(ls.service),
+                        ),
                     )
                 continue
             if drifted:
@@ -609,7 +620,7 @@ class ParentalEngine:
                         {"entity_id": ls.entity_id}, blocking=True,
                     )
                 except Exception as err:  # noqa: BLE001 - un interrupteur n'arrête pas les autres
-                    _LOGGER.error("%s : échec de l'application : %s", ls.entity_id, err)
+                    _LOGGER.error("%s: apply failed: %s", ls.entity_id, err)
                     continue
             self._label_applied[ls.entity_id] = want_on
 
@@ -618,7 +629,7 @@ class ParentalEngine:
         if self._hass.state is not CoreState.running or entity_id in self._label_unavailable:
             return
         self._label_unavailable.add(entity_id)
-        _LOGGER.warning("%s indisponible : interrupteur labellisé non piloté", entity_id)
+        _LOGGER.warning("%s unavailable: labelled switch not controlled", entity_id)
 
     # ------------------------------------------------------------------ avertissements
 
@@ -655,12 +666,18 @@ class ParentalEngine:
             self._warned.add((key, closes_at))
             minutes = max(1, math.ceil(delta.total_seconds() / 60))
             if kind == "kid":
-                message = f"{cfg.kid(ident).name} : fin des écrans dans {minutes} min"
+                message = self._text("warn.kid", name=cfg.kid(ident).name, minutes=minutes)
             elif kind == "service":
-                message = (f"{self.service_name(service)} sur {cfg.resource(ident).name} : "
-                           f"coupure dans {minutes} min")
+                message = self._text(
+                    "warn.service",
+                    service=self.service_name(service),
+                    resource=cfg.resource(ident).name,
+                    minutes=minutes,
+                )
             else:
-                message = f"{cfg.resource(ident).name} : coupure dans {minutes} min"
+                message = self._text(
+                    "warn.resource", resource=cfg.resource(ident).name, minutes=minutes
+                )
             self._hass.bus.async_fire(
                 EVENT_WARNING,
                 {"target": key, "closes_at": closes_at.isoformat(), "message": message},
@@ -678,12 +695,12 @@ class ParentalEngine:
         try:
             await adapter.warn(message)
         except Exception as err:  # noqa: BLE001 - un avertissement ne bloque rien
-            _LOGGER.warning("%s : avertissement impossible : %s", adapter.resource.name, err)
+            _LOGGER.warning("%s: warning failed: %s", adapter.resource.name, err)
 
     def _notify(self, cfg: Config, message: str) -> None:
         """Notifie les parents sans attendre l'exécution (`blocking=False`)."""
         if self._decisions.simulation:
-            message = SIMULATION_PREFIX + message
+            message = self._text("simulation.prefix") + message
         for target in cfg.notify:
             self._schedule(self._send_notify(target, message))
 
@@ -693,51 +710,52 @@ class ParentalEngine:
         message: str,
         data: dict[str, Any] | None = None,
         *,
-        title: str | None = NOTIFY_TITLE,
+        title: bool = True,
     ) -> None:
         domain, _, service = target.partition(".")
         payload: dict[str, Any] = {"message": message}
-        if title is not None:
-            payload["title"] = title
+        if title:
+            payload["title"] = self._text("notify.title")
         if data is not None:
             payload["data"] = data
         try:
             await self._hass.services.async_call(domain, service, payload, blocking=False)
         except Exception as err:  # noqa: BLE001 - une notification ne bloque rien
-            _LOGGER.warning("Notification %s impossible : %s", target, err)
+            _LOGGER.warning("Notification %s failed: %s", target, err)
 
     # ------------------------------------------------------------------ demandes
 
     def request_message(self, req: TimeRequest) -> str:
-        """Texte de la notification envoyée aux parents."""
+        """Texte de la notification envoyée aux parents (langue système de HA)."""
         cfg = self._require_config()
+        lang = server_language(self._hass)
         # L'écran « Demandes » affiche aussi les demandes d'un enfant retiré entre-temps.
-        kid = self._kid_name(req.kid_id)
-        resource = None
+        params: dict[str, object] = {"kid": self._kid_name(req.kid_id)}
         if req.resource_id is not None:
             try:
-                resource = cfg.resource(req.resource_id).name
+                params["resource"] = cfg.resource(req.resource_id).name
             except KeyError:
-                resource = req.resource_id
-        on = f" sur {resource}" if resource is not None else ""
+                params["resource"] = req.resource_id
+        if req.proposed is not None:
+            params["duration"] = duration_label(req.proposed, lang)
         if req.kind == RequestKind.HOMEWORK:
-            return f"{kid} dit avoir terminé ses devoirs"
+            return self._text("request.homework", kid=params["kid"])
         if req.kind == RequestKind.BONUS:
-            return f"{kid} demande un bonus de {duration_label(req.proposed)}{on}"
+            key = "request.bonus_on" if "resource" in params else "request.bonus"
+            return self._text(key, **params)
         if req.kind == RequestKind.TIMER:
-            return f"{kid} demande un minuteur de {duration_label(req.proposed)}"
-        duration = "" if req.proposed is None else f" {duration_label(req.proposed)}"
+            return self._text("request.timer", kid=params["kid"], duration=params["duration"])
         if req.service is not None:
-            service = self.service_name(req.service)
-            what = f"{duration} de {service}" if duration else f" {service}"
-        else:
-            what = duration
+            params["service"] = self.service_name(req.service)
+        parts = [p for p in ("duration", "service", "resource") if p in params]
         if req.proposed is None:
-            if req.service is None and resource is not None:
-                what = f" {resource}"
-                on = ""
-            return f"{kid} demande{what}{on} jusqu'au prochain changement"
-        return f"{kid} demande{what}{on}"
+            # Ni la durée ni la ressource seule : « jusqu'au prochain changement ».
+            return self._text("request.open." + "_".join([*parts, "until"]), **params)
+        return self._text("request.open." + "_".join(parts), **params)
+
+    def request_choices(self, req: TimeRequest) -> list[tuple[str, str]]:
+        """Boutons (choix, titre) de la demande, dans la langue système de HA."""
+        return action_choices(req, server_language(self._hass))
 
     async def request_time(
         self,
@@ -799,7 +817,7 @@ class ParentalEngine:
             raise _invalid(err.key) from err
         message = self.request_message(req)
         if self._decisions.simulation:
-            message = SIMULATION_PREFIX + message
+            message = self._text("simulation.prefix") + message
         data = {
             "tag": request_tag(req.id),
             # Toucher la notification ouvre l'écran « Demandes » (iOS : `url`, Android : `clickAction`).
@@ -807,7 +825,7 @@ class ParentalEngine:
             "clickAction": f"/{REQUESTS_PANEL_PATH}",
             "actions": [
                 {"action": f"PARENTAL_REQ:{req.id}:{req.token}:{choice}", "title": title}
-                for choice, title in action_choices(req)
+                for choice, title in self.request_choices(req)
             ],
         }
         for target in cfg.request_notify:
@@ -823,7 +841,7 @@ class ParentalEngine:
         for target in cfg.request_notify:
             self._schedule(
                 self._send_notify(
-                    target, "clear_notification", {"tag": request_tag(req.id)}, title=None
+                    target, "clear_notification", {"tag": request_tag(req.id)}, title=False
                 )
             )
 
@@ -848,7 +866,9 @@ class ParentalEngine:
         req = self._requests.claim(request_id, token, dt_util.now())
         if req is None:
             return None
-        status, granted, reason = RequestStatus.FAILED, None, "Action impossible"
+        status, granted, reason = (
+            RequestStatus.FAILED, None, self._text("request.reason.impossible")
+        )
         try:
             status, granted, reason = await self._apply_answer(req, choice)
         finally:
@@ -858,20 +878,22 @@ class ParentalEngine:
                 granted=granted, reason=reason, answered_by=answered_by,
             )
             self.clear_request_notification(req)
-            name = self._kid_name(req.kid_id)
+            who = {"kid": self._kid_name(req.kid_id), "parent": answered_by}
             if status == RequestStatus.REFUSED:
-                line = f"Demande de {name} refusée par {answered_by}"
+                line = self._text("log.refused", **who)
             elif status == RequestStatus.FAILED:
-                line = f"Demande de {name} acceptée par {answered_by}, mais impossible : {reason}"
+                line = self._text("log.failed", **who, reason=reason)
+            elif req.kind == RequestKind.HOMEWORK:
+                line = self._text("log.accepted", **who)
+            elif granted is None:
+                line = self._text("log.accepted_until", **who)
             else:
-                line = f"Demande de {name} acceptée par {answered_by}"
-                if req.kind != RequestKind.HOMEWORK:
-                    line += " : " + (
-                        "jusqu'au prochain changement"
-                        if granted is None
-                        else duration_label(granted)
-                    )
-            async_log_entry(self._hass, "Contrôle parental", line, domain=DOMAIN)
+                line = self._text(
+                    "log.accepted_duration",
+                    **who,
+                    duration=duration_label(granted, server_language(self._hass)),
+                )
+            async_log_entry(self._hass, self._text("notify.title"), line, domain=DOMAIN)
             async_dispatcher_send(self._hass, SIGNAL_UPDATE)
         return status
 
@@ -883,13 +905,13 @@ class ParentalEngine:
             return RequestStatus.REFUSED, None, None
         if req.kind == RequestKind.HOMEWORK:
             if choice != "accept":
-                return RequestStatus.FAILED, None, "Choix inconnu"
+                return RequestStatus.FAILED, None, self._text("request.reason.unknown_choice")
             minutes = None
         else:
             # Comparaison de chaînes : ni « 01 », ni chiffres d'autres écritures.
             indexes = {str(i): i for i in range(len(req.options))}
             if choice not in indexes:
-                return RequestStatus.FAILED, None, "Choix inconnu"
+                return RequestStatus.FAILED, None, self._text("request.reason.unknown_choice")
             minutes = req.options[indexes[choice]]
         kid_id = None if req.resource_id else req.kid_id
         try:
@@ -909,7 +931,7 @@ class ParentalEngine:
                         await self.cancel_exception(exc_id)
                     else:
                         _LOGGER.debug(
-                            "Demande %s : exception %s ignorée (absente ou autre cible)",
+                            "Request %s: exception %s ignored (missing or other target)",
                             req.id, exc_id,
                         )
                 await self.add_exception(target, True, minutes)
@@ -924,7 +946,7 @@ class ParentalEngine:
         except ServiceValidationError as err:
             return RequestStatus.FAILED, None, str(err) or err.translation_key
         except (KeyError, ValueError):
-            return RequestStatus.FAILED, None, "Action impossible"
+            return RequestStatus.FAILED, None, self._text("request.reason.impossible")
         return RequestStatus.ACCEPTED, minutes, None
 
     def _expire_requests(self, now: datetime) -> None:
@@ -933,8 +955,8 @@ class ParentalEngine:
             self.clear_request_notification(req)
             async_log_entry(
                 self._hass,
-                "Contrôle parental",
-                f"Demande de {self._kid_name(req.kid_id)} sans réponse",
+                self._text("notify.title"),
+                self._text("log.expired", kid=self._kid_name(req.kid_id)),
                 domain=DOMAIN,
             )
         if expired:
@@ -1098,7 +1120,7 @@ class ParentalEngine:
                 try:
                     await adapter.force_close()
                 except Exception as err:  # noqa: BLE001 - un adaptateur n'arrête pas les autres
-                    _LOGGER.error("%s : échec de la pause : %s", adapter.resource.name, err)
+                    _LOGGER.error("%s: pause failed: %s", adapter.resource.name, err)
         await self.async_evaluate("pause")
 
     async def set_simulation(self, on: bool) -> None:

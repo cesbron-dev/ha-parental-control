@@ -144,8 +144,8 @@ MIXED_TV = [
         {"kind": "adguard_services", "device_id": "adguard_google_tv"},
         {"kind": "adguard_services", "device_id": "adguard_chromecast_vpn"}]},
 ]
-NINTENDO_ALONE = r"^resources\[0\]\.devices : une console Nintendo ne se regroupe pas$"
-AT_LEAST_ONE = r"^resources\[0\]\.devices : au moins une intégration$"
+NINTENDO_ALONE = r"^resources\[0\]\.devices: a Nintendo console cannot be grouped$"
+AT_LEAST_ONE = r"^resources\[0\]\.devices: at least one integration$"
 SWITCH = {"kind": "nintendo", "device_id": "dev", "limit_entity": "number.l",
           "remaining_entity": "sensor.r", "used_entity": "sensor.u"}
 
@@ -221,14 +221,14 @@ def test_empty_physical_device_accepted_if_another_has_integration():
 @pytest.mark.parametrize(
     ("resource", "path"),
     [
-        (_v2_resource("pas une liste"), r"resources\[0\]\.devices : liste attendue"),
-        (_v2_resource([{"integrations": []}]), r"resources\[0\]\.devices\[0\]\.name : texte"),
+        (_v2_resource("pas une liste"), r"resources\[0\]\.devices: list expected"),
+        (_v2_resource([{"integrations": []}]), r"resources\[0\]\.devices\[0\]\.name: non-empty text"),
         (_v2_resource([{"name": "A", "integrations": [{"kind": "xbox"}]}]),
-         r"resources\[0\]\.devices\[0\]\.integrations\[0\]\.kind : valeur inconnue"),
+         r"resources\[0\]\.devices\[0\]\.integrations\[0\]\.kind: unknown value"),
         (_v2_resource([*MIXED_TV, {"name": "B", "integrations": [{"kind": "media_player"}]}]),
-         r"resources\[0\]\.devices\[2\]\.integrations\[0\]\.entity_id : texte"),
+         r"resources\[0\]\.devices\[2\]\.integrations\[0\]\.entity_id: non-empty text"),
         (_v2_resource([{"name": "S", "integrations": [{**SWITCH, "used_entity": ""}]}]),
-         r"resources\[0\]\.devices\[0\]\.integrations\[0\]\.used_entity : texte"),
+         r"resources\[0\]\.devices\[0\]\.integrations\[0\]\.used_entity: non-empty text"),
     ],
 )
 def test_v2_error_paths(resource, path):
@@ -252,14 +252,14 @@ def test_v2_round_trip():
 def test_unsupported_version_rejected(version):
     d = ex()
     d["version"] = version
-    with pytest.raises(ConfigError, match=rf"^version : version non prise en charge : {version!r}"):
+    with pytest.raises(ConfigError, match=rf"^version: unsupported version: {version!r}"):
         parse_config(d)
 
 
 def test_missing_version_rejected():
     d = ex()
     del d["version"]
-    with pytest.raises(ConfigError, match=r"^version : version non prise en charge : None"):
+    with pytest.raises(ConfigError, match=r"^version: unsupported version: None"):
         parse_config(d)
 
 
@@ -291,9 +291,9 @@ def test_switch_integration_parsed_and_counted() -> None:
 
 def test_switch_integration_validation() -> None:
     path = "resources[3].devices[0].integrations[0]"
-    with pytest.raises(ConfigError, match=re.escape(f"{path}.entity_id : entité switch.* attendue")):
+    with pytest.raises(ConfigError, match=re.escape(f"{path}.entity_id: switch.* entity expected")):
         parse_config(_with_switch({"kind": "switch", "entity_id": "light.lampe"}))
-    with pytest.raises(ConfigError, match=re.escape(f"{path}.turn_on_when_allowed : booléen attendu")):
+    with pytest.raises(ConfigError, match=re.escape(f"{path}.turn_on_when_allowed: boolean expected")):
         parse_config(_with_switch({"kind": "switch", "entity_id": "switch.x",
                                    "turn_on_when_allowed": "oui"}))
 
@@ -427,7 +427,7 @@ def test_client_config_rejects_unknown_service():
 def test_client_config_rejects_unknown_kid_service():
     d = family_config_dict()
     d["kids"][0]["on_demand_remove"] = ["nope"]
-    with pytest.raises(ConfigError, match=r"kids\[0\]\.on_demand_remove : service inconnu : .nope."):
+    with pytest.raises(ConfigError, match=r"kids\[0\]\.on_demand_remove: unknown service: .nope."):
         parse_client_config(d)
 
 

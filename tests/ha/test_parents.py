@@ -88,7 +88,7 @@ async def test_ambiguous_device_not_trusted(
     config = cfg([JULIE], {JULIE: users["julie"].id})
     with caplog.at_level(logging.WARNING):
         assert trusted_phone_owners(hass, config) == set()
-    assert "mobile_app_iphone_de_julie" in caplog.text and "plusieurs" in caplog.text
+    assert "mobile_app_iphone_de_julie" in caplog.text and "several mobile_app devices" in caplog.text
 
 
 async def test_ambiguous_warning_logged_once(
@@ -104,7 +104,7 @@ async def test_ambiguous_warning_logged_once(
         for _ in range(3):
             assert trusted_phone_owners(hass, config) == set()
             assert not await is_parent(hass, config, users["julie"].id)
-    warnings = [r.getMessage() for r in caplog.records if "plusieurs" in r.getMessage()]
+    warnings = [r.getMessage() for r in caplog.records if "several mobile_app devices" in r.getMessage()]
     assert len(warnings) == 2
     assert any(JULIE in w for w in warnings) and any(MARC in w for w in warnings)
 
@@ -286,7 +286,7 @@ async def test_migration_binds_unique_owner(
         await migrate_phone_owners(hass, engine)
     assert engine.config.request_notify_owners == {JULIE: users["julie"].id}
     assert engine.saved == 1
-    assert f"Téléphone {JULIE} associé à l'utilisateur Julie" in caplog.text
+    assert f"Phone {JULIE} bound to user Julie" in caplog.text
 
 
 async def test_migration_logs_user_id_when_user_unknown(
@@ -297,7 +297,7 @@ async def test_migration_logs_user_id_when_user_unknown(
     with caplog.at_level(logging.INFO):
         await migrate_phone_owners(hass, engine)
     assert engine.config.request_notify_owners == {JULIE: "inconnu"}
-    assert f"Téléphone {JULIE} associé à l'utilisateur inconnu" in caplog.text
+    assert f"Phone {JULIE} bound to user inconnu" in caplog.text
 
 
 async def test_migration_skips_ambiguous_and_missing(hass, users) -> None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 from datetime import timedelta
 
+import pytest
+
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
@@ -196,7 +198,7 @@ async def test_unavailable_switch_no_crash(hass, freezer, services, caplog) -> N
     for _ in range(3):
         await tick(hass, freezer)
     assert services.of("switch", "turn_on") == []
-    assert caplog.text.count(f"{SWITCH} indisponible") == 1
+    assert caplog.text.count(f"{SWITCH} unavailable") == 1
 
 
 async def test_missing_switch_no_crash(hass, freezer, services) -> None:
@@ -258,7 +260,7 @@ async def test_issue_logged_once(hass, freezer, services, caplog) -> None:
     registry = er.async_get(hass)
     registry.async_update_entity(SWITCH, labels={"ecran", "autre"})  # reconstruction, même problème
     await hass.async_block_till_done()
-    assert caplog.text.count(f"{SWITCH} : Écran ignoré (aucune cible") == 1
+    assert caplog.text.count(f"{SWITCH}: Écran ignored (no target") == 1
 
 
 async def test_simulation_records_without_calling(hass, freezer, services, caplog) -> None:
@@ -268,7 +270,7 @@ async def test_simulation_records_without_calling(hass, freezer, services, caplo
     await engine.set_simulation(True)
     await tick(hass, freezer, 60)  # 16:30 : bloqué
     assert services.of("switch", "turn_on") == []
-    assert "Simulation : Prise : allumer (bloquer Écran)" in caplog.text
+    assert "Simulation: Prise : allumer (bloquer Écran)" in caplog.text
 
 
 async def test_label_switches_for_websocket(hass, freezer, services) -> None:
@@ -328,7 +330,7 @@ async def test_simulation_silent_when_already_in_wanted_state(
     engine = await start(hass, freezer, services, BLOCKED, label_config(services=services))
     await engine.set_simulation(True)
     await engine.async_evaluate("test")
-    assert "Simulation : " not in caplog.text
+    assert "Simulation: " not in caplog.text
 
 
 async def test_state_exposes_label_services(hass, freezer, services) -> None:
@@ -423,3 +425,9 @@ async def test_discover_first_service_wins(hass) -> None:
     switches, issues = discover(hass, parse_config(config))
     assert switches == [LabelSwitch(SWITCH, "svc_b", False, (("kid", "hugo"),))]
     assert issues == []
+
+
+@pytest.fixture(autouse=True)
+def _french_system_language(hass) -> None:
+    """Textes du serveur (notifications, journal de bord) vérifiés en français."""
+    hass.config.language = "fr"

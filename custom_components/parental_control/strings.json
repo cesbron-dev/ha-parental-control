@@ -123,6 +123,81 @@
     },
     "invalid_request": {
       "message": "Invalid request."
+    },
+    "config_object_expected": {
+      "message": "{path}: object expected"
+    },
+    "config_list_expected": {
+      "message": "{path}: list expected"
+    },
+    "config_text_expected": {
+      "message": "{path}: non-empty text expected"
+    },
+    "config_integer_expected": {
+      "message": "{path}: non-negative integer expected"
+    },
+    "config_boolean_expected": {
+      "message": "{path}: boolean expected"
+    },
+    "config_unknown_value": {
+      "message": "{path}: unknown value {value} (expected: {expected})"
+    },
+    "config_invalid_time": {
+      "message": "{path}: invalid time {value} (format HH:MM)"
+    },
+    "config_segment_required": {
+      "message": "{path}: at least one segment is required"
+    },
+    "config_first_segment_midnight": {
+      "message": "{path}: the first segment must start at 00:00"
+    },
+    "config_segments_not_increasing": {
+      "message": "{path}: start times must be strictly increasing"
+    },
+    "config_profile_required": {
+      "message": "{path}: the “{profile}” profile is required"
+    },
+    "config_switch_entity_expected": {
+      "message": "{path}: switch.* entity expected"
+    },
+    "config_integration_required": {
+      "message": "{path}: at least one integration"
+    },
+    "config_nintendo_alone": {
+      "message": "{path}: a Nintendo console cannot be grouped"
+    },
+    "config_duplicate_id": {
+      "message": "{path}: duplicate identifier: {id}"
+    },
+    "config_duplicate_label": {
+      "message": "{path}: duplicate label: {label}"
+    },
+    "config_label_already_attached": {
+      "message": "{path}: label {label} already attached to service {service}"
+    },
+    "config_label_is_target": {
+      "message": "{path}: label {label} is also the target label of {target}"
+    },
+    "config_target_label_used": {
+      "message": "{path}: target label already used: {label}"
+    },
+    "config_unknown_service": {
+      "message": "{path}: unknown service: {service}"
+    },
+    "config_unknown_kid": {
+      "message": "{path}: unknown child: {kid}"
+    },
+    "config_unknown_resource": {
+      "message": "{path}: unknown resource: {resource}"
+    },
+    "config_unsupported_version": {
+      "message": "{path}: unsupported version: {version}"
+    },
+    "config_not_in_request_notify": {
+      "message": "{path}: target missing from request_notify"
+    },
+    "config_phone_not_found": {
+      "message": "{path}: {target}: device not found or ambiguous"
     }
   },
   "services": {

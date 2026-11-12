@@ -21,6 +21,7 @@ from homeassistant.helpers.selector import (
 
 from .const import CONF_CODE, CONF_CODE_HASH, DOMAIN
 from .security import hash_code
+from .texts import text
 
 _CODE_RE = re.compile(r"^\d{4,8}$")
 
@@ -54,7 +55,7 @@ class ParentalControlConfigFlow(ConfigFlow, domain=DOMAIN):
             if _valid_code(code):
                 code_hash = await self.hass.async_add_executor_job(hash_code, code)
                 return self.async_create_entry(
-                    title="Contrôle parental", data={CONF_CODE_HASH: code_hash}
+                    title=text(self.hass, "notify.title"), data={CONF_CODE_HASH: code_hash}
                 )
             errors[CONF_CODE] = "invalid_code"
 

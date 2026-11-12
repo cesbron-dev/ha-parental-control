@@ -56,6 +56,6 @@ async def fetch_all_day_events(
                 continue
             result.append(AllDayEvent(str(event.get("summary", "")), ev_start, ev_end))
     except Exception as err:  # noqa: BLE001 - tout échec : lecture précédente ou repli
-        _LOGGER.warning("Lecture du calendrier %s impossible : %s", entity_id, err)
+        _LOGGER.warning("Cannot read calendar %s: %s", entity_id, err)
         return None
     return result

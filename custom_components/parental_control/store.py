@@ -12,6 +12,7 @@ from .const import DOMAIN, STORE_VERSION
 from .core.config_io import ConfigError, dump_config, parse_config
 from .core.decisions import Decisions
 from .core.model import Config
+from .texts import text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,11 +51,11 @@ class ParentalStore:
                     self.owners_migration_pending = "request_notify_owners" not in raw_cfg
             except ConfigError as err:
                 # Les décisions restent valables : une config corrigée les retrouvera.
-                _LOGGER.error("Configuration enregistrée invalide, moteur inactif : %s", err)
+                _LOGGER.error("Stored configuration invalid, engine inactive: %s", err)
                 persistent_notification.async_create(
                     self._hass,
-                    "Contrôle parental : configuration invalide, moteur inactif",
-                    title="Contrôle parental",
+                    text(self._hass, "invalid_config.message"),
+                    title=text(self._hass, "notify.title"),
                     notification_id=INVALID_CONFIG_NOTIFICATION,
                 )
         return cfg, dec

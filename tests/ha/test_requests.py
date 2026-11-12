@@ -89,6 +89,27 @@ async def test_request_sends_actionable_notification_to_each_parent(
         assert actions[0]["action"].endswith(":0")
 
 
+@pytest.mark.parametrize(
+    ("language", "message", "first", "last"),
+    [
+        ("fr", "Hugo demande 30 min de YouTube sur iPhone Hugo", "Accepter 30 min", "Refuser"),
+        ("en", "Hugo asks for 30 min of YouTube on iPhone Hugo", "Accept 30 min", "Refuse"),
+    ],
+)
+async def test_request_notification_follows_system_language(
+    make_env, julie, catalog, language, message, first, last
+) -> None:
+    env = await _env(make_env)
+    env.hass.config.language = language
+    await env.call("request", OPEN_CALL, env.kid_ctx)
+    await env.hass.async_block_till_done()
+    (call,) = julie
+    assert call.data["message"] == message
+    actions = call.data["data"]["actions"]
+    assert actions[0]["title"] == first and actions[-1]["title"] == last
+    assert call.data["title"] == ("Contrôle parental" if language == "fr" else "Parental control")
+
+
 async def test_request_needs_no_code(make_env, julie) -> None:
     env = await _env(make_env)
     await env.call("request", OPEN_CALL, env.kid_ctx)
@@ -359,7 +380,7 @@ async def test_unauthorized_answer_logs_without_token(
     req_id = await _ask(env)
     req = env.engine.requests.get(req_id)
     await _answer(env, _actions(julie)["0"], env.kid.id)
-    assert f"Réponse à la demande {req_id} ignorée" in caplog.text
+    assert f"Answer to request {req_id} ignored" in caplog.text
     assert req.token not in caplog.text
 
 
@@ -543,9 +564,9 @@ async def test_answer_from_recreated_device_refused(
         await _answer(env, _actions(julie)["0"], user_id)
         assert req.status == "pending"
     assert env.engine.decisions.exceptions == []
-    assert f"Réponse à la demande {req_id} ignorée" in caplog.text
+    assert f"Answer to request {req_id} ignored" in caplog.text
     # Julie a toujours son téléphone dans la liste : c'est la reconnaissance qui échoue.
-    assert "n'est pas le propriétaire reconnu d'un téléphone de la liste des demandes" in caplog.text
+    assert "is not the recognized owner of a phone in the request list" in caplog.text
 
 
 async def test_answer_after_config_removed_kid(make_env, julie, julie_user) -> None:
@@ -599,7 +620,7 @@ async def test_duplicate_device_name_trusted_for_nobody(
     env = await _parents_env(make_env, julie_user, marc=False)
     add_phone(env.hass, "iPhone de Julie", env.kid.id)
     assert trusted_phone_owners(env.hass, env.engine.config) == set()
-    assert "mobile_app_iphone_de_julie" in caplog.text and "plusieurs" in caplog.text
+    assert "mobile_app_iphone_de_julie" in caplog.text and "several mobile_app devices" in caplog.text
     req_id = await _ask(env)
     req = env.engine.requests.get(req_id)
     for user_id in (env.kid.id, julie_user.id):
@@ -800,3 +821,9 @@ async def test_requests_screen_unknown_choice_keeps_request(
     assert env.engine.requests.get(req_id).status == "pending"
     resp = await _ws_answer(client, "inconnue", "0")
     assert resp["error"]["code"] == "not_pending"
+
+
+@pytest.fixture(autouse=True)
+def _french_system_language(hass) -> None:
+    """Textes du serveur (notifications, journal de bord) vérifiés en français."""
+    hass.config.language = "fr"

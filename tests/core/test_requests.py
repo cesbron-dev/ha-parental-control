@@ -128,25 +128,36 @@ def test_visible_keeps_results_five_minutes():
 
 def test_action_choices_open():
     req = make(RequestBook())
-    assert action_choices(req) == [
+    assert action_choices(req, "fr") == [
         ("0", "Accepter 30 min"),
         ("1", "15 min"),
         ("2", "Jusqu'au prochain changement"),
         ("refuse", "Refuser"),
     ]
+    assert action_choices(req) == [
+        ("0", "Accept 30 min"),
+        ("1", "15 min"),
+        ("2", "Until the next change"),
+        ("refuse", "Refuse"),
+    ]
 
 
 def test_action_choices_open_without_proposal():
     req = make(RequestBook(), proposed=None, options=(None,))
-    assert action_choices(req) == [
+    assert action_choices(req, "fr") == [
         ("0", "Accepter jusqu'au prochain changement"),
         ("refuse", "Refuser"),
+    ]
+    assert action_choices(req, "en") == [
+        ("0", "Accept until the next change"),
+        ("refuse", "Refuse"),
     ]
 
 
 def test_action_choices_homework():
     req = make(RequestBook(), kind=RequestKind.HOMEWORK, proposed=None, options=())
-    assert action_choices(req) == [("accept", "Accepter"), ("refuse", "Refuser")]
+    assert action_choices(req, "fr") == [("accept", "Accepter"), ("refuse", "Refuser")]
+    assert action_choices(req, "en") == [("accept", "Accept"), ("refuse", "Refuse")]
 
 
 def test_duration_label():
@@ -154,7 +165,9 @@ def test_duration_label():
     assert duration_label(60) == "1 h"
     assert duration_label(90) == "1 h 30"
     assert duration_label(120) == "2 h"
-    assert duration_label(None) == "Jusqu'au prochain changement"
+    assert duration_label(None) == "Until the next change"
+    assert duration_label(None, "fr") == "Jusqu'au prochain changement"
+    assert duration_label(65, "fr-CA") == "1 h 05"
 
 
 def test_repr_does_not_leak_token():

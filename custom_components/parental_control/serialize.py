@@ -13,7 +13,7 @@ from .core.decisions import ManualException
 from .core.display import exception_end, kid_timeline
 from .core.label_services import switch_blocked
 from .core.model import ResourceKind
-from .core.requests import RequestStatus, action_choices
+from .core.requests import RequestStatus
 
 if TYPE_CHECKING:
     from .engine import ParentalEngine
@@ -178,7 +178,7 @@ def serialize_requests(engine: ParentalEngine, *, can_answer: bool) -> dict[str,
                 "reason": r.reason,
                 "answered_by": r.answered_by,
                 # Mêmes boutons que la notification ; seul l'identifiant du choix est exposé.
-                "choices": [list(c) for c in action_choices(r)] if pending else [],
+                "choices": [list(c) for c in engine.request_choices(r)] if pending else [],
             }
         )
     return {"can_answer": can_answer, "requests": requests, "now": now.isoformat()}

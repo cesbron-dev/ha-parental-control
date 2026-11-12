@@ -123,6 +123,81 @@
     },
     "invalid_request": {
       "message": "Demande invalide."
+    },
+    "config_object_expected": {
+      "message": "{path} : objet attendu"
+    },
+    "config_list_expected": {
+      "message": "{path} : liste attendue"
+    },
+    "config_text_expected": {
+      "message": "{path} : texte non vide attendu"
+    },
+    "config_integer_expected": {
+      "message": "{path} : entier positif ou nul attendu"
+    },
+    "config_boolean_expected": {
+      "message": "{path} : booléen attendu"
+    },
+    "config_unknown_value": {
+      "message": "{path} : valeur inconnue {value} (attendu : {expected})"
+    },
+    "config_invalid_time": {
+      "message": "{path} : heure invalide {value} (format HH:MM)"
+    },
+    "config_segment_required": {
+      "message": "{path} : au moins un segment est requis"
+    },
+    "config_first_segment_midnight": {
+      "message": "{path} : le premier segment doit commencer à 00:00"
+    },
+    "config_segments_not_increasing": {
+      "message": "{path} : les heures de début doivent être strictement croissantes"
+    },
+    "config_profile_required": {
+      "message": "{path} : le profil « {profile} » est requis"
+    },
+    "config_switch_entity_expected": {
+      "message": "{path} : entité switch.* attendue"
+    },
+    "config_integration_required": {
+      "message": "{path} : au moins une intégration"
+    },
+    "config_nintendo_alone": {
+      "message": "{path} : une console Nintendo ne se regroupe pas"
+    },
+    "config_duplicate_id": {
+      "message": "{path} : identifiant en double : {id}"
+    },
+    "config_duplicate_label": {
+      "message": "{path} : label en double : {label}"
+    },
+    "config_label_already_attached": {
+      "message": "{path} : label {label} déjà rattaché au service {service}"
+    },
+    "config_label_is_target": {
+      "message": "{path} : le label {label} est aussi le label de cible de {target}"
+    },
+    "config_target_label_used": {
+      "message": "{path} : label de cible déjà utilisé : {label}"
+    },
+    "config_unknown_service": {
+      "message": "{path} : service inconnu : {service}"
+    },
+    "config_unknown_kid": {
+      "message": "{path} : enfant inconnu : {kid}"
+    },
+    "config_unknown_resource": {
+      "message": "{path} : ressource inconnue : {resource}"
+    },
+    "config_unsupported_version": {
+      "message": "{path} : version non prise en charge : {version}"
+    },
+    "config_not_in_request_notify": {
+      "message": "{path} : cible absente de request_notify"
+    },
+    "config_phone_not_found": {
+      "message": "{path} : {target} — appareil introuvable ou en double"
     }
   },
   "services": {

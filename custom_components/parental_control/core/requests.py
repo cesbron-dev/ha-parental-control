@@ -10,15 +10,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 
+from .i18n import DEFAULT_LANGUAGE, duration_text, msg
+
 REQUEST_TIMEOUT = timedelta(minutes=15)
 RESULT_DISPLAY = timedelta(minutes=5)
 MAX_OPTIONS = 6
 MIN_MINUTES = 1
 MAX_MINUTES = 240
 MAX_PENDING_PER_KID = 3  # contre l'envoi en rafale vers les téléphones des parents
-
-UNTIL_NEXT_CHANGE = "Jusqu'au prochain changement"
-
 
 class RequestKind(StrEnum):
     OPEN = "open"
@@ -196,28 +195,24 @@ class RequestBook:
         return list(self._requests.values())
 
 
-def duration_label(minutes: int | None) -> str:
-    if minutes is None:
-        return UNTIL_NEXT_CHANGE
-    hours, mins = divmod(minutes, 60)
-    if hours == 0:
-        return f"{mins} min"
-    if mins == 0:
-        return f"{hours} h"
-    return f"{hours} h {mins:02d}"
+def duration_label(minutes: int | None, lang: str = DEFAULT_LANGUAGE) -> str:
+    return duration_text(lang, minutes)
 
 
-def action_choices(req: TimeRequest) -> list[tuple[str, str]]:
-    """Paires (choix, titre) des boutons de la notification."""
+def action_choices(req: TimeRequest, lang: str = DEFAULT_LANGUAGE) -> list[tuple[str, str]]:
+    """Paires (choix, titre) des boutons de la notification, dans la langue `lang`."""
+    refuse = ("refuse", msg(lang, "request.refuse"))
     if req.kind == RequestKind.HOMEWORK:
-        return [("accept", "Accepter"), ("refuse", "Refuser")]
+        return [("accept", msg(lang, "request.accept")), refuse]
     choices: list[tuple[str, str]] = []
     for i, minutes in enumerate(req.options):
-        title = duration_label(minutes)
+        title = duration_label(minutes, lang)
         if i == 0 and (req.proposed is not None or minutes is None):
-            title = "Accepter " + (
-                "jusqu'au prochain changement" if minutes is None else title
+            title = (
+                msg(lang, "request.accept_until")
+                if minutes is None
+                else msg(lang, "request.accept_duration", duration=title)
             )
         choices.append((str(i), title))
-    choices.append(("refuse", "Refuser"))
+    choices.append(refuse)
     return choices

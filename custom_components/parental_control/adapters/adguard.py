@@ -16,6 +16,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from ..core.evaluator import ResourceState
+from ..texts import text
 from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
@@ -80,7 +81,7 @@ class AdGuardAdapter:
             if not self._missing_logged and ha_started(self.hass):
                 self._missing_logged = True
                 _LOGGER.warning(
-                    "%s : capteur AdGuard introuvable pour l'appareil %s, ignoré",
+                    "%s: AdGuard sensor not found for device %s, ignored",
                     self.label,
                     self._device_id,
                 )
@@ -93,9 +94,8 @@ class AdGuardAdapter:
         if state.attributes.get("use_global_blocked_services") and not self._global_logged:
             self._global_logged = True
             _LOGGER.warning(
-                "%s : le client AdGuard utilise les services bloqués globaux, sa liste "
-                "n'est pas appliquée ; désactivez « Utiliser les services bloqués "
-                "globaux » sur l'appareil",
+                "%s: the AdGuard client uses the global blocked services, its list "
+                "is not applied; turn off \"Use global blocked services\" on the device",
                 self.label,
             )
         return set(services)
@@ -137,9 +137,11 @@ class AdGuardAdapter:
         block, unblock, _ = plan
         lines = []
         if block:
-            lines.append(f"bloquerait {', '.join(block)} sur {self.label}")
+            lines.append(text(self.hass, "simulation.adguard_block", services=", ".join(block),
+                              label=self.label))
         if unblock:
-            lines.append(f"débloquerait {', '.join(unblock)} sur {self.label}")
+            lines.append(text(self.hass, "simulation.adguard_unblock", services=", ".join(unblock),
+                              label=self.label))
         return lines
 
     def describe_grant(self, minutes: int) -> list[str]:
@@ -162,7 +164,7 @@ class AdGuardAdapter:
             )
         except HomeAssistantError as err:
             _LOGGER.warning(
-                "%s : échec de l'écriture AdGuard (bloquer %s, débloquer %s) : %s",
+                "%s: AdGuard write failed (block %s, unblock %s): %s",
                 self.label,
                 block,
                 unblock,

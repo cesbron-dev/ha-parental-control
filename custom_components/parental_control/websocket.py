@@ -44,7 +44,7 @@ def _engine(
 ) -> ParentalEngine | None:
     entries = hass.config_entries.async_loaded_entries(DOMAIN)
     if not entries:
-        connection.send_error(msg["id"], "not_loaded", "Contrôle parental non chargé")
+        connection.send_error(msg["id"], "not_loaded", "Parental control is not loaded")
         return None
     return entries[0].runtime_data
 
@@ -61,7 +61,7 @@ async def _require_parent(
     """
     if await is_parent(hass, engine.config, connection.user.id):
         return True
-    connection.send_error(msg["id"], "unauthorized", "Réservé aux parents")
+    connection.send_error(msg["id"], "unauthorized", "Parents only")
     return False
 
 
@@ -123,7 +123,15 @@ async def ws_config_set(
         # Propriétaires des téléphones déterminés par le serveur, jamais repris du client.
         cfg = bind_owners(hass, parse_client_config(msg["config"]), engine.config, msg["rebind"])
     except ConfigError as err:
-        connection.send_error(msg["id"], "invalid_config", str(err))
+        # Message anglais pour les journaux ; le panneau traduit `translation_key`.
+        connection.send_error(
+            msg["id"],
+            "invalid_config",
+            str(err),
+            translation_domain=DOMAIN,
+            translation_key=f"config_{err.code}",
+            translation_placeholders={"path": err.path, **err.params},
+        )
         return
     await engine.set_config(cfg)
     connection.send_result(msg["id"], {"config": dump_config(cfg)})
@@ -260,19 +268,19 @@ async def ws_requests_answer(
     user_id = connection.user.id
     if not _can_answer(hass, engine, user_id):
         connection.send_error(
-            msg["id"], "unauthorized", "Seul un parent de la liste des demandes peut répondre"
+            msg["id"], "unauthorized", "Only a parent from the request list can answer"
         )
         return
     req = engine.requests.get(msg["request_id"])
     if req is None or req.status != RequestStatus.PENDING:
-        connection.send_error(msg["id"], "not_pending", "Demande déjà traitée ou expirée")
+        connection.send_error(msg["id"], "not_pending", "Request already answered or expired")
         return
     # Un choix inconnu ne doit pas consommer la demande (le moteur la marquerait « impossible »).
     if msg["choice"] not in dict(action_choices(req)):
-        connection.send_error(msg["id"], "invalid_choice", "Choix inconnu")
+        connection.send_error(msg["id"], "invalid_choice", "Unknown choice")
         return
     status = await engine.answer_request(req.id, req.token, msg["choice"], user_id)
     if status is None:  # expirée ou prise par l'autre parent entre-temps
-        connection.send_error(msg["id"], "not_pending", "Demande déjà traitée ou expirée")
+        connection.send_error(msg["id"], "not_pending", "Request already answered or expired")
         return
     connection.send_result(msg["id"], {"status": status.value})

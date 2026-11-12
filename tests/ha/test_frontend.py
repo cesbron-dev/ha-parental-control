@@ -97,9 +97,17 @@ async def test_registers_rules_panel_once(hass: HomeAssistant, http) -> None:
     await async_register_frontend(hass)  # rechargement : pas de second enregistrement (ValueError)
 
     panel = hass.data[DATA_PANELS]["parental-control"]
-    assert panel.sidebar_title == "Règles"
+    assert panel.sidebar_title == "Rules"
     assert panel.config["_panel_custom"]["name"] == "parental-control-panel"
     assert panel.config["_panel_custom"]["module_url"] == f"{_BASE}/panel.js"
+
+
+async def test_rules_panel_title_follows_system_language(hass: HomeAssistant, http) -> None:
+    from homeassistant.components.frontend import DATA_PANELS
+
+    hass.config.language = "fr-CA"
+    await async_register_frontend(hass)
+    assert hass.data[DATA_PANELS]["parental-control"].sidebar_title == "Règles"
 
 
 async def test_registers_requests_screen_for_everyone_off_sidebar(hass: HomeAssistant, http) -> None:

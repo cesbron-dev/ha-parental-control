@@ -53,8 +53,8 @@ def async_setup_request_listener(
         if user_id is None or user_id not in trusted_phone_owners(hass, cfg):
             # Jamais le jeton ni l'action complète dans le journal.
             _LOGGER.warning(
-                "Réponse à la demande %s ignorée : l'utilisateur %s n'est pas le propriétaire "
-                "reconnu d'un téléphone de la liste des demandes",
+                "Answer to request %s ignored: user %s is not the recognized owner "
+                "of a phone in the request list",
                 request_id,
                 user_id,
             )

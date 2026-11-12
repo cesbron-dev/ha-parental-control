@@ -79,7 +79,7 @@ async def _send(client, msg: dict) -> dict:
 def _assert_unauthorized(resp: dict) -> None:
     assert not resp["success"]
     assert "result" not in resp
-    assert resp["error"] == {"code": "unauthorized", "message": "Réservé aux parents"}
+    assert resp["error"] == {"code": "unauthorized", "message": "Parents only"}
 
 
 async def test_config_get_set_round_trip(hass, entry, hass_ws_client) -> None:
@@ -116,11 +116,14 @@ async def test_config_get_and_set_non_admin_rejected(hass, entry, hass_ws_client
 
 async def test_config_set_invalid_returns_error(hass, entry, hass_ws_client) -> None:
     client = await _client(hass, hass_ws_client, admin=True)
-    await client.send_json_auto_id({"type": "parental_control/config/set", "config": {"kids": 5}})
+    await client.send_json_auto_id({"type": "parental_control/config/set", "config": {"version": 3, "kids": 5}})
     resp = await client.receive_json()
     assert not resp["success"]
     assert resp["error"]["code"] == "invalid_config"
-    assert resp["error"]["message"]
+    assert resp["error"]["message"] == "kids: list expected"
+    assert resp["error"]["translation_domain"] == "parental_control"
+    assert resp["error"]["translation_key"] == "config_list_expected"
+    assert resp["error"]["translation_placeholders"] == {"path": "kids"}
 
 
 async def test_state_and_not_loaded(hass, entry, hass_ws_client) -> None:

@@ -316,7 +316,7 @@ async def test_missing_entity_does_not_stop_other_resources(
     with caplog.at_level(logging.WARNING):
         await setup(hass, freezer, at(TUESDAY, 16, 30))
     assert services.entities("media_player", "turn_off") == [TV]
-    assert "introuvable" in caplog.text
+    assert "not found" in caplog.text
 
 
 async def test_adapter_exception_does_not_stop_other_resources(
@@ -1247,3 +1247,9 @@ async def test_on_demand_service_blocked_on_adguard_in_free_window(hass, freezer
     assert services.adguard.blocked == []
     await tick(hass, freezer, 11)
     assert services.adguard.blocked == ["youtube"]
+
+
+@pytest.fixture(autouse=True)
+def _french_system_language(hass) -> None:
+    """Textes du serveur (notifications, journal de bord) vérifiés en français."""
+    hass.config.language = "fr"
