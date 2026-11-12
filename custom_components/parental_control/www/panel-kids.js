@@ -146,13 +146,13 @@ export const kidsView = {
   // Pastilles d'une liste pour l'enfant, puis le champ « + Ajouter » (redessinées sur place après un ajout).
   _kidChips(kid, list) {
     const chips = L.serviceChips(this._draft, kid, list).map((c) => {
-      const name = L.serviceLabel(this._catalog, c.service).name;
+      const name = this._svcName(c.service);
       const title = c.common
         ? c.removed ? `Liste commune, autorisé pour ${kid.name} : rétablir` : `Liste commune : autoriser pour ${kid.name}`
         : `Propre à ${kid.name} : retirer`;
       const mark = c.removed ? "↺" : "✕";
       return `<button type="button" class="pill ${c.removed ? "off" : ""} ${c.common ? "" : "own"} ${this._svcClass(c.service)}" data-act="kid-svc" data-list="${list}" data-arg="${esc(c.service)}" title="${esc(title)}" aria-label="${esc(`${name} : ${title}`)}">
-        ${esc(name)}<span class="x" aria-hidden="true">${mark}</span></button>`;
+        ${this._svcIcon(c.service)}${esc(name)}<span class="x" aria-hidden="true">${mark}</span></button>`;
     }).join("");
     const taken = L.serviceChips(this._draft, kid, list).filter((c) => !c.removed).map((c) => c.service);
     return chips + this._serviceAdder(`kid-svc-${list}`, "add-kid-svc", list, taken);

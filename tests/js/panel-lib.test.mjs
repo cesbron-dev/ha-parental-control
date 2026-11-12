@@ -621,39 +621,114 @@ test("phoneRebind: offered only for unbound and changed, naming who will become 
 
 // --- Services par label HA -------------------------------------------------------------------
 
-test("isLabelService: préfixe label:", () => {
-  assert.equal(lib.isLabelService("label:youtube"), true);
-  assert.equal(lib.isLabelService("youtube"), false);
-  assert.equal(lib.isLabelService(undefined), false);
+// --- Services du parent ----------------------------------------------------------------------
+
+const withServices = () => {
+  const d = draft();
+  d.services = [
+    { id: "youtube", name: "YouTube", adguard: ["youtube"], labels: [] },
+    { id: "roblox", name: "Roblox", adguard: ["roblox"], labels: [{ label_id: "console", on_means_allowed: false }] },
+  ];
+  return d;
+};
+
+test("serviceId: identifiant tiré du nom, sans accents, unique", () => {
+  assert.equal(lib.serviceId("Jeux vidéo", []), "jeux_video");
+  assert.equal(lib.serviceId("Jeux vidéo", ["jeux_video"]), "jeux_video_2");
+  assert.equal(lib.serviceId("Jeux vidéo", ["jeux_video", "jeux_video_2"]), "jeux_video_3");
+  assert.equal(lib.serviceId("!!", []), "service");
+  assert.equal(lib.serviceId("  Réseaux   sociaux! ", []), "reseaux_sociaux");
 });
 
-test("toggleLabelService: ajoute (allumé = bloqué) puis retire", () => {
+test("addService: service vide ajouté, id renvoyé ; serviceNames", () => {
   const d = draft();
-  assert.equal(lib.toggleLabelService(d, "jeux"), true);
-  assert.deepEqual(d.label_services, [{ label_id: "jeux", on_means_allowed: false }]);
-  assert.equal(lib.toggleLabelService(d, "jeux"), true);
-  assert.deepEqual(d.label_services, []);
+  assert.equal(lib.addService(d, " Jeux vidéo "), "jeux_video");
+  assert.deepEqual(d.services, [{ id: "jeux_video", name: "Jeux vidéo", adguard: [], labels: [] }]);
+  assert.equal(lib.addService(d, "Jeux vidéo"), "jeux_video_2");
+  assert.deepEqual(lib.serviceNames(d), { jeux_video: "Jeux vidéo", jeux_video_2: "Jeux vidéo" });
+  assert.deepEqual(lib.serviceNames({}), {});
 });
 
-test("toggleLabelService: refuse un label déjà cible, sans rien changer", () => {
-  const d = draft();
+test("removeService: retiré du brouillon et de toutes les listes (défaut et enfants)", () => {
+  const d = withServices();
+  d.default_on_demand = ["youtube"];
+  d.default_leisure = ["roblox", "youtube"];
+  Object.assign(d.kids[0], { leisure_add: ["youtube"], leisure_remove: ["roblox", "youtube"],
+    on_demand_add: ["youtube"], on_demand_remove: ["youtube"] });
+  lib.removeService(d, "youtube");
+  assert.deepEqual(d.services.map((s) => s.id), ["roblox"]);
+  assert.deepEqual(d.default_leisure, ["roblox"]);
+  assert.deepEqual(d.default_on_demand, []);
+  const k = d.kids[0];
+  assert.deepEqual([k.leisure_add, k.leisure_remove, k.on_demand_add, k.on_demand_remove], [[], ["roblox"], [], []]);
+  lib.removeService(d, "absent"); // sans effet
+  assert.equal(d.services.length, 1);
+});
+
+test("renameService / setServiceIcon", () => {
+  const d = withServices();
+  assert.equal(lib.renameService(d, "youtube", "  Vidéos "), true);
+  assert.equal(d.services[0].name, "Vidéos");
+  assert.equal(d.services[0].id, "youtube", "l'id ne change pas");
+  assert.equal(lib.renameService(d, "youtube", "   "), false);
+  assert.equal(d.services[0].name, "Vidéos");
+  lib.setServiceIcon(d, "youtube", "mdi:youtube");
+  assert.equal(d.services[0].icon, "mdi:youtube");
+  lib.setServiceIcon(d, "youtube", "");
+  assert.equal("icon" in d.services[0], false, "sans icône, la clé disparaît");
+});
+
+test("toggleServiceAdguard: ajoute puis retire un service AdGuard", () => {
+  const d = withServices();
+  lib.toggleServiceAdguard(d, "roblox", "fortnite");
+  assert.deepEqual(d.services[1].adguard, ["roblox", "fortnite"]);
+  lib.toggleServiceAdguard(d, "roblox", "roblox");
+  assert.deepEqual(d.services[1].adguard, ["fortnite"]);
+});
+
+test("toggleServiceLabel puis setServiceLabelInverted ; re-toggle retire", () => {
+  const d = withServices();
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "tele_salon"), true);
+  lib.setServiceLabelInverted(d, "youtube", "tele_salon", true);
+  assert.deepEqual(d.services[0].labels, [{ label_id: "tele_salon", on_means_allowed: true }]);
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "tele_salon"), true);
+  assert.deepEqual(d.services[0].labels, []);
+});
+
+test("toggleServiceLabel: refuse un label d'un autre service ou de cible, sans rien changer", () => {
+  const d = withServices();
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "console"), false);
   d.kids[0].target_label = "hugo";
-  assert.equal(lib.toggleLabelService(d, "hugo"), false);
-  assert.equal(d.label_services, undefined);
-  d.resources[0].target_label = "tele";
-  assert.equal(lib.toggleLabelService(d, "tele"), false);
-  assert.equal(d.label_services, undefined);
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "hugo"), false);
+  assert.deepEqual(d.services[0].labels, []);
 });
 
-test("setLabelInverted: règle « Allumé = autorisé » d'un label de service", () => {
-  const d = draft();
-  lib.toggleLabelService(d, "jeux");
-  lib.setLabelInverted(d, "jeux", true);
-  assert.deepEqual(d.label_services, [{ label_id: "jeux", on_means_allowed: true }]);
-  lib.setLabelInverted(d, "jeux", false);
-  assert.equal(d.label_services[0].on_means_allowed, false);
-  lib.setLabelInverted(d, "absent", true);
-  assert.equal(d.label_services.length, 1);
+test("freeLabels: exclut les labels d'un autre service et de cible, garde ceux du service édité", () => {
+  const d = withServices();
+  d.kids[0].target_label = "hugo";
+  const labels = ["console", "hugo", "internet"].map((label_id) => ({ label_id, name: label_id }));
+  assert.deepEqual(lib.freeLabels(d, labels, "youtube").map((l) => l.label_id), ["internet"]);
+  assert.deepEqual(lib.freeLabels(d, labels, "roblox").map((l) => l.label_id), ["console", "internet"]);
+  assert.deepEqual(lib.freeLabels(d, null, "roblox"), []);
+});
+
+test("serviceSwitches: interrupteurs pilotés d'un label d'un service", () => {
+  const data = { switches: [
+    { entity_id: "switch.a", service: "jeux" }, { entity_id: "switch.a", service: "jeux" },
+    { entity_id: "switch.b", service: "jeux" }, { entity_id: "switch.c", service: "autre" },
+  ] };
+  const entities = { "switch.a": { labels: ["console"] }, "switch.b": { labels: ["pc"] } };
+  assert.deepEqual(lib.serviceSwitches(data, entities, "jeux", "console").map((s) => s.entity_id), ["switch.a"]);
+  assert.deepEqual(lib.serviceSwitches(data, entities, "jeux").map((s) => s.entity_id), ["switch.a", "switch.b"]);
+  // Labels des entités inconnus : tous les interrupteurs du service.
+  assert.deepEqual(lib.serviceSwitches(data, {}, "jeux", "console").map((s) => s.entity_id), ["switch.a", "switch.b"]);
+  assert.deepEqual(lib.serviceSwitches(null, {}, "jeux"), []);
+});
+
+test("anciennes fonctions des services par label retirées", () => {
+  for (const name of ["toggleLabelService", "setLabelInverted", "isLabelService", "LABEL_PREFIX"]) {
+    assert.equal(name in lib, false, name);
+  }
 });
 
 test("setTargetLabel: pose, remplace et retire (null) la cible", () => {
@@ -667,7 +742,7 @@ test("setTargetLabel: pose, remplace et retire (null) la cible", () => {
 
 test("setTargetLabel: refuse un label de service ou déjà pris par un autre", () => {
   const d = draft();
-  lib.toggleLabelService(d, "jeux");
+  d.services = [{ id: "jeux", name: "Jeux", adguard: [], labels: [{ label_id: "jeux", on_means_allowed: false }] }];
   assert.equal(lib.setTargetLabel(d.kids[0], "jeux", d), false);
   assert.notEqual(d.kids[0].target_label, "jeux");
   assert.equal(lib.setTargetLabel(d.kids[0], "hugo", d), true);
