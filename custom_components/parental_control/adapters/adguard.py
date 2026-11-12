@@ -16,8 +16,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from ..core.evaluator import ResourceState
-
-
 from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)

@@ -60,7 +60,6 @@ from .core.model import (
     ResourceKind,
     SegmentType,
 )
-
 from .core.requests import (
     RequestBook,
     RequestError,
@@ -658,7 +657,7 @@ class ParentalEngine:
             if kind == "kid":
                 message = f"{cfg.kid(ident).name} : fin des écrans dans {minutes} min"
             elif kind == "service":
-                message = (f"{service} sur {cfg.resource(ident).name} : "
+                message = (f"{self.service_name(service)} sur {cfg.resource(ident).name} : "
                            f"coupure dans {minutes} min")
             else:
                 message = f"{cfg.resource(ident).name} : coupure dans {minutes} min"

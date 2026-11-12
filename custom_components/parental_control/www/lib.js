@@ -250,6 +250,7 @@ export function serviceToggles(state, resourceId, only = null) {
   return ids.map((service) => ({
     service,
     label: serviceLabel(service, state.services),
+    icon: serviceIcon(service, state.services),
     open: !blocked.has(service),
     exceptions: (state.exceptions ?? [])
       .filter((e) => e.target?.resource_id === resourceId && e.target?.service === service)
@@ -319,6 +320,7 @@ export function kidServiceToggles(state, kidId, only = null) {
     return {
       service,
       label: serviceLabel(service, state.services),
+      icon: serviceIcon(service, state.services),
       open: openOnDevices && !blockedForKid,
       exceptions: (state.exceptions ?? [])
         .filter((e) => e.target?.service === service
