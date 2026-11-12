@@ -22,7 +22,7 @@
 - Un même identifiant AdGuard peut être dans plusieurs services ; bloqué dès qu'un service géré qui le contient est bloqué.
 - « Concerne AdGuard » = `service.adguard` non vide ; « concerne des interrupteurs » = `service.labels` non vide.
 - Chargement depuis le stockage (`parse_config`) : identifiants de service inconnus retirés des listes sans erreur. Config client (`parse_client_config`) : identifiant inconnu → `ConfigError`.
-- Tests : `cd /Users/olivier/dev/github.com/cesbron-dev/ha-parental-control && python -m pytest -q` et `node --test tests/js/`.
+- Tests : `cd /Users/olivier/dev/github.com/cesbron-dev/ha-parental-control && python -m pytest -q` et `node --test tests/js/*.test.mjs`.
 
 ## Review Focus
 
@@ -60,9 +60,9 @@
   - `test_legacy_label_services_key_ignored` : `label_services=[{"label_id":"internet"}]` présent → chargé sans erreur, `cfg.services == ()`.
   - `test_missing_default_leisure_is_empty` : pas de clé → `cfg.default_leisure == ()`.
   - Validation (`ConfigError`) : id en double ; `name` vide ; label dans deux services ; label rattaché ET `target_label` d'un enfant ; `adguard` non-liste ; `on_means_allowed` non booléen.
-- [ ] **Step 2:** `python -m pytest tests/core/test_config_io.py -q` → échecs attendus (ImportError / AttributeError).
+- [ ] **Step 2:** `.venv/bin/python -m pytest tests/core/test_config_io.py -q` → échecs attendus (ImportError / AttributeError).
 - [ ] **Step 3: Implémenter** le modèle puis `config_io` : `_parse_services`, `_check_labels(services, kids, resources)` adapté ; filtrage des identifiants inconnus via un paramètre interne `strict: bool` (`parse_config(data)` = non strict, `parse_client_config` = strict ; journaliser les retraits avec `logging.getLogger(__name__).info`). Mettre à jour toutes les fixtures / tests existants qui utilisent `label_services` ou `label:` pour la nouvelle forme (les tests de comportement par label des tâches suivantes les réécriront, ici seulement de quoi faire passer `tests/core/test_config_io.py`).
-- [ ] **Step 4:** `python -m pytest tests/core/test_config_io.py -q` → PASS.
+- [ ] **Step 4:** `.venv/bin/python -m pytest tests/core/test_config_io.py -q` → PASS.
 - [ ] **Step 5: Commit** `feat: services du parent dans le modèle et la configuration`.
 
 Note : à l'issue de cette tâche d'autres tests (évaluateur, HA) peuvent échouer par import ; c'est attendu, les tâches 2 à 4 les rétablissent. Ne pas les corriger ici au-delà des imports.
@@ -92,9 +92,9 @@ Règles (remplacent chaque `is_label_service(s)`) :
   - `test_opened_services_ignores_label_only` : exception ouverte sur `internet` (labels seuls) d'une ressource AdGuard → `opened_services == frozenset()`.
   - `test_unknown_service_exception_ignored` : exception sur `youtube` non déclaré → aucun effet, aucune erreur.
   - Adapter `tests/core/test_label_services.py` : services `label:internet` → service du parent `internet` avec `labels=(LabelLink("internet"),)` ; mêmes attentes qu'avant.
-- [ ] **Step 2:** `python -m pytest tests/core -q` → échecs attendus.
+- [ ] **Step 2:** `.venv/bin/python -m pytest tests/core -q` → échecs attendus.
 - [ ] **Step 3: Implémenter** les règles ci-dessus.
-- [ ] **Step 4:** `python -m pytest tests/core -q` → PASS.
+- [ ] **Step 4:** `.venv/bin/python -m pytest tests/core -q` → PASS.
 - [ ] **Step 5: Commit** `feat: évaluateur sur les services du parent`.
 
 ### Task 3: Adaptateur AdGuard, interrupteurs labellisés et moteur
@@ -123,7 +123,7 @@ Règles (remplacent chaque `is_label_service(s)`) :
   - `test_mixed_service_drives_adguard_and_switch` : service mixte dans les loisirs d'un enfant fermé, interrupteur avec label rattaché + label de cible de l'enfant → AdGuard bloque et l'interrupteur s'allume.
   - `test_per_label_on_means_allowed` : deux labels du même service, l'un inversé → un interrupteur allumé, l'autre éteint quand le service est bloqué.
   - Adapter les tests existants de `test_label_switches.py` / `test_engine.py` à la nouvelle config.
-- [ ] **Step 2:** `python -m pytest tests/ha/test_adapters.py tests/ha/test_label_switches.py tests/ha/test_engine.py -q` → échecs attendus.
+- [ ] **Step 2:** `.venv/bin/python -m pytest tests/ha/test_adapters.py tests/ha/test_label_switches.py tests/ha/test_engine.py -q` → échecs attendus.
 - [ ] **Step 3: Implémenter.**
 - [ ] **Step 4:** mêmes tests → PASS.
 - [ ] **Step 5: Commit** `feat: AdGuard et interrupteurs pilotés par les services du parent`.
@@ -147,9 +147,9 @@ Règles (remplacent chaque `is_label_service(s)`) :
   - `test_state_publishes_services` : `state["services"]["jeux"] == {"name":"Jeux vidéo","icon":"mdi:gamepad-variant","adguard":True,"labels":True}` ; pas de `service_names`.
   - `test_request_message_uses_service_name` : demande sur `jeux` → message contient « Jeux vidéo ».
   - Adapter les tests existants qui attendaient `service_names` ou `label:`.
-- [ ] **Step 2:** `python -m pytest tests/ha -q` → échecs attendus.
+- [ ] **Step 2:** `.venv/bin/python -m pytest tests/ha -q` → échecs attendus.
 - [ ] **Step 3: Implémenter.**
-- [ ] **Step 4:** `python -m pytest -q` (suite complète Python) → PASS, sortie propre.
+- [ ] **Step 4:** `.venv/bin/python -m pytest -q` (suite complète Python) → PASS, sortie propre.
 - [ ] **Step 5: Commit** `feat: état publié et catalogue pour les services du parent`.
 
 ### Task 5: Cartes (lib.js, editor-lib.js)
@@ -170,9 +170,9 @@ Règles (remplacent chaque `is_label_service(s)`) :
   - `serviceToggles` : service mixte sur appareil AdGuard affiché ; service à labels seuls non ciblé sur appareil AdGuard non affiché.
   - `kidServiceToggles` : service à labels → exceptions de tous les appareils de l'enfant.
   - Adapter les tests existants qui utilisaient `label:` et `service_names`.
-- [ ] **Step 2:** `node --test tests/js/` → échecs attendus.
+- [ ] **Step 2:** `node --test tests/js/*.test.mjs` → échecs attendus.
 - [ ] **Step 3: Implémenter.**
-- [ ] **Step 4:** `node --test tests/js/` → PASS.
+- [ ] **Step 4:** `node --test tests/js/*.test.mjs` → PASS.
 - [ ] **Step 5: Commit** `feat: cartes sur les services du parent`.
 
 ### Task 6: Panneau Règles — liste et édition des services
@@ -206,7 +206,7 @@ Règles (remplacent chaque `is_label_service(s)`) :
   - Adapter les tests des fonctions supprimées.
 - [ ] **Step 2:** `node --test tests/js/panel-lib.test.mjs` → échecs attendus.
 - [ ] **Step 3: Implémenter** `panel-lib.js` puis l'UI.
-- [ ] **Step 4:** `node --test tests/js/` → PASS ; ouvrir le panneau n'est pas requis ici (vérifié au déploiement).
+- [ ] **Step 4:** `node --test tests/js/*.test.mjs` → PASS ; ouvrir le panneau n'est pas requis ici (vérifié au déploiement).
 - [ ] **Step 5: Commit** `feat: panneau — liste et édition des services`.
 
 ### Task 7: Documentation
@@ -215,5 +215,5 @@ Règles (remplacent chaque `is_label_service(s)`) :
 - Modify: `README.md` (remplacer la section « Services par label » par « Services » : création dans Général, rattachements AdGuard et labels, sens par label, labels de cible ; note de mise à jour : on repart d'une liste vide, les services AdGuard bloqués par l'ancienne configuration restent bloqués jusqu'à action du parent).
 
 - [ ] **Step 1:** Rédiger.
-- [ ] **Step 2:** `python -m pytest -q && node --test tests/js/` → PASS.
+- [ ] **Step 2:** `.venv/bin/python -m pytest -q && node --test tests/js/*.test.mjs` → PASS.
 - [ ] **Step 3: Commit** `docs: services configurables dans le README`.
