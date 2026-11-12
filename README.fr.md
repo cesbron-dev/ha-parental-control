@@ -16,9 +16,11 @@ Le projet comporte trois pièces :
 3. **le panneau « Règles »** : l'éditeur visuel de la configuration, voir
    [Panneau « Règles »](#panneau--règles-).
 
-La configuration peut aussi se charger sous forme de JSON (voir plus bas).
+La configuration peut aussi se charger sous forme de JSON (voir plus bas). L'interface est en
+anglais et en français (voir [Langues](#langues)). Fonctionnement interne et raisons des choix :
+[architecture](docs/architecture.fr.md).
 
-Distribuée sous [licence MIT](LICENSE). Textes de l'interface en français.
+Distribuée sous [licence MIT](LICENSE).
 
 ## Installation
 
@@ -48,7 +50,7 @@ accepte pas).
 
 ```jsonc
 {
-  "version": 2,                       // toujours 2
+  "version": 3,                       // toujours 3
   "services": [                       // vos services (voir « Services ») ; ordre d'affichage
     {"id": "youtube", "name": "YouTube", "icon": "mdi:youtube", "adguard": ["youtube"]},
     {"id": "jeux_video", "name": "Jeux vidéo", "icon": "mdi:gamepad-variant",
@@ -58,9 +60,9 @@ accepte pas).
   "default_leisure": ["jeux_video"],  // identifiants de vos services
   "default_on_demand": ["youtube"],
   "calendar_map": {                   // mot (sans accent ni casse) -> type de journée
-    "pédagogique": "conge_peda",
-    "vacances": "vacances",
-    "relâche": "vacances"
+    "pédagogique": "day_off",
+    "vacances": "holidays",
+    "relâche": "holidays"
   },
   "notify": ["notify.mobile_app_iphone_de_marc"],   // services notify des parents
   "kids": [
@@ -72,22 +74,22 @@ accepte pas).
       "calendar": "calendar.ecole_primaire",   // optionnel : calendrier du type de journée
       "leisure_add": [],              // services de loisirs en plus de default_leisure
       "leisure_remove": [],           // services retirés de default_leisure
-      "resource_modes": { "switch": "sur_demande" },   // optionnel, par ressource
+      "resource_modes": { "switch": "on_demand" },   // optionnel, par ressource
       "profiles": {
-        "ecole": {                    // profils "ecole" et "fin_de_semaine" obligatoires
+        "school": {                   // profils "school" et "weekend" obligatoires
           "segments": [
-            { "start": "00:00", "type": "bloque" },
-            { "start": "15:25", "type": "libre" },
-            { "start": "16:00", "type": "apres_devoirs" },
-            { "start": "19:00", "type": "bloque" }
+            { "start": "00:00", "type": "blocked" },
+            { "start": "15:25", "type": "free" },
+            { "start": "16:00", "type": "after_homework" },
+            { "start": "19:00", "type": "blocked" }
           ]
         },
-        "fin_de_semaine": {
+        "weekend": {
           "quota_minutes": 120,       // budget journalier de l'enfant (segments "quota")
           "segments": [
-            { "start": "00:00", "type": "bloque" },
+            { "start": "00:00", "type": "blocked" },
             { "start": "08:00", "type": "quota" },
-            { "start": "20:00", "type": "bloque" }
+            { "start": "20:00", "type": "blocked" }
           ]
         }
       }
@@ -99,7 +101,7 @@ accepte pas).
       "name": "Télé salon",
       "icon": "mdi:television",       // optionnel
       "owners": ["hugo"],
-      "quota_minutes": { "fin_de_semaine": 180 },
+      "quota_minutes": { "weekend": 180 },
       "devices": [                    // appareils physiques
         {
           "name": "Samsung",
@@ -156,7 +158,7 @@ accepte pas).
 
 | Clé | Rôle |
 |---|---|
-| `version` | Toujours `2` ; toute autre valeur est refusée. |
+| `version` | Toujours `3` ; toute autre valeur est refusée. |
 | `services` | Vos services (voir [Services configurables](#services-configurables)) : `id` (fixe, créé à partir du nom), `name`, `icon` (facultatif), `adguard` (identifiants de services AdGuard Home), `labels` (`label_id` et `on_means_allowed`). |
 | `default_leisure` | Identifiants de vos services considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Vide par défaut. Un identifiant inconnu est retiré au chargement ; envoyé par le panneau, il est refusé. |
 | `default_on_demand` | Identifiants de vos services qui restent bloqués même quand l'appareil est ouvert : seule une autorisation explicite les ouvre. |
@@ -176,8 +178,8 @@ accepte pas).
 | `leisure_add`, `leisure_remove` | Ajustent `default_leisure` pour cet enfant. |
 | `on_demand_add`, `on_demand_remove` | Ajustent `default_on_demand` pour cet enfant. |
 | `target_label` | Label HA facultatif : les interrupteurs qui portent ce label et un label de service sont pilotés pour cet enfant (voir [Services configurables](#services-configurables)). |
-| `resource_modes` | Par `id` de ressource, remplace le comportement de la frise : `suit_frise` (défaut), `sur_demande`, `bloque` ou `libre`. |
-| `profiles` | Un profil par type de journée : `ecole`, `fin_de_semaine`, `conge_peda`, `vacances`. `ecole` et `fin_de_semaine` sont obligatoires. |
+| `resource_modes` | Par `id` de ressource, remplace le comportement de la frise : `schedule` (suit la frise, défaut), `on_demand` (sur demande), `blocked` (bloqué) ou `free` (libre). |
+| `profiles` | Un profil par type de journée : `school` (école), `weekend` (fin de semaine), `day_off` (congé pédagogique), `holidays` (vacances). `school` et `weekend` sont obligatoires. |
 
 **Profil**
 
@@ -191,17 +193,17 @@ accepte pas).
 
 | Type | Comportement |
 |---|---|
-| `bloque` | Tout est bloqué. |
-| `libre` | Tout est autorisé. |
-| `apres_devoirs` | Autorisé seulement après `devoirs_termines` du jour ; sinon statut « en attente des devoirs ». |
-| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seul un appareil avec un lecteur multimédia (`media_player`) ou un interrupteur (`switch`) a son propre budget, décompté par l'usage réel : son `quota_minutes` pour le type de journée, ou à défaut le quota de temps d'écran le plus généreux des enfants concernés (voir [Appareils logiques](#appareils-logiques)). Illimité seulement si ni l'appareil ni aucun de ces enfants n'a de quota ce jour-là. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
-| `sur_demande` | Bloqué jusqu'à ce qu'un parent ouvre (service `exception` avec `open: true`) ; statut « sur demande ». Pour la Switch, pas d'exception : `ajouter_bonus` avec `resource_id: switch`. |
+| `blocked` | Tout est bloqué. |
+| `free` | Tout est autorisé. |
+| `after_homework` | Autorisé seulement après `homework_done` (devoirs terminés) du jour ; sinon statut `waiting_homework`. |
+| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`start_timer`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seul un appareil avec un lecteur multimédia (`media_player`) ou un interrupteur (`switch`) a son propre budget, décompté par l'usage réel : son `quota_minutes` pour le type de journée, ou à défaut le quota de temps d'écran le plus généreux des enfants concernés (voir [Appareils logiques](#appareils-logiques)). Illimité seulement si ni l'appareil ni aucun de ces enfants n'a de quota ce jour-là. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `add_bonus` (`resource_id: switch`). |
+| `on_demand` | Bloqué jusqu'à ce qu'un parent ouvre (action `exception` avec `open: true`) ; statut `on_demand`. Pour la Switch, pas d'exception : `add_bonus` avec `resource_id: switch`. |
 
 **Type de journée.** Le calendrier de l'enfant fixe le type via `calendar_map`. Priorité en
-cas de recoupement : `vacances`, puis `conge_peda`, puis `ecole` / `fin_de_semaine`. Sans
-événement reconnu : `ecole` du lundi au vendredi, `fin_de_semaine` samedi et dimanche.
-Si le profil `conge_peda` ou `vacances` n'existe pas, c'est le profil `fin_de_semaine` qui
-s'applique (et, pour une ressource, son `quota_minutes` de `fin_de_semaine`).
+cas de recoupement : `holidays`, puis `day_off`, puis `school` / `weekend`. Sans événement
+reconnu : `school` du lundi au vendredi, `weekend` samedi et dimanche. Si le profil `day_off`
+ou `holidays` n'existe pas, c'est le profil `weekend` qui s'applique (et, pour une ressource,
+son `quota_minutes` de `weekend`).
 
 **Ressource (`resources[]`, appareil logique)**
 
@@ -243,7 +245,7 @@ clients AdGuard, un en local et un par le VPN).
   "name": "Télé",
   "icon": "mdi:television",
   "owners": ["hugo", "zoe"],
-  "quota_minutes": { "fin_de_semaine": 90 },
+  "quota_minutes": { "weekend": 90 },
   "devices": [
     {
       "name": "Samsung",
@@ -290,7 +292,7 @@ ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
 
 ### Charger la configuration
 
-- Service **`parental_control.importer_configuration`** (réservé aux parents : refusé aux autres
+- Action **`parental_control.import_config`** (réservé aux parents : refusé aux autres
   comptes ; un appel sans utilisateur, depuis une automatisation ou un script, passe aussi) avec
   le champ `config` contenant l'objet JSON. Comme l'enregistrement du panneau, il détermine le
   propriétaire de chaque téléphone de `request_notify` (la clé `request_notify_owners` du fichier
@@ -298,10 +300,10 @@ ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
   Outils de développement, Actions, mode YAML :
 
   ```yaml
-  action: parental_control.importer_configuration
+  action: parental_control.import_config
   data:
     config:
-      version: 2
+      version: 3
       kids: []
       resources: []
   ```
@@ -313,43 +315,43 @@ ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
   s'abonne aux changements (pour les cartes).
 
 Une configuration invalide est refusée en citant le chemin fautif (par exemple
-`kids[0].profiles.ecole.segments[2].start : heure invalide`). Si la configuration
+`kids[0].profiles.school.segments[2].start : heure invalide 25:00 (format HH:MM)`). Si la configuration
 enregistrée est invalide au démarrage, le moteur reste inactif : l'erreur est journalisée et
 une notification persistante « Contrôle parental : configuration invalide, moteur inactif »
-s'affiche (elle disparaît au chargement d'une configuration valide).
+(dans la langue système) s'affiche (elle disparaît au chargement d'une configuration valide).
 
 Quand une configuration retire un enfant ou une ressource, les décisions qui les visaient
 (exceptions, minuteurs, bonus, devoirs) sont supprimées.
 
-## Services
+## Actions
 
 Le « code » est le code parent. Un **parent** (voir « Qui est parent »), ou un appel **sans
 utilisateur** (automatisation, script), n'a pas besoin de le fournir. Un autre utilisateur
 doit le passer dans le champ `code` pour les actions qui débloquent.
 
-| Service | Champs | Code exigé (non parent) |
+| Action | Champs | Code exigé (non parent) |
 |---|---|---|
-| `parental_control.devoirs_termines` | `kid_id` | oui |
-| `parental_control.ajouter_bonus` | `minutes` (1 à 240) et exactement un de `kid_id` ou `resource_id` | oui |
+| `parental_control.homework_done` (devoirs terminés) | `kid_id` | oui |
+| `parental_control.add_bonus` (ajouter un bonus) | `minutes` (1 à 240) et exactement un de `kid_id` ou `resource_id` | oui |
 | `parental_control.exception` | `open` (obligatoire), `resource_id`, `kid_id`, `service`, `minutes` (1 à 240) | oui si `open: true`, non pour une fermeture |
-| `parental_control.annuler_exception` | `exception_id` | oui si l'exception annulée est une fermeture (annuler rouvre) |
-| `parental_control.demarrer_minuteur` | `kid_id`, `minutes` (1 à 240) | oui |
-| `parental_control.arreter_minuteur` | `kid_id` | non |
+| `parental_control.cancel_exception` (annuler une exception) | `exception_id` | oui si l'exception annulée est une fermeture (annuler rouvre) |
+| `parental_control.start_timer` (démarrer le minuteur) | `kid_id`, `minutes` (1 à 240) | oui |
+| `parental_control.stop_timer` (arrêter le minuteur) | `kid_id` | non |
 | `parental_control.pause` | `active` | oui pour lever la pause (`active: false`), non pour la poser |
-| `parental_control.importer_configuration` | `config` | réservé aux parents (refusé aux autres, avec ou sans code) |
-| `parental_control.demander` | `kind`, `kid_id`, `resource_id`, `service`, `minutes`, `options`, `replace` | non (voir « Demandes de temps ») |
+| `parental_control.import_config` (importer la configuration) | `config` | réservé aux parents (refusé aux autres, avec ou sans code) |
+| `parental_control.request` (demander) | `kind`, `kid_id`, `resource_id`, `service`, `minutes`, `options`, `replace` | non (voir « Demandes de temps ») |
 
 Précisions :
 
-- `ajouter_bonus` sur un `kid_id` ajoute des minutes au quota de l'enfant du jour ; sur une
+- `add_bonus` sur un `kid_id` ajoute des minutes au quota de l'enfant du jour ; sur une
   `resource_id` avec un lecteur ou un interrupteur, au quota de la ressource ; sur une ressource
   `nintendo`, accorde du temps de jeu à la console. Pas de bonus pour AdGuard.
 - `exception` sans `service` exige un `resource_id` (cible précise). Avec `service`, la cible
   est un de vos services (son identifiant), pour une ressource, pour toutes les ressources d'un enfant ou pour
-  toutes. Une exception sur la Switch est refusée (« Pour la Switch, utilisez
-  ajouter_bonus »). Sans `minutes`, l'exception dure jusqu'au prochain changement de règle ; avec
-  `minutes`, pour cette durée. Le service retourne `{"id": "..."}` quand on demande la
-  réponse (`response_variable`) : c'est l'`exception_id` à passer à `annuler_exception`.
+  toutes. Une exception sur la Switch est refusée (« Pour la Switch, utilisez add_bonus »).
+  Sans `minutes`, l'exception dure jusqu'au prochain changement de règle ; avec
+  `minutes`, pour cette durée. L'action retourne `{"id": "..."}` quand on demande la
+  réponse (`response_variable`) : c'est l'`exception_id` à passer à `cancel_exception`.
 - Les exceptions en cours sont listées dans les attributs du capteur de statut.
 
 ## Entités
@@ -358,15 +360,17 @@ Chaque enfant, chaque ressource et la pause générale sont des appareils (type 
 
 | Entité | Détail |
 |---|---|
-| `sensor` Statut, par enfant | États : `autorise`, `bloque`, `attente_devoirs`, `attente_minuteur`, `quota_epuise`, `sur_demande`, `pause`. Les détails de l'instantané (type de journée, segment, fin de plage, temps restant, exceptions) sont en attributs. |
-| `button` Devoirs terminés, par enfant | Équivaut au service `devoirs_termines`, sans code pour un parent ; un bouton ne transmet pas de code, il est donc refusé à un autre utilisateur (utiliser le service avec `code`). |
+| `sensor` Statut, par enfant | États : `allowed` (autorisé), `blocked` (bloqué), `waiting_homework` (en attente des devoirs), `waiting_timer` (en attente d'un minuteur), `quota_exhausted` (quota épuisé), `on_demand` (sur demande), `paused` (pause). Les détails de l'instantané (type de journée, segment, fin de plage, temps restant, exceptions) sont en attributs. |
+| `button` Devoirs terminés, par enfant | Équivaut à l'action `homework_done`, sans code pour un parent ; un bouton ne transmet pas de code, il est donc refusé à un autre utilisateur (utiliser l'action avec `code`). |
 | `binary_sensor` Autorisée, par ressource | Ouverte selon la règle. Pour AdGuard, les services bloqués sont en attribut. |
 | `sensor` Temps utilisé / Temps restant, par ressource | Minutes, seulement pour les appareils avec un lecteur, un interrupteur ou une console Nintendo. |
-| `switch` Pause générale | Ferme toutes les ressources (sur AdGuard, les services de loisirs) et remet la limite du jour Nintendo à 0. N'importe qui peut la poser ; l'éteindre est refusé à un non-parent (pas de code possible sur un interrupteur : utiliser le service `pause` avec `code`). Un parent l'éteint sans code. |
+| `switch` Pause générale | Ferme toutes les ressources (sur AdGuard, les services de loisirs) et remet la limite du jour Nintendo à 0. N'importe qui peut la poser ; l'éteindre est refusé à un non-parent (pas de code possible sur un interrupteur : utiliser l'action `pause` avec `code`). Un parent l'éteint sans code. |
 | `switch` Simulation | Voir [Mode simulation](#mode-simulation). |
 
-Les identifiants d'entités sont ceux que Home Assistant génère à partir des noms (par
-exemple `sensor.hugo_statut` si l'appareil s'appelle « Hugo »).
+Les identifiants d'entités sont ceux que Home Assistant génère à partir des noms, dans la
+langue système à leur création (par exemple `sensor.hugo_statut` sur un système en français si
+l'appareil s'appelle « Hugo », `sensor.hugo_status` sur un système en anglais). Les identifiants
+existants ne changent jamais, même si la langue change.
 
 ### Événement `parental_control_warning`
 
@@ -383,17 +387,19 @@ data:
 
 Une cible `service:<ressource>:<service>` signale un service AdGuard débloqué (par exemple
 ouvert par exception) qui va être rebloqué alors que la ressource reste fermée ; message :
-« YouTube sur iPhone Hugo : coupure dans 5 min ».
+« YouTube sur iPhone Hugo : coupure dans 5 min ». Les messages sont dans la langue système de
+Home Assistant.
 
-Pour un enfant ou un service, le message est aussi envoyé aux services de `notify` ; les
+Pour un enfant ou un service, le message est aussi envoyé aux services `notify` ; les
 messages d'un même instant de fermeture sont regroupés en une seule notification. Pour une
 ressource, il est envoyé par son `notify_service` s'il est défini.
 
 ## Cartes
 
 L'intégration charge ses cartes toute seule dans le tableau de bord (aucune ressource à
-ajouter) ; elles apparaissent dans le sélecteur de cartes, sous « Contrôle parental ».
-Elles lisent l'état du moteur en direct et n'appellent que les services `parental_control.*`.
+ajouter) ; elles apparaissent dans le sélecteur de cartes sous « Contrôle parental — … » (dans
+la langue du navigateur). Elles lisent l'état du moteur en direct et n'appellent que les actions
+`parental_control.*`.
 `resource` est l'`id` d'une ressource de la configuration JSON. Chaque carte a un éditeur
 visuel (bouton « Modifier » de la carte) : l'appareil et les enfants se choisissent dans des
 listes tirées des règles, et les options (nom, icône, titre, minutes bonus) se remplissent sans
@@ -598,7 +604,7 @@ avertissement est journalisé) : donnez-leur des noms distincts.
 - Un **iPhone** est recommandé : Android n'affiche que 3 boutons au plus par notification, ce
   qui coupe les durées proposées.
 
-**Service `parental_control.demander`.** Utilisé par les cartes ; appelable aussi depuis un
+**Action `parental_control.request`.** Utilisé par les cartes ; appelable aussi depuis un
 script ou une automatisation. Il ne demande pas de code et n'accorde rien tant qu'un parent n'a
 pas répondu. Avec `response_variable`, il retourne `{"id": "..."}`.
 
@@ -618,7 +624,7 @@ Le mode simulation fait tourner tout le moteur (états, frises, exceptions, aver
 piloter aucun appareil : rien n'est bloqué, éteint ni limité. Il sert à valider les règles avant de
 les laisser agir.
 
-- **Interrupteur** `switch` « Simulation », à côté de « Pause ». Les cartes affichent une pastille
+- **Interrupteur** `switch` « Simulation », à côté de « Pause générale ». Les cartes affichent une pastille
   « SIMULATION » dans leur en-tête et le panneau « Règles » un bandeau en tête.
 - **Journal de bord.** Chaque action que le moteur aurait faite (fermer une ressource, rebloquer un
   service, remettre la limite Nintendo à 0…) y est inscrite à la place de l'appel réel.
@@ -638,7 +644,7 @@ les laisser agir.
    terminés » et l'arrêt de la pause restent refusés sur la tablette : les parents les
    utilisent depuis leur téléphone (administrateur, ou parent déclaré dans « Demandes de temps »).
 3. Les actions qui débloquent demandent le **code parent** dans le champ `code` d'un appel
-   de service. **N'écrivez jamais le code** dans une action `perform-action` d'un tableau de
+   d'action. **N'écrivez jamais le code** dans une action `perform-action` d'un tableau de
    bord ni dans une automatisation ou un script qu'un non-parent peut déclencher.
 4. **Masquez à l'utilisateur de la tablette les entités brutes** AdGuard
    (appareils `adguard_clients`), Nintendo et télé : il pourrait les manipuler directement. Le
@@ -649,9 +655,43 @@ les laisser agir.
    Le compteur est par utilisateur et **en mémoire** : un redémarrage de Home Assistant le
    remet à zéro.
 
+## Langues
+
+L'interface existe en **anglais** et en **français** ; l'anglais est la langue par défaut.
+
+- **Cartes, panneau « Règles », écran « Demandes »** : la langue du profil de chaque utilisateur
+  Home Assistant (`hass.locale.language`, sinon `hass.language`). Dates, heures et durées
+  suivent cette langue et le réglage 12 h / 24 h du profil.
+- **Textes produits par le serveur sans utilisateur** : notifications aux parents
+  (avertissements, demandes et leurs boutons), préfixe « [Simulation] », entrées du journal de
+  bord, notification persistante, titre de la barre latérale (« Rules » / « Règles ») et nom de
+  l'appareil global. Ils suivent la **langue système** de Home Assistant
+  (`hass.config.language`).
+- **Métadonnées Home Assistant** (actions et leurs champs, entités et états, fenêtres
+  d'installation et d'options, erreurs des actions) : traduites par Home Assistant pour chaque
+  utilisateur.
+
+Une langue régionale (`fr-CA`, `en-GB`) prend sa langue de base ; une langue sans catalogue se
+rabat sur l'anglais. Les identifiants (noms d'actions, types de journée, types de segment,
+modes, états) sont en anglais dans toutes les langues.
+
+**Ajouter une langue** (`<langue>` étant son code, par exemple `de`) :
+
+1. `custom_components/parental_control/www/i18n/<langue>.js` : copier `en.js` et traduire les
+   valeurs, puis ajouter le catalogue à `CATALOGUES` dans `www/i18n.js` ;
+2. `custom_components/parental_control/core/i18n.py` : ajouter une entrée `<langue>` à
+   `MESSAGES`, avec les mêmes clés que `en` ;
+3. `custom_components/parental_control/translations/<langue>.json` : copier `en.json` et
+   traduire les valeurs ;
+4. étendre les tests de parité des clés (`tests/js/i18n.test.mjs`, `tests/core/test_i18n.py`)
+   à la nouvelle langue : chaque catalogue doit avoir exactement les clés de l'anglais.
+
+Voir l'[architecture](docs/architecture.fr.md#12-internationalisation) pour l'articulation des
+trois couches.
+
 ## Limites connues
 
-- **Appels sans utilisateur.** Une automatisation ou un script appelle les services sans
+- **Appels sans utilisateur.** Une automatisation ou un script appelle les actions sans
   utilisateur : le code n'est alors pas demandé. Ne créez pas d'automatisation ou de script qui
   débloque quelque chose et qu'un utilisateur non parent peut déclencher
   (`automation.trigger`, `script.turn_on`, etc.), ce serait un contournement du code.
@@ -692,3 +732,6 @@ uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/pytest
 node --test tests/js/*.test.mjs
 ```
+
+L'organisation du code, les choix de conception et leurs raisons sont décrits dans
+[docs/architecture.fr.md](docs/architecture.fr.md).
