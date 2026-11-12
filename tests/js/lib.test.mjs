@@ -715,7 +715,7 @@ test("raison du moteur traduite dans la langue de l'utilisateur, texte du serveu
   const L = await import("../../custom_components/parental_control/www/lib.js");
   const kid = { reason_code: "allowed_until", reason_params: { until: "20:00" }, reason: "Screens allowed until 20:00" };
   assert.equal(L.reasonText(kid, FR), "Écrans autorisés jusqu'à 20:00");
-  assert.equal(L.reasonText(kid, EN), "Screens allowed until 20:00");
+  assert.match(L.reasonText(kid, EN), /^Screens allowed until 8:00\sPM$/);
   assert.equal(L.reasonText({ reason_code: "nouveau_code", reason: "Texte du serveur" }, FR), "Texte du serveur");
   assert.equal(L.reasonText({ reason: "Ancien" }, FR), "Ancien");
   assert.equal(L.reasonText({}, FR), "");
@@ -740,4 +740,29 @@ test("échec d'une demande : code traduit, texte du serveur en repli", async () 
     "Acceptée par Julie, mais impossible : Choix inconnu");
   assert.equal(L.requestLine(failed({ reason_code: "autre_code" }), FR), "Impossible : Server text");
   assert.equal(L.requestLine(failed({ reason_code: null }), FR), "Impossible : Server text");
+});
+
+test("allowed_until : heure au format de l'utilisateur, depuis `until` ou le paramètre du moteur", async () => {
+  const L = await import("../../custom_components/parental_control/www/lib.js");
+  const kid = { reason_code: "allowed_until", reason_params: { until: "20:00" }, until: "2026-10-30T20:00:00-04:00" };
+  assert.match(L.reasonText(kid, EN), /^Screens allowed until 8:00\sPM$/);
+  assert.equal(L.reasonText(kid, { locale: { language: "en", time_format: "24" } }), "Screens allowed until 20:00");
+  assert.equal(L.reasonText(kid, FR), "Écrans autorisés jusqu'à 20:00");
+  // sans `until` : le paramètre « HH:MM »
+  const noIso = { ...kid, until: null, reason_params: { until: "07:30" } };
+  assert.match(L.reasonText(noIso, EN), /^Screens allowed until 7:30\sAM$/);
+  assert.equal(L.reasonText(noIso, FR), "Écrans autorisés jusqu'à 07:30");
+  // ressource : même heure que le reste de la ligne, sans répétition
+  const s = state();
+  s.resources.net = { ...s.resources.net, reason_code: "allowed_until", reason_params: { until: "18:00" } };
+  assert.match(L.reasonLine(L.resourceView(s, "net"), EN), /^Screens allowed until 6:00\sPM$/);
+});
+
+test("code inconnu sans texte du serveur : le code en dernier recours", async () => {
+  const L = await import("../../custom_components/parental_control/www/lib.js");
+  assert.equal(L.reasonText({ reason_code: "nouveau_code" }, EN), "nouveau_code");
+  assert.equal(L.requestLine({ kind: "open", status: "failed", reason_code: "nouveau_code", reason: null }, EN),
+    "Not possible: nouveau_code");
+  assert.equal(L.requestOutcome({ kind: "open", status: "failed", reason_code: "nouveau_code" }, FR),
+    "Acceptée, mais impossible : nouveau_code");
 });

@@ -59,15 +59,37 @@ function hourCycle(hass) {
   return undefined;
 }
 
-// Heure locale d'une date ISO, au format de la langue : « 16:05 », « 07:05 », « 4:05 PM ».
-export function formatTime(hass, iso) {
+// Langue et options `Intl` d'une heure : cycle du profil, sinon celui de la langue ; sur 24 h,
+// l'heure garde ses deux chiffres (« 07:05 »), sur 12 h, non (« 7:05 AM »).
+function clockFormat(hass, extra = {}) {
   const code = lang(hass);
   const cycle = hourCycle(hass)
     ?? new Intl.DateTimeFormat(code, { hour: "numeric" }).resolvedOptions().hourCycle;
-  // sur 24 h, l'heure garde ses deux chiffres (« 07:05 ») ; sur 12 h, non (« 7:05 AM »)
   const twelve = cycle === "h11" || cycle === "h12";
-  return new Intl.DateTimeFormat(code, { hour: twelve ? "numeric" : "2-digit", minute: "2-digit", hourCycle: cycle })
-    .format(new Date(iso));
+  return {
+    twelve,
+    format: new Intl.DateTimeFormat(code, { hour: twelve ? "numeric" : "2-digit", minute: "2-digit", hourCycle: cycle, ...extra }),
+  };
+}
+
+// Heure locale d'une date ISO, au format de la langue : « 16:05 », « 07:05 », « 4:05 PM ».
+export function formatTime(hass, iso) {
+  return clockFormat(hass).format.format(new Date(iso));
+}
+
+// Heure murale « HH:MM » (sans date ni fuseau, ex. paramètre d'une raison du moteur) au format de
+// la langue ; un texte qui n'est pas une heure est rendu tel quel.
+export function formatClock(hass, hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm ?? ""));
+  if (!m || Number(m[1]) > 23 || Number(m[2]) > 59) return String(hhmm ?? "");
+  return clockFormat(hass, { timeZone: "UTC" }).format.format(new Date(Date.UTC(1970, 0, 1, Number(m[1]), Number(m[2]))));
+}
+
+// Repère d'heure entière de l'axe de la frise (0 à 24) : « 6h » sur 24 h, « 6 AM » sur 12 h.
+export function formatHour(hass, hour) {
+  if (!clockFormat(hass).twelve) return t(hass, "time.hour", { hour });
+  return new Intl.DateTimeFormat(lang(hass), { hour: "numeric", hourCycle: hourCycle(hass), timeZone: "UTC" })
+    .format(new Date(Date.UTC(1970, 0, 1, hour % 24)));
 }
 
 // Durée en minutes, comme le moteur : « 45 min », « 2 h », « 1 h 30 min » (fr : « 1 h 05 ») ;

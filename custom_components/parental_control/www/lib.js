@@ -1,7 +1,7 @@
 // Bibliothèque partagée des cartes Contrôle parental : fonctions pures, sans DOM.
 // Les fonctions qui produisent du texte prennent `hass` en dernier paramètre (langue de
 // l'utilisateur, anglais sans `hass`).
-import { t, hasKey, formatTime, formatDuration, durationText } from "./i18n.js";
+import { t, hasKey, formatTime, formatClock, formatDuration, durationText } from "./i18n.js";
 
 // Échappe un texte venant du moteur avant de l'insérer dans du HTML.
 export function esc(s) {
@@ -18,11 +18,17 @@ export function fmtDuration(minutes, hass) {
 }
 
 // Raison du moteur d'un enfant ou d'une ressource dans la langue de l'utilisateur
-// (`reason_code` et `reason_params`) ; code inconnu ou absent : texte du serveur (`reason`).
+// (`reason_code` et `reason_params`) ; code inconnu : texte du serveur (`reason`), sinon le code.
+// L'heure de `allowed_until` suit le format de l'utilisateur : celle de `until` (ISO, fuseau du
+// navigateur comme les autres heures des cartes), à défaut le paramètre « HH:MM » du moteur.
 export function reasonText(item, hass) {
   const code = item?.reason_code;
-  if (code && hasKey(`reason.${code}`)) return t(hass, `reason.${code}`, item.reason_params ?? {});
-  return item?.reason ?? "";
+  if (code && hasKey(`reason.${code}`)) {
+    const params = { ...(item.reason_params ?? {}) };
+    if (code === "allowed_until") params.until = item.until ? formatTime(hass, item.until) : formatClock(hass, params.until);
+    return t(hass, `reason.${code}`, params);
+  }
+  return item?.reason || code || "";
 }
 
 // Raison de l'échec d'une demande : `request.reason.<code>`, puis `error.<code>` (erreur d'une
@@ -32,7 +38,7 @@ function requestReason(req, hass) {
   const params = req?.reason_params ?? {};
   if (code && hasKey(`request.reason.${code}`)) return t(hass, `request.reason.${code}`, params);
   if (code && hasKey(`error.${code}`)) return t(hass, `error.${code}`, params);
-  return req?.reason ?? "";
+  return req?.reason || code || "";
 }
 
 // `services` : services du parent (`state.services`, `{id: {name, icon, adguard, labels}}`).

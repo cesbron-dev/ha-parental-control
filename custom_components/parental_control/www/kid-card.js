@@ -10,7 +10,7 @@ import { StateCard } from "./card-base.js";
 import { BASE_CSS, TIMELINE_CSS, pill, ConfirmState, ErrorNotice, requestLines } from "./style.js";
 import { openActionDialog } from "./dialogs.js";
 import { createEditor } from "./editor.js";
-import { t, lang, formatDuration } from "./i18n.js";
+import { t, lang, formatDuration, formatHour } from "./i18n.js";
 
 const TIMER_MINUTES = [15, 30, 60];
 
@@ -131,7 +131,7 @@ class ParentalKidCard extends StateCard {
     const spans = exceptionSpans(exceptionsForKid(this._state, this._config.kid), now);
     const segs = bars.map((b) => `<div class="${segmentClass(b.type)}" style="left:${b.left}%;width:${b.width}%"></div>`).join("");
     const excs = spans.map((s) => `<div class="exc" style="left:${s.left}%;width:${s.width}%"></div>`).join("");
-    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${h}h</span>`).join("");
+    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${esc(formatHour(this._hass, h))}</span>`).join("");
     return `<div class="tl">${segs}${excs}<div class="now" style="left:${nowPct}%"></div></div><div class="hours">${hours}</div>`;
   }
 

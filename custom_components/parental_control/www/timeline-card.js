@@ -7,7 +7,7 @@ import {
 import { subscribeState } from "./connection.js";
 import { BASE_CSS, TIMELINE_CSS, applyTheme } from "./style.js";
 import { createEditor } from "./editor.js";
-import { t, lang, formatTime } from "./i18n.js";
+import { t, lang, formatTime, formatHour } from "./i18n.js";
 
 // Légende : segments de la frise (libellés `segment.*`), puis les exceptions hachurées.
 const LEGEND = ["free", "after_homework", "quota", "on_demand", "blocked"];
@@ -154,7 +154,7 @@ class ParentalTimelineCard extends HTMLElement {
     const dayType = dayTypeLabel(kids[ids[0]]?.day_type, hass);
 
     const rows = ids.map((id) => this._kidRow(id, kids[id], now)).join("");
-    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${h}h</span>`).join("");
+    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${esc(formatHour(hass, h))}</span>`).join("");
     const legend = LEGEND.map((cls) => `<i class="${cls}"></i>${esc(t(hass, `segment.${cls}`))}`).join("")
       + `<i class="exc"></i>${esc(t(hass, "segment.exception"))}`;
 

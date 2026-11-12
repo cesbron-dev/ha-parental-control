@@ -135,3 +135,21 @@ test("raisons du moteur et raisons d'échec identiques au catalogue du serveur",
     assert.deepEqual(catalogue.request.reason, server(part, "request.reason."));
   }
 });
+
+test("heure murale « HH:MM » du moteur au format de l'utilisateur", async () => {
+  const { formatClock } = await import("../../custom_components/parental_control/www/i18n.js");
+  assert.match(formatClock(EN, "20:00"), /^8:00\sPM$/);
+  assert.match(formatClock(EN, "07:05"), /^7:05\sAM$/);
+  assert.equal(formatClock({ locale: { language: "en", time_format: "24" } }, "07:05"), "07:05");
+  assert.equal(formatClock(FR, "20:00"), "20:00");
+  assert.equal(formatClock(FR, "07:05"), "07:05");
+  assert.equal(formatClock(FR, "minuit"), "minuit");
+  assert.equal(formatClock(FR, undefined), "");
+});
+
+test("repères d'heure de la frise", async () => {
+  const { formatHour } = await import("../../custom_components/parental_control/www/i18n.js");
+  assert.deepEqual([0, 6, 12, 18, 24].map((h) => formatHour(FR, h)), ["0h", "6h", "12h", "18h", "24h"]);
+  assert.deepEqual([0, 6, 12, 18, 24].map((h) => formatHour(EN, h).replace(/\s/, " ")), ["12 AM", "6 AM", "12 PM", "6 PM", "12 AM"]);
+  assert.equal(formatHour({ locale: { language: "en", time_format: "24" } }, 18), "18h");
+});

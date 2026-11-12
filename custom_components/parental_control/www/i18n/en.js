@@ -22,6 +22,7 @@ export default {
     until: "until {time}",
     resumes: "resumes {time}",
     until_further_notice: "until further notice",
+    hour: "{hour}h",
   },
   daytype: {
     school: "School day",
