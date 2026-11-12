@@ -84,6 +84,10 @@ controlled.
 | `websocket.py`, `serialize.py` | WebSocket commands and the JSON form of the state. |
 | `sensor.py`, `binary_sensor.py`, `button.py`, `switch.py`, `entity.py` | HA entities, created and removed as the configuration changes. |
 | `store.py` | Persistence of the configuration and of the decisions. |
+| `config_flow.py` | Setup and options dialogs: the parent code, stored hashed. |
+| `calendar_source.py` | Reads the all-day events of the children's calendars. |
+| `catalog.py` | The AdGuard Home services catalogue, for attaching services in the panel. |
+| `const.py` | Shared constants (domain, event and signal names, tick). |
 | `frontend.py` | Serves `www/`, loads the cards, registers the Rules and Requests panels. |
 | `texts.py` | Server texts in the HA system language. |
 | `translations/`, `strings.json` | HA metadata (actions, entities, config flow, errors) in `en` and `fr`. |
@@ -292,7 +296,8 @@ never do. A call without a user (automation, script) is trusted, as HA does else
 
 ### Fail closed
 
-When in doubt, the engine keeps things closed rather than open:
+When in doubt, the engine keeps things closed rather than open: a wrong open is worse than a
+wrong close, since a parent can always reopen. In practice:
 
 - an invalid stored configuration leaves the engine inactive and shows a persistent
   notification; it reopens nothing, and the decisions are kept for when it is fixed;
@@ -405,8 +410,8 @@ into three layers, each following the language of whoever reads it:
 | Layer | Language | Where |
 |---|---|---|
 | Cards, Rules panel, Requests screen | the HA user's profile: `hass.locale.language`, then `hass.language` | `www/i18n/<lang>.js`, read through `www/i18n.js` |
-| Texts produced without a user: notifications and their buttons, closing warnings, simulation prefix, logbook, persistent notification, sidebar title, global device name | the HA system language, `hass.config.language` | `MESSAGES` in `core/i18n.py`, through `texts.py` |
-| HA metadata: actions and fields, entities and states, config flow, action errors | chosen by HA for each user | `translations/<lang>.json`, `strings.json` (= English) |
+| Texts produced without a user: notifications and their buttons, closing warnings, simulation prefix, logbook, persistent notification, sidebar title | the HA system language, `hass.config.language` | `MESSAGES` in `core/i18n.py`, through `texts.py` |
+| HA metadata: actions and fields, entities and states, config flow, action errors, global device name | chosen by HA (the device name in the system language, when the device is created) | `translations/<lang>.json` (`translation_key`), `strings.json` (= English) |
 
 A regional language (`fr-CA`, `en-GB`) comes down to its base language; a language without a
 catalogue falls back to English. Times, durations and percentages go through `Intl`, with the

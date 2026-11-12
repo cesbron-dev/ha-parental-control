@@ -30,8 +30,7 @@ install [AdGuard Clients](https://github.com/cesbron-dev/ha-adguard-clients).
    `https://github.com/cesbron-dev/ha-parental-control` (before Home Assistant 2026.11: HACS,
    top-right menu, **Custom repositories**, category **Integration**).
 2. Install "Parental Control", then restart Home Assistant.
-3. **Settings, Devices & services, Add integration, Contrôle parental** (the integration is
-   listed under this name in Home Assistant, and as "Parental Control" in Marketplace).
+3. **Settings, Devices & services, Add integration, Parental Control**.
 4. Choose the **parent code**: 4 to 8 digits. It is stored hashed (PBKDF2), never in clear
    text. Only one instance of the integration is allowed. The code can be changed later in the
    integration options.
@@ -155,7 +154,7 @@ The JSON is a single document (remove the `//` comments below, JSON does not all
 
 | Key | Purpose |
 |---|---|
-| `version` | Always `3`; any other value is rejected. |
+| `version` | Always `3`. |
 | `services` | Your services (see [Configurable services](#configurable-services)): `id` (fixed, derived from the name), `name`, `icon` (optional), `adguard` (AdGuard Home service ids), `labels` (`label_id` and `on_means_allowed`). |
 | `default_leisure` | Ids of your services treated as leisure (these are the ones the engine blocks and unblocks). Empty by default. An unknown id is dropped when the stored configuration is loaded; sent by the panel, it is rejected. |
 | `default_on_demand` | Ids of your services that stay blocked even when the device is open: only an explicit permission opens them. |
@@ -418,7 +417,7 @@ show_services: false          # optional: hides the service toggles
 ```
 
 **Service toggles.** The card shows the device's on-demand services. Tapping a blocked service
-opens a dialog to choose the duration (15 min to 2 h) or "until the next slot change", with the
+opens a dialog to choose the duration (15 min to 2 h) or "Until the next change", with the
 code for a non-parent account; tapping an unblocked service blocks it, without code. The cards
 follow Home Assistant's light or dark theme.
 
@@ -588,7 +587,8 @@ neither can answer (a warning is logged): give them distinct names.
 
 - An impossible request (unknown target, resource that does not belong to the child, bonus not
   applicable to the resource…) is rejected when sent, not when the parent answers.
-- Only one pending request per child and per action.
+- One pending request per child, action and target (device, service); at most three pending
+  per child.
 - Without an answer after **15 minutes**, the request expires.
 - Requests are kept **in memory**: they are lost when Home Assistant restarts (the notification
   then stays on the phone, but its answer is ignored).

@@ -87,6 +87,10 @@ particularités, et tout ce que HA sait commander peut être piloté.
 | `websocket.py`, `serialize.py` | Commandes WebSocket et forme JSON de l'état. |
 | `sensor.py`, `binary_sensor.py`, `button.py`, `switch.py`, `entity.py` | Entités HA, créées et retirées au fil des changements de configuration. |
 | `store.py` | Persistance de la configuration et des décisions. |
+| `config_flow.py` | Fenêtres d'installation et d'options : le code parent, stocké haché. |
+| `calendar_source.py` | Lit les événements « journée entière » des calendriers des enfants. |
+| `catalog.py` | Le catalogue des services AdGuard Home, pour rattacher des services dans le panneau. |
+| `const.py` | Constantes partagées (domaine, noms d'événement et de signal, battement). |
 | `frontend.py` | Sert `www/`, charge les cartes, enregistre les panneaux « Règles » et « Demandes ». |
 | `texts.py` | Textes du serveur dans la langue système de HA. |
 | `translations/`, `strings.json` | Métadonnées HA (actions, entités, configuration, erreurs) en `en` et `fr`. |
@@ -306,7 +310,8 @@ considéré comme fiable, comme ailleurs dans HA.
 
 ### Échec côté fermé
 
-Dans le doute, le moteur garde fermé plutôt qu'ouvert :
+Dans le doute, le moteur garde fermé plutôt qu'ouvert : une ouverture à tort est pire qu'une
+fermeture à tort, puisqu'un parent peut toujours rouvrir. Concrètement :
 
 - une configuration enregistrée invalide laisse le moteur inactif et affiche une notification
   persistante ; il ne rouvre rien, et les décisions sont gardées pour quand elle sera corrigée ;
@@ -423,8 +428,8 @@ textes se rangent en trois couches, chacune dans la langue de celui qui la lit :
 | Couche | Langue | Où |
 |---|---|---|
 | Cartes, panneau « Règles », écran « Demandes » | celle du profil de l'utilisateur HA : `hass.locale.language`, sinon `hass.language` | `www/i18n/<langue>.js`, lus par `www/i18n.js` |
-| Textes produits sans utilisateur : notifications et leurs boutons, avertissements de fermeture, préfixe de simulation, journal de bord, notification persistante, titre de la barre latérale, nom de l'appareil global | la langue système de HA, `hass.config.language` | `MESSAGES` de `core/i18n.py`, via `texts.py` |
-| Métadonnées HA : actions et champs, entités et états, configuration, erreurs des actions | choisie par HA pour chaque utilisateur | `translations/<langue>.json`, `strings.json` (= anglais) |
+| Textes produits sans utilisateur : notifications et leurs boutons, avertissements de fermeture, préfixe de simulation, journal de bord, notification persistante, titre de la barre latérale | la langue système de HA, `hass.config.language` | `MESSAGES` de `core/i18n.py`, via `texts.py` |
+| Métadonnées HA : actions et champs, entités et états, configuration, erreurs des actions, nom de l'appareil global | choisie par HA (le nom de l'appareil dans la langue système, à sa création) | `translations/<langue>.json` (`translation_key`), `strings.json` (= anglais) |
 
 Une langue régionale (`fr-CA`, `en-GB`) se ramène à sa langue de base ; une langue sans
 catalogue se rabat sur l'anglais. Heures, durées et pourcentages passent par `Intl`, avec le

@@ -1,6 +1,6 @@
 {
   "domain": "parental_control",
-  "name": "Contrôle parental",
+  "name": "Parental Control",
   "after_dependencies": [
     "calendar",
     "frontend",

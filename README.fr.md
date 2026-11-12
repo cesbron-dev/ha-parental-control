@@ -31,9 +31,8 @@ installez aussi [AdGuard Clients](https://github.com/cesbron-dev/ha-adguard-clie
    `https://github.com/cesbron-dev/ha-parental-control` (avant Home Assistant 2026.11 : HACS,
    menu en haut à droite, **Dépôts personnalisés**, catégorie **Intégration**).
 2. Installer « Parental Control », puis redémarrer Home Assistant.
-3. **Paramètres, Appareils et services, Ajouter une intégration, Contrôle parental**
-   (l'intégration est listée sous ce nom dans Home Assistant, « Parental Control » dans
-   Marketplace).
+3. **Paramètres, Appareils et services, Ajouter une intégration, Parental Control**
+   (l'intégration porte ce nom anglais dans Home Assistant, même sur un système en français).
 4. Choisir le **code parent** : 4 à 8 chiffres. Il est stocké haché (PBKDF2), jamais en clair.
    Une seule instance de l'intégration est possible. Le code se change plus tard dans les
    options de l'intégration.
@@ -158,7 +157,7 @@ accepte pas).
 
 | Clé | Rôle |
 |---|---|
-| `version` | Toujours `3` ; toute autre valeur est refusée. |
+| `version` | Toujours `3`. |
 | `services` | Vos services (voir [Services configurables](#services-configurables)) : `id` (fixe, créé à partir du nom), `name`, `icon` (facultatif), `adguard` (identifiants de services AdGuard Home), `labels` (`label_id` et `on_means_allowed`). |
 | `default_leisure` | Identifiants de vos services considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Vide par défaut. Un identifiant inconnu est retiré au chargement ; envoyé par le panneau, il est refusé. |
 | `default_on_demand` | Identifiants de vos services qui restent bloqués même quand l'appareil est ouvert : seule une autorisation explicite les ouvre. |
@@ -422,7 +421,7 @@ show_services: false          # optionnel : masque les bascules de services
 ```
 
 **Bascules de services.** La carte affiche les services sur demande de l'appareil. Toucher un service bloqué ouvre une fenêtre pour choisir
-la durée (15 min à 2 h) ou « jusqu'au prochain changement » de plage, avec le code pour un compte
+la durée (15 min à 2 h) ou « Jusqu'au prochain changement », avec le code pour un compte
 non parent ; toucher un service
 débloqué le bloque, sans code. Les cartes suivent le thème clair ou sombre de Home Assistant.
 
@@ -595,7 +594,8 @@ avertissement est journalisé) : donnez-leur des noms distincts.
 
 - Une demande impossible (cible inconnue, ressource qui n'est pas à l'enfant, bonus non
   applicable à la ressource…) est refusée dès l'envoi, pas à la réponse du parent.
-- Une seule demande en attente par enfant et par action.
+- Une seule demande en attente par enfant, action et cible (appareil, service) ; trois au plus
+  en attente par enfant.
 - Sans réponse après **15 minutes**, la demande expire.
 - Les demandes sont gardées **en mémoire** : elles sont perdues au redémarrage de Home Assistant
   (la notification reste alors sur le téléphone, mais sa réponse est ignorée).
