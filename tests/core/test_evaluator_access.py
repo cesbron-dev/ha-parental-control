@@ -163,7 +163,7 @@ def test_pause_beats_everything(cfg):
         exceptions=[
             exc(Target(resource_id="tv"), True, id_="a"),
             exc(Target(resource_id="iphone_gabin", service="youtube"), True, id_="b"),
-            exc(Target(resource_id="iphone_gabin", service="fortnite"), False, id_="c"),
+            exc(Target(resource_id="iphone_gabin", service="minecraft"), False, id_="c"),
         ],
     )
     snap = evaluate(at(15, 40), cfg, dec, ECOLE)
@@ -172,7 +172,7 @@ def test_pause_beats_everything(cfg):
         assert kid.until is None
     assert not any(r.open for r in snap.resources.values())
     assert snap.resources["iphone_gabin"].blocked_services == (
-        cfg.leisure_for_resource("iphone_gabin") | {"fortnite"}
+        cfg.leisure_for_resource("iphone_gabin") | {"minecraft"}
     )
     assert snap.resources["tv"].blocked_services == frozenset()
 
@@ -213,11 +213,11 @@ def test_service_exception_opens_one_service(cfg):
 
 def test_service_exception_closes_one_service_when_open(cfg):
     dec = Decisions(exceptions=[
-        exc(Target(resource_id="iphone_gabin", service="fortnite"), False),
+        exc(Target(resource_id="iphone_gabin", service="minecraft"), False),
     ])
     snap = evaluate(at(15, 40), cfg, dec, ECOLE)
     assert snap.resources["iphone_gabin"].open is True
-    assert snap.resources["iphone_gabin"].blocked_services == frozenset({"fortnite"})
+    assert snap.resources["iphone_gabin"].blocked_services == frozenset({"minecraft"})
 
 
 def test_kid_service_exception_applies_to_all_kid_devices(make_cfg):
@@ -328,8 +328,10 @@ def test_service_exception_created_at_resource_close_is_ignored(cfg):
 
 def _tv_only_switch(d: dict) -> None:
     """La TV n'a qu'un interrupteur (pas d'AdGuard) ; les loisirs de tous contiennent
-    `label:internet`."""
-    d["default_leisure"] = [*d["default_leisure"], "label:internet"]
+    le service `internet` (interrupteurs seuls)."""
+    d["services"] = [*d["services"], {"id": "internet", "name": "Internet", "adguard": [],
+                                      "labels": [{"label_id": "internet"}]}]
+    d["default_leisure"] = [*d["default_leisure"], "internet"]
     d["resources"][0]["devices"] = [{"name": "TV", "integrations": [
         {"kind": "switch", "entity_id": "switch.tv"}]}]
 
@@ -338,18 +340,18 @@ def test_blocked_services_computed_without_adguard(make_cfg):
     cfg = make_cfg(_tv_only_switch)
     assert not cfg.resource("tv").has(ResourceKind.ADGUARD)
     closed = evaluate(at(20, 0), cfg, Decisions(), ECOLE).resources["tv"]
-    assert "label:internet" in closed.blocked_services
+    assert "internet" in closed.blocked_services
     opened = evaluate(at(15, 40), cfg, Decisions(), ECOLE).resources["tv"]
     assert opened.open is True
-    assert "label:internet" not in opened.blocked_services
+    assert "internet" not in opened.blocked_services
 
 
 def test_label_service_exception_on_non_adguard_resource(make_cfg):
     cfg = make_cfg(_tv_only_switch)
     dec = Decisions(exceptions=[
-        exc(Target(resource_id="tv", service="label:internet"), True)])
+        exc(Target(resource_id="tv", service="internet"), True)])
     tv = evaluate(at(20, 0), cfg, dec, ECOLE).resources["tv"]
-    assert "label:internet" not in tv.blocked_services
+    assert "internet" not in tv.blocked_services
     assert tv.opened_services == frozenset()
 
 
@@ -369,9 +371,9 @@ def test_adguard_signature_unchanged(make_cfg):
 
 
 def test_label_signature_covers_all_kid_resources(make_cfg):
-    cfg = make_cfg(_kid_with_switch_device)
+    cfg = make_cfg(lambda d: (_extra_services(d), _kid_with_switch_device(d)))
     snap = evaluate(at(20, 0), cfg, Decisions(), ECOLE)
-    sig = rule_signature(Target(kid_id="gabin", service="label:internet"), snap, cfg)
+    sig = rule_signature(Target(kid_id="gabin", service="internet"), snap, cfg)
     assert {item[0] for item in sig} == {"tv", "iphone_gabin", "switch", "lampe_gabin"}
 
 
@@ -379,3 +381,57 @@ def test_adguard_service_exception_ignored_on_non_adguard_resource(cfg):
     dec = Decisions(exceptions=[exc(Target(resource_id="tv", service="youtube"), False)])
     tv = evaluate(at(15, 40), cfg, dec, ECOLE).resources["tv"]
     assert tv.blocked_services == frozenset()
+
+
+def _extra_services(d: dict) -> None:
+    d["services"] = [*d["services"],
+                     {"id": "internet", "name": "Internet", "adguard": [],
+                      "labels": [{"label_id": "internet"}]},
+                     {"id": "youtube_svc", "name": "YouTube", "adguard": ["youtube"],
+                      "labels": []},
+                     {"id": "mixte", "name": "Mixte", "adguard": ["roblox"],
+                      "labels": [{"label_id": "console"}]}]
+
+
+def _tv_switch_only(d: dict, leisure: list[str]) -> None:
+    _extra_services(d)
+    d["default_leisure"] = leisure
+    d["resources"][0]["devices"] = [{"name": "TV", "integrations": [
+        {"kind": "switch", "entity_id": "switch.tv"}]}]
+
+
+def test_label_only_service_kept_without_adguard(make_cfg):
+    cfg = make_cfg(lambda d: _tv_switch_only(d, ["internet", "youtube_svc"]))
+    tv = evaluate(at(20, 0), cfg, Decisions(), ECOLE).resources["tv"]
+    assert tv.open is False
+    assert "internet" in tv.blocked_services
+    assert "youtube_svc" not in tv.blocked_services
+
+
+def test_mixed_service_exception_opens_on_non_adguard_resource(make_cfg):
+    cfg = make_cfg(lambda d: _tv_switch_only(d, ["mixte"]))
+    closed = evaluate(at(20, 0), cfg, Decisions(), ECOLE).resources["tv"]
+    assert "mixte" in closed.blocked_services
+    dec = Decisions(exceptions=[exc(Target(resource_id="tv", service="mixte"), True)])
+    tv = evaluate(at(20, 0), cfg, dec, ECOLE).resources["tv"]
+    assert "mixte" not in tv.blocked_services
+
+
+def test_opened_services_ignores_label_only(make_cfg):
+    cfg = make_cfg(lambda d: (_extra_services(d),
+                              d.__setitem__("default_leisure", ["internet"])))
+    dec = Decisions(exceptions=[exc(Target(resource_id="iphone_gabin", service="internet"),
+                                    True)])
+    state = evaluate(at(20, 0), cfg, dec, ECOLE).resources["iphone_gabin"]
+    assert state.opened_services == frozenset()
+
+
+def test_unknown_service_exception_ignored(make_cfg):
+    cfg = make_cfg(lambda d: d.__setitem__("services", [
+        s for s in d["services"] if s["id"] != "youtube"]))
+    base = evaluate(at(20, 0), cfg, Decisions(), ECOLE).resources["iphone_gabin"]
+    dec = Decisions(exceptions=[exc(Target(resource_id="iphone_gabin", service="youtube"),
+                                    True)])
+    snap = evaluate(at(20, 0), cfg, dec, ECOLE)
+    assert snap.resources["iphone_gabin"] == base
+    assert rule_signature(Target(service="youtube"), snap, cfg) == ()

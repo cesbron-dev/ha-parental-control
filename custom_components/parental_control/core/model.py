@@ -9,7 +9,6 @@ from enum import StrEnum
 from typing import Any
 
 
-
 class DayType(StrEnum):
     ECOLE = "ecole"
     FIN_DE_SEMAINE = "fin_de_semaine"
