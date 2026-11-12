@@ -18,8 +18,8 @@ from tests.core.conftest import TZ, mixed_tv, weekend_quota
 
 SATURDAY = date(2026, 10, 31)
 TUESDAY = date(2026, 10, 27)
-WEEKEND = {k: DayType.FIN_DE_SEMAINE for k in ("hugo", "zoe", "alice")}
-ECOLE = {k: DayType.ECOLE for k in ("hugo", "zoe", "alice")}
+WEEKEND = {k: DayType.WEEKEND for k in ("hugo", "zoe", "alice")}
+SCHOOL = {k: DayType.SCHOOL for k in ("hugo", "zoe", "alice")}
 
 
 def at(h: int, m: int = 0, day: date = SATURDAY) -> datetime:
@@ -50,7 +50,7 @@ def test_tv_quota_open_until_exhausted(weekend_cfg):
     assert tv.open is False
     assert tv.remaining_minutes == 0
     assert tv.until is None
-    assert tv.reason == "Quota épuisé"
+    assert tv.reason_code == "quota_exhausted"
 
 
 def test_tv_bonus_extends_resource_quota(weekend_cfg):
@@ -73,11 +73,11 @@ def _tv_without_device_quota(d, others_quota: int | None = 60) -> None:
     weekend_quota(d)
     d["resources"][0]["quota_minutes"] = {}
     for kid in d["kids"][1:]:
-        kid["profiles"]["fin_de_semaine"]["quota_minutes"] = others_quota
+        kid["profiles"]["weekend"]["quota_minutes"] = others_quota
 
 
 def test_tv_without_device_quota_uses_most_generous_kid_quota(make_cfg):
-    # Décision de Marc : sans quota d'appareil pour le jour, chaque enfant apporte son
+    # Décision d'Marc : sans quota d'appareil pour le jour, chaque enfant apporte son
     # quota de temps d'écran ; la TV partagée retient le plus généreux (Hugo, 120 min).
     cfg = make_cfg(_tv_without_device_quota)
     tv = evaluate(at(10), cfg, with_usage(100), WEEKEND).resources["tv"]
@@ -91,7 +91,7 @@ def test_tv_without_device_quota_uses_most_generous_kid_quota(make_cfg):
     tv = evaluate(at(10), cfg, with_usage(120), WEEKEND).resources["tv"]
     assert tv.open is False
     assert tv.remaining_minutes == 0
-    assert tv.reason == "Quota épuisé"
+    assert tv.reason_code == "quota_exhausted"
 
 
 def test_tv_fallback_quota_adds_kid_and_device_bonus(make_cfg):
@@ -112,7 +112,7 @@ def test_tv_fallback_counts_device_usage_not_kid_timer(make_cfg):
 def test_tv_without_any_quota_is_unlimited(make_cfg):
     def modify(d):
         _tv_without_device_quota(d, others_quota=None)
-        del d["kids"][0]["profiles"]["fin_de_semaine"]["quota_minutes"]
+        del d["kids"][0]["profiles"]["weekend"]["quota_minutes"]
 
     tv = evaluate(at(10), make_cfg(modify), with_usage(500), WEEKEND).resources["tv"]
     assert tv.open is True
@@ -123,7 +123,7 @@ def test_tv_without_any_quota_is_unlimited(make_cfg):
 
 def test_device_quota_still_wins(make_cfg):
     cfg = make_cfg(lambda d: (_tv_without_device_quota(d),
-                              d["resources"][0].update(quota_minutes={"fin_de_semaine": 180})))
+                              d["resources"][0].update(quota_minutes={"weekend": 180})))
     tv = evaluate(at(10), cfg, with_usage(150), WEEKEND).resources["tv"]
     assert tv.open is True
     assert tv.remaining_minutes == 30
@@ -147,7 +147,7 @@ def test_adguard_only_device_unchanged(make_cfg):
     cfg = make_cfg(lambda d: (_tv_without_device_quota(d), mixed_tv(d)))
     phone = evaluate(at(10), cfg, with_usage(500), WEEKEND).resources["iphone_hugo"]
     assert phone.open is False
-    assert phone.reason == "En attente du minuteur"
+    assert phone.reason_code == "waiting_timer"
     assert phone.remaining_minutes is None
     dec = Decisions(timers=[Timer("hugo", at(8), at(9, 50)), Timer("hugo", at(10), at(10, 30))])
     phone = evaluate(at(10), cfg, dec, WEEKEND).resources["iphone_hugo"]
@@ -161,9 +161,9 @@ def test_adguard_only_device_unchanged(make_cfg):
 def test_adguard_closed_without_timer(weekend_cfg):
     snap = evaluate(at(10), weekend_cfg, Decisions(), WEEKEND)
     assert snap.resources["iphone_hugo"].open is False
-    assert snap.resources["iphone_hugo"].reason == "En attente du minuteur"
+    assert snap.resources["iphone_hugo"].reason_code == "waiting_timer"
     g = snap.kids["hugo"]
-    assert g.status is KidStatus.ATTENTE_MINUTEUR
+    assert g.status is KidStatus.WAITING_TIMER
     assert g.remaining_minutes == 120
     assert g.until is None and g.timer_end is None
 
@@ -172,7 +172,7 @@ def test_timer_opens_adguard_and_counts_quota(weekend_cfg):
     dec = Decisions(timers=[Timer("hugo", at(10), at(10, 30))])
     snap = evaluate(at(10, 10), weekend_cfg, dec, WEEKEND)
     g = snap.kids["hugo"]
-    assert g.status is KidStatus.AUTORISE
+    assert g.status is KidStatus.ALLOWED
     assert g.remaining_minutes == 110
     assert g.until == at(10, 30)
     assert g.timer_end == at(10, 30)
@@ -182,7 +182,7 @@ def test_timer_opens_adguard_and_counts_quota(weekend_cfg):
     assert phone.blocked_services == frozenset()
     # Le minuteur de Hugo n'ouvre pas l'iPhone de Zoé.
     assert snap.resources["iphone_zoe"].open is False
-    assert snap.kids["zoe"].status is KidStatus.ATTENTE_MINUTEUR
+    assert snap.kids["zoe"].status is KidStatus.WAITING_TIMER
 
 
 def test_timer_cut_by_quota_exhaustion(weekend_cfg):
@@ -205,17 +205,17 @@ def test_quota_exhausted_status(weekend_cfg):
     dec = Decisions(timers=[Timer("hugo", at(8), at(10))])  # 120 min
     snap = evaluate(at(10, 30), weekend_cfg, dec, WEEKEND)
     g = snap.kids["hugo"]
-    assert g.status is KidStatus.QUOTA_EPUISE
+    assert g.status is KidStatus.QUOTA_EXHAUSTED
     assert g.remaining_minutes == 0
-    assert g.reason == "Quota épuisé"
+    assert g.reason_code == "quota_exhausted"
     assert snap.resources["iphone_hugo"].open is False
-    assert snap.resources["iphone_hugo"].reason == "Quota épuisé"
+    assert snap.resources["iphone_hugo"].reason_code == "quota_exhausted"
 
 
 def test_quota_exhausted_even_with_running_timer(weekend_cfg):
     dec = Decisions(timers=[Timer("hugo", at(8), at(12))])
     g = evaluate(at(11), weekend_cfg, dec, WEEKEND).kids["hugo"]
-    assert g.status is KidStatus.QUOTA_EPUISE
+    assert g.status is KidStatus.QUOTA_EXHAUSTED
     assert g.timer_end == at(12)
 
 
@@ -223,7 +223,7 @@ def test_kid_bonus_extends_kid_quota(weekend_cfg):
     dec = Decisions(timers=[Timer("hugo", at(8), at(10)), Timer("hugo", at(11), at(11, 30))],
                     bonuses=[Bonus(SATURDAY, 15, kid_id="hugo")])
     g = evaluate(at(11), weekend_cfg, dec, WEEKEND).kids["hugo"]
-    assert g.status is KidStatus.AUTORISE
+    assert g.status is KidStatus.ALLOWED
     assert g.remaining_minutes == 15
     assert g.until == at(11, 15)
 
@@ -237,7 +237,7 @@ def test_nintendo_follows_timer_in_quota_segment(weekend_cfg):
 
 
 def test_remaining_none_outside_quota_segment(cfg):
-    g = evaluate(tue(15, 40), cfg, Decisions(), ECOLE).kids["hugo"]
+    g = evaluate(tue(15, 40), cfg, Decisions(), SCHOOL).kids["hugo"]
     assert g.remaining_minutes is None
 
 
@@ -246,36 +246,36 @@ def test_remaining_none_outside_quota_segment(cfg):
 
 def _tv_close_until_next_decision(cfg, created: datetime) -> ManualException:
     target = Target(resource_id="tv")
-    rule = evaluate(created, cfg, Decisions(), ECOLE, apply_exceptions=False)
+    rule = evaluate(created, cfg, Decisions(), SCHOOL, apply_exceptions=False)
     return ManualException(id="e1", target=target, open=False, created=created,
                            until=None, signature=rule_signature(target, rule, cfg))
 
 
 def test_until_next_decision_expires_on_rule_change(cfg):
     dec = Decisions(exceptions=[_tv_close_until_next_decision(cfg, tue(15, 40))])
-    snap = evaluate(tue(16, 30), cfg, dec, ECOLE)
+    snap = evaluate(tue(16, 30), cfg, dec, SCHOOL)
     assert snap.expired_exception_ids == frozenset({"e1"})
-    assert snap.resources["tv"].reason != "Fermée manuellement"
+    assert snap.resources["tv"].reason_code != "closed_manually"
 
 
 def test_until_next_decision_holds_while_rule_unchanged(cfg):
     dec = Decisions(exceptions=[_tv_close_until_next_decision(cfg, tue(15, 40))])
-    snap = evaluate(tue(15, 55), cfg, dec, ECOLE)
+    snap = evaluate(tue(15, 55), cfg, dec, SCHOOL)
     assert snap.expired_exception_ids == frozenset()
     assert snap.resources["tv"].open is False
-    assert snap.resources["tv"].reason == "Fermée manuellement"
+    assert snap.resources["tv"].reason_code == "closed_manually"
 
 
 def test_exception_without_signature_never_auto_expires(cfg):
     e = ManualException(id="e1", target=Target(resource_id="tv"), open=False,
                         created=tue(15, 40), until=None, signature=None)
-    snap = evaluate(tue(16, 30), cfg, Decisions(exceptions=[e]), ECOLE)
+    snap = evaluate(tue(16, 30), cfg, Decisions(exceptions=[e]), SCHOOL)
     assert snap.expired_exception_ids == frozenset()
-    assert snap.resources["tv"].reason == "Fermée manuellement"
+    assert snap.resources["tv"].reason_code == "closed_manually"
 
 
 def test_rule_signature_covers_kid_service_targets(cfg):
-    rule = evaluate(tue(15, 40), cfg, Decisions(), ECOLE, apply_exceptions=False)
+    rule = evaluate(tue(15, 40), cfg, Decisions(), SCHOOL, apply_exceptions=False)
     assert rule_signature(Target(kid_id="zoe", service="youtube"), rule, cfg) == (
         ("iphone_zoe", "youtube", True),
     )
@@ -290,7 +290,7 @@ def test_rule_signature_covers_kid_service_targets(cfg):
 
 
 def test_upcoming_closure_at_segment_end(cfg):
-    closures = upcoming_closures(tue(15, 40), cfg, Decisions(), ECOLE, {})
+    closures = upcoming_closures(tue(15, 40), cfg, Decisions(), SCHOOL, {})
     assert closures["kid:hugo"] == tue(16)
     assert closures["resource:tv"] == tue(16)
     assert "kid:alice" not in closures  # fermé maintenant
@@ -315,32 +315,32 @@ def test_upcoming_closure_timer_end(weekend_cfg):
 def test_upcoming_closure_exception_until(cfg):
     e = ManualException(id="e1", target=Target(resource_id="iphone_hugo"), open=True,
                         created=tue(19, 30), until=tue(20, 15), signature=None)
-    closures = upcoming_closures(tue(19, 30), cfg, Decisions(exceptions=[e]), ECOLE, {})
+    closures = upcoming_closures(tue(19, 30), cfg, Decisions(exceptions=[e]), SCHOOL, {})
     assert closures["resource:iphone_hugo"] == tue(20, 15)
 
 
 def test_upcoming_closure_midnight_only_if_closed_then(make_cfg):
-    cfg = make_cfg(lambda d: d["kids"][0].update(resource_modes={"iphone_hugo": "libre"}))
-    closures = upcoming_closures(tue(20), cfg, Decisions(), ECOLE, {})
+    cfg = make_cfg(lambda d: d["kids"][0].update(resource_modes={"iphone_hugo": "free"}))
+    closures = upcoming_closures(tue(20), cfg, Decisions(), SCHOOL, {})
     assert "resource:iphone_hugo" not in closures  # toujours ouvert à minuit
 
 
 # --------------------------------------------------------------------------- correctifs (revue)
 
 
-def test_tv_quota_falls_back_to_weekend_on_vacances(weekend_cfg):
-    vacances = {k: DayType.VACANCES for k in WEEKEND}
+def test_tv_quota_falls_back_to_weekend_on_holidays(weekend_cfg):
+    vacances = {k: DayType.HOLIDAYS for k in WEEKEND}
     tv = evaluate(at(10), weekend_cfg, with_usage(500), vacances).resources["tv"]
     assert tv.open is False
-    assert tv.reason == "Quota épuisé"
+    assert tv.reason_code == "quota_exhausted"
     tv = evaluate(at(10), weekend_cfg, with_usage(170), vacances).resources["tv"]
     assert tv.open is True
     assert tv.remaining_minutes == 10
 
 
 def test_tv_quota_uses_each_owner_day_type(weekend_cfg):
-    mixed = {"hugo": DayType.ECOLE, "zoe": DayType.FIN_DE_SEMAINE,
-             "alice": DayType.FIN_DE_SEMAINE}
+    mixed = {"hugo": DayType.SCHOOL, "zoe": DayType.WEEKEND,
+             "alice": DayType.WEEKEND}
     tv = evaluate(at(10), weekend_cfg, with_usage(500), mixed).resources["tv"]
     assert tv.open is False
     tv = evaluate(at(10), weekend_cfg, with_usage(170), mixed).resources["tv"]
@@ -356,12 +356,12 @@ def test_tv_remaining_none_when_no_owner_in_quota_segment(weekend_cfg):
 
 def test_upcoming_closure_at_midnight_when_closed_then(make_cfg):
     def modify(d):
-        d["kids"][2]["profiles"]["ecole"]["segments"] = [
-            {"start": "00:00", "type": "bloque"},
-            {"start": "19:00", "type": "libre"},
+        d["kids"][2]["profiles"]["school"]["segments"] = [
+            {"start": "00:00", "type": "blocked"},
+            {"start": "19:00", "type": "free"},
         ]
 
-    closures = upcoming_closures(tue(20), make_cfg(modify), Decisions(), ECOLE, {})
+    closures = upcoming_closures(tue(20), make_cfg(modify), Decisions(), SCHOOL, {})
     midnight = tue(0) + timedelta(days=1)
     assert closures["kid:alice"] == midnight
     assert closures["resource:tv"] == midnight
@@ -387,9 +387,9 @@ def test_signature_tolerates_removed_resource(cfg, make_cfg):
 
     without_tv = make_cfg(drop_tv)
     assert rule_signature(Target(resource_id="tv"),
-                          evaluate(tue(15, 45), without_tv, Decisions(), ECOLE,
+                          evaluate(tue(15, 45), without_tv, Decisions(), SCHOOL,
                                    apply_exceptions=False), without_tv) == ()
-    snap = evaluate(tue(15, 45), without_tv, dec, ECOLE)
+    snap = evaluate(tue(15, 45), without_tv, dec, SCHOOL)
     assert snap.expired_exception_ids == frozenset({"e1"})
     assert "tv" not in snap.resources
 
@@ -420,7 +420,7 @@ def test_prune_unknown_removes_entries_of_removed_kids_and_resources():
 def test_upcoming_closure_service_opened_by_exception(cfg):
     e = ManualException(id="e1", target=Target(resource_id="iphone_hugo", service="youtube"),
                         open=True, created=tue(19, 30), until=tue(20), signature=None)
-    closures = upcoming_closures(tue(19, 30), cfg, Decisions(exceptions=[e]), ECOLE, {})
+    closures = upcoming_closures(tue(19, 30), cfg, Decisions(exceptions=[e]), SCHOOL, {})
     assert closures["service:iphone_hugo:youtube"] == tue(20)
     assert "resource:iphone_hugo" not in closures  # la ressource reste fermée
     assert not any(k.startswith("service:iphone_zoe:") for k in closures)
@@ -428,7 +428,7 @@ def test_upcoming_closure_service_opened_by_exception(cfg):
 
 def test_upcoming_closure_service_keys_absent_when_resource_closes(cfg):
     """La fermeture de la ressource entière couvre déjà ses services de loisirs."""
-    closures = upcoming_closures(tue(15, 40), cfg, Decisions(), ECOLE, {})
+    closures = upcoming_closures(tue(15, 40), cfg, Decisions(), SCHOOL, {})
     assert closures["resource:iphone_hugo"] == tue(16)
     assert not any(k.startswith("service:") for k in closures)
 
@@ -443,12 +443,12 @@ def _on_demand(d: dict) -> None:
 
 def test_on_demand_service_blocked_even_when_device_open(make_cfg):
     cfg = make_cfg(_on_demand)
-    snap = evaluate(tue(15, 40), cfg, Decisions(), ECOLE)  # plage libre de Hugo
+    snap = evaluate(tue(15, 40), cfg, Decisions(), SCHOOL)  # plage libre de Hugo
     iphone = snap.resources["iphone_hugo"]
     assert iphone.open is True
     assert iphone.blocked_services == frozenset({"youtube"})
     assert snap.resources["iphone_zoe"].blocked_services == frozenset()  # retiré pour Zoé
-    closed = evaluate(tue(20, 0), cfg, Decisions(), ECOLE).resources["iphone_hugo"]
+    closed = evaluate(tue(20, 0), cfg, Decisions(), SCHOOL).resources["iphone_hugo"]
     assert closed.blocked_services == cfg.leisure_for_resource("iphone_hugo") | {"youtube"}
 
 
@@ -456,20 +456,20 @@ def test_on_demand_service_opened_by_exception(make_cfg):
     cfg = make_cfg(_on_demand)
     e = ManualException(id="e1", target=Target(resource_id="iphone_hugo", service="youtube"),
                         open=True, created=tue(15, 40), until=tue(16, 10), signature=None)
-    snap = evaluate(tue(15, 50), cfg, Decisions(exceptions=[e]), ECOLE)
+    snap = evaluate(tue(15, 50), cfg, Decisions(exceptions=[e]), SCHOOL)
     assert "youtube" not in snap.resources["iphone_hugo"].blocked_services
-    later = evaluate(tue(16, 15), cfg, Decisions(exceptions=[e]), ECOLE)
+    later = evaluate(tue(16, 15), cfg, Decisions(exceptions=[e]), SCHOOL)
     assert "youtube" in later.resources["iphone_hugo"].blocked_services
 
 
 def test_on_demand_until_next_change_follows_device_schedule(make_cfg):
     cfg = make_cfg(_on_demand)
     target = Target(resource_id="iphone_hugo", service="youtube")
-    rule = evaluate(tue(15, 40), cfg, Decisions(), ECOLE, apply_exceptions=False)
+    rule = evaluate(tue(15, 40), cfg, Decisions(), SCHOOL, apply_exceptions=False)
     e = ManualException(id="e1", target=target, open=True, created=tue(15, 40), until=None,
                         signature=rule_signature(target, rule, cfg))
-    held = evaluate(tue(15, 55), cfg, Decisions(exceptions=[e]), ECOLE)
+    held = evaluate(tue(15, 55), cfg, Decisions(exceptions=[e]), SCHOOL)
     assert held.expired_exception_ids == frozenset()
     assert "youtube" not in held.resources["iphone_hugo"].blocked_services
     # 16:00 : la plage change (devoirs à faire), l'autorisation prend fin.
-    assert evaluate(tue(16, 5), cfg, Decisions(exceptions=[e]), ECOLE).expired_exception_ids == {"e1"}
+    assert evaluate(tue(16, 5), cfg, Decisions(exceptions=[e]), SCHOOL).expired_exception_ids == {"e1"}

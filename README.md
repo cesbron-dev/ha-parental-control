@@ -1,125 +1,128 @@
-# Contrôle parental pour Home Assistant
+# Parental Control for Home Assistant
 
-Intégration Home Assistant de contrôle parental. Chaque enfant a une frise
-horaire par type de journée (école, fin de semaine, congé pédagogique, vacances).
-Le moteur l'applique en continu aux téléviseurs (`media_player`), aux services
-AdGuard Home (via [ha-adguard-clients](https://github.com/cesbron-dev/ha-adguard-clients)) et aux consoles Nintendo Switch. Il gère aussi
-les devoirs, les quotas, les minuteurs, les bonus, les exceptions manuelles et une
-pause générale.
+**English** · [Français](README.fr.md)
 
-Le projet comporte trois pièces :
+A parental control integration for Home Assistant. Each child has a daily timeline for each
+type of day (school day, weekend, teacher in-service day, holidays). The engine applies it
+continuously to TVs (`media_player`), to AdGuard Home services (through
+[ha-adguard-clients](https://github.com/cesbron-dev/ha-adguard-clients)), to third-party
+switches and to Nintendo Switch consoles. It also handles homework, quotas, timers, bonuses,
+manual exceptions and a global pause.
 
-1. **le moteur** (ce dépôt) : intégration, services, entités, API WebSocket ;
-2. **les cartes du tableau de bord** : voir [Cartes](#cartes) ;
-3. **le panneau « Règles »** : l'éditeur visuel de la configuration, voir
-   [Panneau « Règles »](#panneau--règles-).
+The project has three parts:
 
-La configuration peut aussi se charger sous forme de JSON (voir plus bas).
+1. **the engine** (this repository): integration, actions, entities, WebSocket API;
+2. **the dashboard cards**: see [Cards](#cards);
+3. **the Rules panel**: the visual configuration editor, see [Rules panel](#rules-panel).
 
-Distribuée sous [licence MIT](LICENSE). Textes de l'interface en français.
+The configuration can also be loaded as JSON (see below). The interface is in English and
+French (see [Languages](#languages)). How it works inside, and why:
+[architecture](docs/architecture.md).
+
+Released under the [MIT license](LICENSE).
+
+![Dashboard: daily timeline, child cards and device cards](docs/images/dashboard-en.png)
 
 ## Installation
 
-Prérequis : Home Assistant **2026.10** ou plus récent. Pour piloter les services AdGuard Home,
-installez aussi [AdGuard Clients](https://github.com/cesbron-dev/ha-adguard-clients).
+Requirements: Home Assistant **2026.10** or later. To control AdGuard Home services, also
+install [AdGuard Clients](https://github.com/cesbron-dev/ha-adguard-clients).
 
-1. **Paramètres, Marketplace**, bouton **Ajouter grâce à un lien** en haut à droite, avec l'URL
-   `https://github.com/cesbron-dev/ha-parental-control` (avant Home Assistant 2026.11 : HACS,
-   menu en haut à droite, **Dépôts personnalisés**, catégorie **Intégration**).
-2. Installer « Parental Control », puis redémarrer Home Assistant.
-3. **Paramètres, Appareils et services, Ajouter une intégration, Contrôle parental**
-   (l'intégration est listée sous ce nom dans Home Assistant, « Parental Control » dans
-   Marketplace).
-4. Choisir le **code parent** : 4 à 8 chiffres. Il est stocké haché (PBKDF2), jamais en clair.
-   Une seule instance de l'intégration est possible. Le code se change plus tard dans les
-   options de l'intégration.
+1. **Settings, Marketplace**, **Add from link** button in the top right corner, with the URL
+   `https://github.com/cesbron-dev/ha-parental-control` (before Home Assistant 2026.11: HACS,
+   top-right menu, **Custom repositories**, category **Integration**).
+2. Install "Parental Control", then restart Home Assistant.
+3. **Settings, Devices & services, Add integration, Parental Control**.
+4. Choose the **parent code**: 4 to 8 digits. It is stored hashed (PBKDF2), never in clear
+   text. Only one instance of the integration is allowed. The code can be changed later in the
+   integration options.
 
-Une fois ajoutée, l'intégration n'a encore aucune configuration : chargez le JSON ci-dessous.
+Once added, the integration has no configuration yet: build it in the
+[Rules panel](#rules-panel) or load the JSON below.
 
-## Configuration JSON
+## JSON configuration
 
-### Exemple annoté
+### Annotated example
 
-Le JSON est un document unique (les commentaires `//` ci-dessous sont à retirer, JSON n'en
-accepte pas).
+The JSON is a single document (remove the `//` comments below, JSON does not allow them).
 
 ```jsonc
 {
-  "version": 2,                       // toujours 2
-  "services": [                       // vos services (voir « Services ») ; ordre d'affichage
+  "version": 3,                       // always 3
+  "services": [                       // your services (see "Configurable services"); display order
     {"id": "youtube", "name": "YouTube", "icon": "mdi:youtube", "adguard": ["youtube"]},
-    {"id": "jeux_video", "name": "Jeux vidéo", "icon": "mdi:gamepad-variant",
+    {"id": "video_games", "name": "Video games", "icon": "mdi:gamepad-variant",
      "adguard": ["roblox", "fortnite"],
      "labels": [{"label_id": "console", "on_means_allowed": false}]}
   ],
-  "default_leisure": ["jeux_video"],  // identifiants de vos services
+  "default_leisure": ["video_games"], // ids of your services
   "default_on_demand": ["youtube"],
-  "calendar_map": {                   // mot (sans accent ni casse) -> type de journée
-    "pédagogique": "conge_peda",
-    "vacances": "vacances",
-    "relâche": "vacances"
+  "calendar_map": {                   // word (accent- and case-insensitive) -> day type
+    "pedagogical": "day_off",
+    "holidays": "holidays",
+    "break": "holidays"
   },
-  "notify": ["notify.mobile_app_iphone_de_marc"],   // services notify des parents
+  "notify": ["notify.mobile_app_marc_iphone"],   // parents' notify services
   "kids": [
     {
-      "id": "hugo",                  // identifiant unique, utilisé par les services
+      "id": "hugo",                  // unique id, used by the actions
       "name": "Hugo",
-      "emoji": "🎮",                  // optionnel (pour les cartes)
-      "color": "#FF6B6B",             // optionnel (pour les cartes)
-      "calendar": "calendar.ecole_primaire",   // optionnel : calendrier du type de journée
-      "leisure_add": [],              // services de loisirs en plus de default_leisure
-      "leisure_remove": [],           // services retirés de default_leisure
-      "resource_modes": { "switch": "sur_demande" },   // optionnel, par ressource
+      "emoji": "🎮",                  // optional (for the cards)
+      "color": "#FF6B6B",             // optional (for the cards)
+      "calendar": "calendar.elementary_school",   // optional: calendar giving the day type
+      "leisure_add": [],              // leisure services added to default_leisure
+      "leisure_remove": [],           // services removed from default_leisure
+      "resource_modes": { "switch": "on_demand" },   // optional, per resource
       "profiles": {
-        "ecole": {                    // profils "ecole" et "fin_de_semaine" obligatoires
+        "school": {                   // "school" and "weekend" profiles are required
           "segments": [
-            { "start": "00:00", "type": "bloque" },
-            { "start": "15:25", "type": "libre" },
-            { "start": "16:00", "type": "apres_devoirs" },
-            { "start": "19:00", "type": "bloque" }
+            { "start": "00:00", "type": "blocked" },
+            { "start": "15:25", "type": "free" },
+            { "start": "16:00", "type": "after_homework" },
+            { "start": "19:00", "type": "blocked" }
           ]
         },
-        "fin_de_semaine": {
-          "quota_minutes": 120,       // budget journalier de l'enfant (segments "quota")
+        "weekend": {
+          "quota_minutes": 120,       // child's daily budget ("quota" segments)
           "segments": [
-            { "start": "00:00", "type": "bloque" },
+            { "start": "00:00", "type": "blocked" },
             { "start": "08:00", "type": "quota" },
-            { "start": "20:00", "type": "bloque" }
+            { "start": "20:00", "type": "blocked" }
           ]
         }
       }
     }
   ],
-  "resources": [                      // appareils logiques
+  "resources": [                      // logical devices
     {
       "id": "tv",
-      "name": "Télé salon",
-      "icon": "mdi:television",       // optionnel
+      "name": "Living room TV",
+      "icon": "mdi:television",       // optional
       "owners": ["hugo"],
-      "quota_minutes": { "fin_de_semaine": 180 },
-      "devices": [                    // appareils physiques
+      "quota_minutes": { "weekend": 180 },
+      "devices": [                    // physical devices
         {
           "name": "Samsung",
           "integrations": [
             {
               "kind": "media_player",
-              "entity_id": "media_player.tv_salon",
-              "notify_service": null  // optionnel : "notify.xxx" pour avertir sur l'appareil
+              "entity_id": "media_player.living_room_tv",
+              "notify_service": null  // optional: "notify.xxx" to warn on the device
             },
-            { "kind": "adguard_services", "device_id": "1ef9511faa6db9c5969524170a8fe8e3" }
+            { "kind": "adguard_services", "device_id": "3a7f21c84be94d05a1c6e8f2b9d04c71" }
           ]
         }
       ]
     },
     {
       "id": "iphone_hugo",
-      "name": "iPhone Hugo",
+      "name": "Hugo's iPhone",
       "owners": ["hugo"],
       "devices": [
         {
-          "name": "iPhone Hugo",
+          "name": "Hugo's iPhone",
           "integrations": [
-            { "kind": "adguard_services", "device_id": "7c2a9e0b4d1f4e6a8b3c5d7e9f102132" }
+            { "kind": "adguard_services", "device_id": "8d1e5b3a7c924f06b2a4d6e8f0c13a57" }
           ]
         }
       ]
@@ -135,9 +138,9 @@ accepte pas).
             {
               "kind": "nintendo",
               "device_id": "c52a9e7f10b84d3698e1f4a7d3b60c28",
-              "limit_entity": "number.switch_papa_temps_d_ecran_max_aujourd_hui",
-              "remaining_entity": "sensor.switch_papa_temps_d_ecran_restant",
-              "used_entity": "sensor.switch_papa_temps_d_ecran_utilise"
+              "limit_entity": "number.switch_max_screen_time_today",
+              "remaining_entity": "sensor.switch_screen_time_remaining",
+              "used_entity": "sensor.switch_screen_time_used"
             }
           ]
         }
@@ -147,430 +150,433 @@ accepte pas).
 }
 ```
 
-### Les clés
+### Keys
 
-**Racine**
+**Root**
 
-| Clé | Rôle |
+| Key | Purpose |
 |---|---|
-| `version` | `2`. Une configuration en `1` (ou sans `version`) est convertie à la lecture. |
-| `services` | Vos services (voir [Services configurables](#services-configurables)) : `id` (fixe, créé à partir du nom), `name`, `icon` (facultatif), `adguard` (identifiants de services AdGuard Home), `labels` (`label_id` et `on_means_allowed`). |
-| `default_leisure` | Identifiants de vos services considérés comme des loisirs (ce sont eux que le moteur bloque et débloque). Vide par défaut. Un identifiant inconnu est retiré au chargement ; envoyé par le panneau, il est refusé. |
-| `calendar_map` | Associe un mot cherché dans le titre des événements « journée entière » du calendrier de l'enfant à un type de journée. Comparaison sans accent ni casse, par inclusion. |
-| `notify` | Services `notify.*` des parents : avertissements de fin de plage d'un enfant et de re-blocage d'un service AdGuard ouvert par exception. |
-| `request_notify` | Téléphones des parents (`notify.mobile_app_…`) qui reçoivent et peuvent répondre aux demandes de temps des enfants. Distinct de `notify`. Voir « Demandes de temps ». |
-| `kids` | Liste des enfants. |
-| `resources` | Liste des appareils logiques contrôlés (voir [Appareils logiques](#appareils-logiques)). |
+| `version` | Always `3`. |
+| `services` | Your services (see [Configurable services](#configurable-services)): `id` (fixed, derived from the name), `name`, `icon` (optional), `adguard` (AdGuard Home service ids), `labels` (`label_id` and `on_means_allowed`). |
+| `default_leisure` | Ids of your services treated as leisure (these are the ones the engine blocks and unblocks). Empty by default. An unknown id is dropped when the stored configuration is loaded; sent by the panel, it is rejected. |
+| `default_on_demand` | Ids of your services that stay blocked even when the device is open: only an explicit permission opens them. |
+| `calendar_map` | Maps a word searched in the title of the child's calendar "all-day" events to a day type. Accent- and case-insensitive substring match. |
+| `notify` | Parents' `notify.*` services: warnings about the end of a child's time slot and about an AdGuard service opened by exception being blocked again. |
+| `request_notify` | Parents' phones (`notify.mobile_app_…`) that receive and can answer the children's time requests. Distinct from `notify`. See [Time requests](#time-requests). |
+| `kids` | List of children. |
+| `resources` | List of controlled logical devices (see [Logical devices](#logical-devices)). |
 
-**Enfant (`kids[]`)**
+**Child (`kids[]`)**
 
-| Clé | Rôle |
+| Key | Purpose |
 |---|---|
-| `id`, `name` | Identifiant unique et nom affiché (obligatoires). |
-| `emoji`, `color` | Décoration pour les cartes (optionnels). |
-| `calendar` | Entité `calendar.*` dont les événements « journée entière » déterminent le type de journée. |
-| `leisure_add`, `leisure_remove` | Ajustent `default_leisure` pour cet enfant. |
-| `resource_modes` | Par `id` de ressource, remplace le comportement de la frise : `suit_frise` (défaut), `sur_demande`, `bloque` ou `libre`. |
-| `profiles` | Un profil par type de journée : `ecole`, `fin_de_semaine`, `conge_peda`, `vacances`. `ecole` et `fin_de_semaine` sont obligatoires. |
+| `id`, `name` | Unique id and display name (required). |
+| `emoji`, `color` | Decoration for the cards (optional). |
+| `calendar` | `calendar.*` entity whose "all-day" events determine the day type. |
+| `leisure_add`, `leisure_remove` | Adjust `default_leisure` for this child. |
+| `on_demand_add`, `on_demand_remove` | Adjust `default_on_demand` for this child. |
+| `target_label` | Optional HA label: switches carrying this label and a service label are controlled for this child (see [Configurable services](#configurable-services)). |
+| `resource_modes` | Per resource `id`, overrides the timeline behaviour: `schedule` (follows the timeline, default), `on_demand`, `blocked` or `free`. |
+| `profiles` | One profile per day type: `school`, `weekend`, `day_off` (teacher in-service day), `holidays`. `school` and `weekend` are required. |
 
-**Profil**
+**Profile**
 
-| Clé | Rôle |
+| Key | Purpose |
 |---|---|
-| `segments` | Frise de la journée (au moins un segment). Le premier commence à `00:00`, les heures `start` (`HH:MM`) sont strictement croissantes ; un segment dure jusqu'au début du suivant, ou jusqu'à minuit. |
-| `quota_minutes` | Budget journalier de l'enfant pour les segments `quota` mesurés par minuteur (optionnel : sans lui, pas de limite). |
-| `warn_minutes` (dans un segment) | Préavis avant la fin de la plage ouverte, en minutes (défaut `5`). |
+| `segments` | The day's timeline (at least one segment). The first starts at `00:00`, `start` times (`HH:MM`) are strictly increasing; a segment lasts until the next one starts, or until midnight. |
+| `quota_minutes` | The child's daily budget for `quota` segments measured by a timer (optional: without it, no limit). |
+| `warn_minutes` (in a segment) | Notice before the end of the open slot, in minutes (default `5`). |
 
-**Types de segment**
+**Segment types**
 
-| Type | Comportement |
+| Type | Behaviour |
 |---|---|
-| `bloque` | Tout est bloqué. |
-| `libre` | Tout est autorisé. |
-| `apres_devoirs` | Autorisé seulement après `devoirs_termines` du jour ; sinon statut « en attente des devoirs ». |
-| `quota` | Autorisé dans la limite du budget. Pour l'enfant : il faut démarrer un minuteur (`demarrer_minuteur`), le temps du minuteur est décompté du `quota_minutes` du profil ; les ressources AdGuard ne s'ouvrent que pendant ce minuteur. Seul un appareil avec un lecteur multimédia (`media_player`) ou un interrupteur (`switch`) a son propre budget, décompté par l'usage réel : son `quota_minutes` pour le type de journée, ou à défaut le quota de temps d'écran le plus généreux des enfants concernés (voir [Appareils logiques](#appareils-logiques)). Illimité seulement si ni l'appareil ni aucun de ces enfants n'a de quota ce jour-là. La Switch n'a pas de quota côté moteur : on lui accorde du temps avec `ajouter_bonus` (`resource_id: switch`). |
-| `sur_demande` | Bloqué jusqu'à ce qu'un parent ouvre (service `exception` avec `open: true`) ; statut « sur demande ». Pour la Switch, pas d'exception : `ajouter_bonus` avec `resource_id: switch`. |
+| `blocked` | Everything is blocked. |
+| `free` | Everything is allowed. |
+| `after_homework` | Allowed only after the day's `homework_done`; otherwise the status is `waiting_homework`. |
+| `quota` | Allowed within the budget. For the child: a timer must be started (`start_timer`), and the timer's duration is deducted from the profile's `quota_minutes`; AdGuard resources only open while that timer runs. Only a device with a media player (`media_player`) or a switch (`switch`) has its own budget, deducted from actual use: its `quota_minutes` for the day type, or failing that the most generous screen-time quota among the children concerned (see [Logical devices](#logical-devices)). Unlimited only if neither the device nor any of these children has a quota that day. The Switch has no quota on the engine side: grant it time with `add_bonus` (`resource_id: switch`). |
+| `on_demand` | Blocked until a parent opens it (`exception` action with `open: true`); status `on_demand`. For the Switch, no exception: use `add_bonus` with `resource_id: switch`. |
 
-**Type de journée.** Le calendrier de l'enfant fixe le type via `calendar_map`. Priorité en
-cas de recoupement : `vacances`, puis `conge_peda`, puis `ecole` / `fin_de_semaine`. Sans
-événement reconnu : `ecole` du lundi au vendredi, `fin_de_semaine` samedi et dimanche.
-Si le profil `conge_peda` ou `vacances` n'existe pas, c'est le profil `fin_de_semaine` qui
-s'applique (et, pour une ressource, son `quota_minutes` de `fin_de_semaine`).
+**Day type.** The child's calendar sets the type through `calendar_map`. Priority when events
+overlap: `holidays`, then `day_off`, then `school` / `weekend`. Without a recognised event:
+`school` Monday to Friday, `weekend` Saturday and Sunday. If the `day_off` or `holidays` profile
+does not exist, the `weekend` profile applies (and, for a resource, its `weekend`
+`quota_minutes`).
 
-**Ressource (`resources[]`, appareil logique)**
+**Resource (`resources[]`, logical device)**
 
-| Clé | Rôle |
+| Key | Purpose |
 |---|---|
-| `id`, `name` | Identifiant unique et nom affiché (obligatoires). |
-| `icon` | Icône `mdi:` (optionnel, sinon déduite). |
-| `owners` | Liste d'`id` d'enfants, qui doivent exister. |
-| `quota_minutes` | Objet optionnel `{ "<type de journée>": minutes }`. |
-| `devices` | Appareils physiques : `{ "name": ..., "integrations": [...] }`. Au moins une intégration au total. |
+| `id`, `name` | Unique id and display name (required). |
+| `icon` | `mdi:` icon (optional, otherwise inferred). |
+| `owners` | List of child `id`s, which must exist. |
+| `quota_minutes` | Optional object `{ "<day type>": minutes }`. |
+| `target_label` | Optional HA label: switches carrying this label and a service label are controlled for this device (see [Configurable services](#configurable-services)). |
+| `devices` | Physical devices: `{ "name": ..., "integrations": [...] }`. At least one integration in total. |
 
-Chaque intégration porte un `kind` :
+Each integration has a `kind`:
 
-| `kind` | Clés propres | Remarques |
+| `kind` | Own keys | Notes |
 |---|---|---|
-| `media_player` | `entity_id` (obligatoire), `notify_service` (optionnel) | Tout lecteur multimédia, quelle que soit l'intégration (Samsung/SmartThings, Android TV Remote, Google Cast…). Éteint quand la règle est fermée. Temps d'usage compté, `quota_minutes` applicable. Avec Google Cast, l'extinction arrête seulement la diffusion : préférer l'entité Android TV Remote d'une Google TV. |
-| `switch` | `entity_id` (obligatoire, `switch.*`), `turn_on_when_allowed` (optionnel, `false` par défaut) | Prise commandée, écran de PC… Coupé quand la règle est fermée (et recoupé s'il est rallumé). Allumé, il compte comme utilisé : temps d'usage compté, `quota_minutes` applicable. Avec `turn_on_when_allowed: true`, rallumé une fois au passage de l'appareil à « autorisé » (fin de plage fermée, fin de pause) ; jamais au démarrage de HA ni après un enregistrement de la configuration, ni par une exception de service. Attention : couper la prise d'un PC l'éteint brutalement, et une prise laissée allumée sans rien de branché consomme quand même le quota. Le panneau ne propose ni les interrupteurs du contrôle parental lui-même ni les interrupteurs de configuration (réglages AdGuard…). |
-| `adguard_services` | `device_id` (obligatoire) | Appareil d'un client persistant de l'intégration `adguard_clients`. Le moteur lit l'attribut `services` de son capteur « Services bloqués » et écrit par `adguard_clients.set_blocked_services` (une écriture par décision). Seuls les services de loisirs sont gérés. |
-| `nintendo` | `device_id`, `limit_entity`, `remaining_entity`, `used_entity` | Les quatre sont obligatoires ; les trois entités sont celles de l'intégration Nintendo (limite du jour en `number`, temps restant et utilisé en `sensor`). La limite du jour doit rester à 0 : le temps s'accorde par bonus. |
+| `media_player` | `entity_id` (required), `notify_service` (optional) | Any media player, whatever the integration (Samsung/SmartThings, Android TV Remote, Google Cast…). Turned off when the rule is closed. Usage time is counted, `quota_minutes` applies. With Google Cast, turning off only stops casting: prefer the Android TV Remote entity of a Google TV. |
+| `switch` | `entity_id` (required, `switch.*`), `turn_on_when_allowed` (optional, `false` by default) | Smart plug, PC screen… Turned off when the rule is closed (and again if turned back on). When on, it counts as in use: usage time is counted, `quota_minutes` applies. With `turn_on_when_allowed: true`, it is turned back on once when the device becomes "allowed" (end of a closed slot, end of the pause); never at HA startup, after saving the configuration, or by a service exception. Beware: cutting a PC's plug shuts it down abruptly, and a plug left on with nothing connected still consumes the quota. The panel offers neither the parental control's own switches nor configuration switches (AdGuard settings…). |
+| `adguard_services` | `device_id` (required) | Device of a persistent client from the `adguard_clients` integration. The engine reads the `services` attribute of its blocked services sensor and writes through `adguard_clients.set_blocked_services` (one write per decision). Only the AdGuard services attached to your managed services are touched. |
+| `nintendo` | `device_id`, `limit_entity`, `remaining_entity`, `used_entity` | All four are required; the three entities come from the Nintendo integration (today's limit as a `number`, remaining and used time as `sensor`s). Today's limit must stay at 0: time is granted through bonuses. |
 
-## Appareils logiques
+## Logical devices
 
-Pour la famille, « la Télé » est un seul appareil, même si le moteur doit en piloter plusieurs
-morceaux. La configuration a donc trois niveaux :
+For the family, "the TV" is a single device, even if the engine has to control several pieces
+of it. The configuration therefore has three levels:
 
-1. l'**appareil logique** (`resources[]`) : celui des cartes et des règles (enfants concernés,
-   quota par type de journée, mode par enfant) ;
-2. ses **appareils physiques** (`devices`) : de simples étiquettes pour ranger, sans règle propre ;
-3. leurs **intégrations** (`integrations`) : un lecteur `media_player`, un interrupteur `switch`,
-   un client AdGuard, une console Nintendo.
+1. the **logical device** (`resources[]`): the one used by the cards and the rules (children
+   concerned, quota per day type, mode per child);
+2. its **physical devices** (`devices`): simple labels for grouping, with no rule of their own;
+3. their **integrations** (`integrations`): a `media_player`, a `switch`, an AdGuard client, a
+   Nintendo console.
 
-Exemple : la Télé, avec la Samsung (lecteur et client AdGuard) et la Google TV (lecteur et deux
-clients AdGuard, un en local et un par le VPN).
+Example: the TV, with the Samsung (player and AdGuard client) and the Google TV (player and two
+AdGuard clients, one local and one through the VPN).
 
 ```json
 {
   "id": "tv",
-  "name": "Télé",
+  "name": "TV",
   "icon": "mdi:television",
   "owners": ["hugo", "zoe"],
-  "quota_minutes": { "fin_de_semaine": 90 },
+  "quota_minutes": { "weekend": 90 },
   "devices": [
     {
       "name": "Samsung",
       "integrations": [
-        { "kind": "media_player", "entity_id": "media_player.tv_salon" },
-        { "kind": "adguard_services", "device_id": "1ef9511faa6db9c5969524170a8fe8e3" }
+        { "kind": "media_player", "entity_id": "media_player.living_room_tv" },
+        { "kind": "adguard_services", "device_id": "3a7f21c84be94d05a1c6e8f2b9d04c71" }
       ]
     },
     {
       "name": "Google TV",
       "integrations": [
         { "kind": "media_player", "entity_id": "media_player.google_tv" },
-        { "kind": "adguard_services", "device_id": "5e3b8c1d9f7a4b2e6c0d8a1f3b5e7c92" },
-        { "kind": "adguard_services", "device_id": "a4d8f6e2c0b14a39857e6d5c4b3a2918" }
+        { "kind": "adguard_services", "device_id": "9b4c2e6a8d0f4137a5c7e9b1d3f50a86" },
+        { "kind": "adguard_services", "device_id": "e07b3d9a5c1f482e86a0b4d2f6c8e135" }
       ]
     }
   ]
 }
 ```
 
-**Les règles s'appliquent une fois, à l'appareil logique.** Fermée, la Télé éteint tous ses
-lecteurs et bloque les loisirs sur chaque client AdGuard ; « Autoriser » ouvre tout, « Arrêter »
-ferme tout. Une exception sur un service (YouTube) s'ouvre sur tous les clients AdGuard de
-l'appareil ; si l'appareil est fermé, ses lecteurs ne sont pas éteints (seul ce service
-passe) ; ils le sont de nouveau à la fin de l'exception. Le mode par enfant (`resource_modes`)
-est unique par appareil logique et vaut pour
-toutes ses intégrations.
+**Rules apply once, to the logical device.** When closed, the TV turns off all its players and
+blocks the leisure services on every AdGuard client; "Allow" opens everything, "Stop" closes
+everything. An exception on a service (YouTube) opens it on all the
+device's AdGuard clients; if the device is closed, its players are not turned off (only that
+service gets through); they are turned off again when the exception ends. The per-child mode
+(`resource_modes`) is unique per logical device and applies to all its integrations.
 
-**Quota.** Pour un appareil qui contient un lecteur multimédia, le temps compte dès qu'un lecteur
-est en marche, une seule fois même si plusieurs tournent ensemble : c'est le compteur commun de
-l'appareil. Le budget est le `quota_minutes` de l'appareil pour le type de journée ; à défaut, le
-quota de temps d'écran de la frise de chaque enfant concerné (avec ses bonus), et comme
-l'appareil est partagé, c'est le plus généreux de ces quotas qui s'applique. Aucun quota nulle
-part ce jour-là : pas de limite. Cela vaut aussi pour une télé seule. Un appareil sans lecteur
-(AdGuard seul) s'ouvre pendant un minuteur de l'enfant et puise dans son budget.
+**Quota.** For a device that contains a media player, time counts as soon as a player is on,
+only once even if several run together: it is the device's shared counter. The budget is the
+device's `quota_minutes` for the day type; failing that, the screen-time quota from the timeline
+of each child concerned (with their bonuses), and since the device is shared, the most generous
+of these quotas applies. No quota anywhere that day: no limit. This also applies to a single
+TV. A device without a player (AdGuard only) opens during a child's timer and draws on their
+budget.
 
-**Nintendo.** Une console doit rester seule dans son appareil logique : une seule intégration
-`nintendo`, aucune autre. Le moteur refuse sinon la configuration (« une console Nintendo ne se
-regroupe pas »). Son fonctionnement ne change pas (bonus, pas d'exception).
+**Nintendo.** A console must be alone in its logical device: a single `nintendo` integration,
+nothing else. Otherwise the engine rejects the configuration ("a Nintendo console cannot be
+grouped"). Its behaviour is unchanged (bonuses, no
+exceptions).
 
-**Intégration absente.** Un lecteur, un client AdGuard ou une console introuvable dans Home
-Assistant (un Chromecast débranché, par exemple) est signalé une fois dans les journaux et
-ignoré : les autres intégrations de l'appareil continuent d'être pilotées.
+**Missing integration.** A player, AdGuard client or console that cannot be found in Home
+Assistant (an unplugged Chromecast, for example) is reported once in the logs and ignored: the
+device's other integrations keep being controlled.
 
-### Charger la configuration
+### Loading the configuration
 
-- Service **`parental_control.importer_configuration`** (réservé aux parents : refusé aux autres
-  comptes ; un appel sans utilisateur, depuis une automatisation ou un script, passe aussi) avec
-  le champ `config` contenant l'objet JSON. Comme l'enregistrement du panneau, il détermine le
-  propriétaire de chaque téléphone de `request_notify` (la clé `request_notify_owners` du fichier
-  est ignorée) : un import qui ajoute un téléphone sans appareil `mobile_app` unique échoue.
-  Outils de développement, Actions, mode YAML :
+- Action **`parental_control.import_config`** (parents only: rejected for other
+  accounts; a call without a user, from an automation or a script, is also accepted) with the
+  `config` field holding the JSON object. Like saving from the panel, it determines the owner of
+  each phone in `request_notify` (the file's `request_notify_owners` key is ignored): an import
+  that adds a phone without a unique `mobile_app` device fails. Developer tools, Actions, YAML
+  mode:
 
   ```yaml
-  action: parental_control.importer_configuration
+  action: parental_control.import_config
   data:
     config:
-      version: 2
+      version: 3
       kids: []
       resources: []
   ```
 
-- Ou la commande WebSocket **`parental_control/config/set`** (`{"type": "parental_control/config/set", "config": {...}}`,
-  parents seulement). `parental_control/config/get` renvoie la configuration courante
-  (parents seulement aussi : elle contient les identifiants d'appareils et les cibles de
-  notification), `parental_control/state` l'état courant et `parental_control/state/subscribe`
-  s'abonne aux changements (pour les cartes).
+- Or the WebSocket command **`parental_control/config/set`**
+  (`{"type": "parental_control/config/set", "config": {...}}`, parents only).
+  `parental_control/config/get` returns the current configuration (parents only too: it contains
+  device ids and notification targets), `parental_control/state` the current state, and
+  `parental_control/state/subscribe` subscribes to changes (for the cards).
 
-Une configuration invalide est refusée en citant le chemin fautif (par exemple
-`kids[0].profiles.ecole.segments[2].start : heure invalide`). Si la configuration
-enregistrée est invalide au démarrage, le moteur reste inactif : l'erreur est journalisée et
-une notification persistante « Contrôle parental : configuration invalide, moteur inactif »
-s'affiche (elle disparaît au chargement d'une configuration valide).
+An invalid configuration is rejected with the faulty path (for example
+`kids[0].profiles.school.segments[2].start: invalid time 25:00 (format HH:MM)`). If the stored
+configuration is invalid at startup, the engine stays inactive: the error is logged and a
+persistent notification "Parental control: invalid configuration, engine inactive" is shown (it
+disappears once a valid configuration is loaded).
 
-Quand une configuration retire un enfant ou une ressource, les décisions qui les visaient
-(exceptions, minuteurs, bonus, devoirs) sont supprimées.
+When a configuration removes a child or a resource, the decisions that targeted them
+(exceptions, timers, bonuses, homework) are deleted.
 
-## Services
+## Actions
 
-Le « code » est le code parent. Un **parent** (voir « Qui est parent »), ou un appel **sans
-utilisateur** (automatisation, script), n'a pas besoin de le fournir. Un autre utilisateur
-doit le passer dans le champ `code` pour les actions qui débloquent.
+The "code" is the parent code. A **parent** (see [Who is a parent](#who-is-a-parent)), or a call
+**without a user** (automation, script), does not need to provide it. Any other user must pass
+it in the `code` field for actions that unblock something.
 
-| Service | Champs | Code exigé (non parent) |
+| Action | Fields | Code required (non-parent) |
 |---|---|---|
-| `parental_control.devoirs_termines` | `kid_id` | oui |
-| `parental_control.ajouter_bonus` | `minutes` (1 à 240) et exactement un de `kid_id` ou `resource_id` | oui |
-| `parental_control.exception` | `open` (obligatoire), `resource_id`, `kid_id`, `service`, `minutes` (1 à 240) | oui si `open: true`, non pour une fermeture |
-| `parental_control.annuler_exception` | `exception_id` | oui si l'exception annulée est une fermeture (annuler rouvre) |
-| `parental_control.demarrer_minuteur` | `kid_id`, `minutes` (1 à 240) | oui |
-| `parental_control.arreter_minuteur` | `kid_id` | non |
-| `parental_control.pause` | `active` | oui pour lever la pause (`active: false`), non pour la poser |
-| `parental_control.importer_configuration` | `config` | réservé aux parents (refusé aux autres, avec ou sans code) |
-| `parental_control.demander` | `kind`, `kid_id`, `resource_id`, `service`, `minutes`, `options`, `replace` | non (voir « Demandes de temps ») |
+| `parental_control.homework_done` | `kid_id` | yes |
+| `parental_control.add_bonus` | `minutes` (1 to 240) and exactly one of `kid_id` or `resource_id` | yes |
+| `parental_control.exception` | `open` (required), `resource_id`, `kid_id`, `service`, `minutes` (1 to 240) | yes if `open: true`, no for a closure |
+| `parental_control.cancel_exception` | `exception_id` | yes if the cancelled exception is a closure (cancelling reopens) |
+| `parental_control.start_timer` | `kid_id`, `minutes` (1 to 240) | yes |
+| `parental_control.stop_timer` | `kid_id` | no |
+| `parental_control.pause` | `active` | yes to lift the pause (`active: false`), no to set it |
+| `parental_control.import_config` | `config` | parents only (rejected for others, with or without code) |
+| `parental_control.request` | `kind`, `kid_id`, `resource_id`, `service`, `minutes`, `options`, `replace` | no (see [Time requests](#time-requests)) |
 
-Précisions :
+Details:
 
-- `ajouter_bonus` sur un `kid_id` ajoute des minutes au quota de l'enfant du jour ; sur une
-  `resource_id` avec un lecteur ou un interrupteur, au quota de la ressource ; sur une ressource
-  `nintendo`, accorde du temps de jeu à la console. Pas de bonus pour AdGuard.
-- `exception` sans `service` exige un `resource_id` (cible précise). Avec `service`, la cible
-  est un de vos services (son identifiant), pour une ressource, pour toutes les ressources d'un enfant ou pour
-  toutes. Une exception sur la Switch est refusée (« Pour la Switch, utilisez
-  ajouter_bonus »). Sans `minutes`, l'exception dure jusqu'au prochain changement de règle ; avec
-  `minutes`, pour cette durée. Le service retourne `{"id": "..."}` quand on demande la
-  réponse (`response_variable`) : c'est l'`exception_id` à passer à `annuler_exception`.
-- Les exceptions en cours sont listées dans les attributs du capteur de statut.
+- `add_bonus` on a `kid_id` adds minutes to the child's quota for the day; on a
+  `resource_id` with a player or a switch, to the resource's quota; on a `nintendo` resource,
+  grants play time to the console. No bonus for AdGuard.
+- `exception` without `service` requires a `resource_id` (a precise target). With `service`, the
+  target is one of your services (its id), for one resource, for all of a child's resources, or
+  for all resources. An exception on the Switch is rejected ("For the Switch, use add_bonus").
+  Without `minutes`, the exception lasts
+  until the next rule change; with `minutes`, for that duration. The action returns
+  `{"id": "..."}` when a response is requested (`response_variable`): it is the `exception_id`
+  to pass to `cancel_exception`.
+- Ongoing exceptions are listed in the status sensor's attributes.
 
-## Entités
+## Entities
 
-Chaque enfant, chaque ressource et la pause générale sont des appareils (type « service »).
+Each child, each resource and the global pause are devices (of type "service").
 
-| Entité | Détail |
+| Entity | Details |
 |---|---|
-| `sensor` Statut, par enfant | États : `autorise`, `bloque`, `attente_devoirs`, `attente_minuteur`, `quota_epuise`, `sur_demande`, `pause`. Les détails de l'instantané (type de journée, segment, fin de plage, temps restant, exceptions) sont en attributs. |
-| `button` Devoirs terminés, par enfant | Équivaut au service `devoirs_termines`, sans code pour un parent ; un bouton ne transmet pas de code, il est donc refusé à un autre utilisateur (utiliser le service avec `code`). |
-| `binary_sensor` Autorisée, par ressource | Ouverte selon la règle. Pour AdGuard, les services bloqués sont en attribut. |
-| `sensor` Temps utilisé / Temps restant, par ressource | Minutes, seulement pour les appareils avec un lecteur, un interrupteur ou une console Nintendo. |
-| `switch` Pause générale | Ferme toutes les ressources (sur AdGuard, les services de loisirs) et remet la limite du jour Nintendo à 0. N'importe qui peut la poser ; l'éteindre est refusé à un non-parent (pas de code possible sur un interrupteur : utiliser le service `pause` avec `code`). Un parent l'éteint sans code. |
+| `sensor` Status, per child | States: `allowed`, `blocked`, `waiting_homework`, `waiting_timer`, `quota_exhausted`, `on_demand`, `paused`. Snapshot details (day type, segment, slot end, remaining time, exceptions) are attributes. |
+| `button` Homework done, per child | Same as the `homework_done` action, without code for a parent; a button cannot carry a code, so it is rejected for other users (use the action with `code`). |
+| `binary_sensor` Allowed, per resource | Open according to the rule. For AdGuard, the blocked services are an attribute. |
+| `sensor` Time used / Time remaining, per resource | Minutes, only for devices with a player, a switch or a Nintendo console. |
+| `switch` Global pause | Closes all resources (on AdGuard, the leisure services) and resets the Nintendo daily limit to 0. Anyone can set it; turning it off is rejected for a non-parent (a switch cannot carry a code: use the `pause` action with `code`). A parent turns it off without code. |
+| `switch` Simulation | See [Simulation mode](#simulation-mode). |
 
-Les identifiants d'entités sont ceux que Home Assistant génère à partir des noms (par
-exemple `sensor.hugo_statut` si l'appareil s'appelle « Hugo »).
+Entity ids are the ones Home Assistant generates from the names, in the system language at
+creation (for example `sensor.hugo_status` on an English system if the device is called
+"Hugo", `sensor.hugo_statut` on a French one). Existing entity ids never change, even if the
+language changes.
 
-### Événement `parental_control_warning`
+### `parental_control_warning` event
 
-Émis avant une fermeture prévue, au préavis du segment (`warn_minutes`, 5 min par défaut,
-le plus petit des propriétaires pour une ressource) :
+Fired before a scheduled closure, at the segment's notice (`warn_minutes`, 5 min by default, the
+smallest among the owners for a resource):
 
 ```yaml
 event_type: parental_control_warning
 data:
-  target: "kid:hugo"        # ou "resource:tv", ou "service:iphone_hugo:youtube"
+  target: "kid:hugo"        # or "resource:tv", or "service:iphone_hugo:youtube"
   closes_at: "2026-10-29T19:00:00-04:00"
-  message: "Hugo : fin des écrans dans 5 min"
+  message: "Hugo: screens end in 5 min"
 ```
 
-Une cible `service:<ressource>:<service>` signale un service AdGuard débloqué (par exemple
-ouvert par exception) qui va être rebloqué alors que la ressource reste fermée ; message :
-« youtube sur iPhone Hugo : coupure dans 5 min ».
+A `service:<resource>:<service>` target reports an unblocked AdGuard service (for example opened
+by exception) that is about to be blocked again while the resource stays closed; message:
+"YouTube on Hugo's iPhone: cut-off in 5 min". Messages are in the Home Assistant system
+language.
 
-Pour un enfant ou un service, le message est aussi envoyé aux services de `notify` ; les
-messages d'un même instant de fermeture sont regroupés en une seule notification. Pour une
-ressource, il est envoyé par son `notify_service` s'il est défini.
+For a child or a service, the message is also sent to the `notify` services; messages for the
+same closing time are grouped into a single notification. For a resource, it is sent through
+its `notify_service` if set.
 
-## Cartes
+## Cards
 
-L'intégration charge ses cartes toute seule dans le tableau de bord (aucune ressource à
-ajouter) ; elles apparaissent dans le sélecteur de cartes, sous « Contrôle parental ».
-Elles lisent l'état du moteur en direct et n'appellent que les services `parental_control.*`.
-`resource` est l'`id` d'une ressource de la configuration JSON. Chaque carte a un éditeur
-visuel (bouton « Modifier » de la carte) : l'appareil et les enfants se choisissent dans des
-listes tirées des règles, et les options (nom, icône, titre, minutes bonus) se remplissent sans
-YAML ; « Afficher l'éditeur de code » reste disponible. Après une mise à jour,
-redémarrez Home Assistant : l'adresse des cartes change avec leur contenu, ce qui évite qu'un
-navigateur garde une ancienne version.
+The integration loads its cards into the dashboard by itself (no resource to add); they appear
+in the card picker as "Parental control — …" (in the browser's language). They read the engine's state live and only call
+the `parental_control.*` actions. `resource` is the `id` of a resource from the configuration.
+Each card has a visual editor (the card's "Edit" button): the device and children are picked
+from lists drawn from the rules, and options (name, icon, title, bonus minutes) are filled in
+without YAML; "Show code editor" remains available. After an update, restart Home Assistant:
+the cards' address changes with their content, which keeps a browser from holding on to an old
+version.
 
-| Carte | Rôle | Configuration minimale |
+| Card | Purpose | Minimal configuration |
 |---|---|---|
-| `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard ou ciblé par un interrupteur par label : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
-| `parental-timeline-card` | La frise de la journée de chaque enfant. | `type: custom:parental-timeline-card` ; `kids: [hugo]` limite aux enfants listés |
-| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules de ses services (appareils AdGuard et interrupteurs qui le visent), autorisations en cours (✕) et bonus. | `kid: alice` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
-| `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
+| `parental-resource-card` | A device: state, ongoing permissions (✕ to cancel), "Allow…" and "Stop". For a Switch: bonus pills instead. AdGuard device or device targeted by a labelled switch: its on-demand services as toggles (green unblocked, grey blocked). | `resource: tv` |
+| `parental-timeline-card` | Each child's timeline for the day. | `type: custom:parental-timeline-card`; `kids: [hugo]` restricts to the listed children |
+| `parental-kid-card` | A child: status, today's timeline, "Homework done" (during an after-homework slot), timer (quota slot), remaining screen time, on-demand services as toggles (AdGuard devices and switches targeting the child), ongoing permissions (✕) and bonuses. | `kid: alice`; `show_timeline`, `show_services`, `show_bonus` (false to hide), `services`, `bonus_minutes` |
+| `parental-switch-card` | A Nintendo console: remaining-time gauge, time used, rule state and bonuses. Complements the official Nintendo integration. | `resource: switch` |
 
 ```yaml
 type: custom:parental-resource-card
 resource: tv
-services: [youtube]           # optionnel : services sur demande affichés (tous par défaut)
-show_services: false          # optionnel : masque les bascules de services
+services: [youtube]           # optional: on-demand services shown (all by default)
+show_services: false          # optional: hides the service toggles
 ```
 
-**Bascules de services.** La carte affiche les services sur demande de l'appareil. Toucher un service bloqué ouvre une fenêtre pour choisir
-la durée (15 min à 2 h) ou « jusqu'au prochain changement » de plage, avec le code pour un compte
-non parent ; toucher un service
-débloqué le bloque, sans code. Les cartes suivent le thème clair ou sombre de Home Assistant.
+**Service toggles.** The card shows the device's on-demand services. Tapping a blocked service
+opens a dialog to choose the duration (15 min to 2 h) or "Until the next change", with the
+code for a non-parent account; tapping an unblocked service blocks it, without code. The cards
+follow Home Assistant's light or dark theme.
 
 ```yaml
 type: custom:parental-switch-card
 resource: switch
-title: Nintendo Switch        # optionnel
-bonus_minutes: [15, 30, 60]   # optionnel
+title: Nintendo Switch        # optional
+bonus_minutes: [15, 30, 60]   # optional
 ```
 
-**Le code parent.** Un compte non parent doit saisir le code (petit cadenas sur la
-pilule) pour **autoriser**, les **bonus**, valider les **devoirs** et lancer un **minuteur**. Il est saisi sur un pavé numérique tactile (pas de clavier
-natif qui recouvre l'écran ; le clavier physique marche aussi), envoyé avec
-l'appel et oublié ; il n'est jamais stocké dans une carte ni dans la configuration du
-tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmation en deux appuis.
+**The parent code.** A non-parent account must enter the code (small padlock on the pill) to
+**allow**, grant **bonuses**, confirm **homework** and start a **timer**. It is typed on an
+on-screen keypad (no native keyboard covering the screen; a physical keyboard also works), sent
+with the call and forgotten; it is never stored in a card or in the dashboard configuration.
+"Stop" and ✕ go through without code, after a two-tap confirmation.
 
-## Panneau « Règles »
+## Rules panel
 
-L'intégration ajoute un panneau **Règles** dans la barre latérale pour
-modifier la configuration sans écrire de JSON : enfants et frises par type de jour (segments,
-quotas, avertissements), loisirs, mode par appareil, appareils logiques en arbre (appareils
-physiques, puis intégrations : lecteur, clients AdGuard, console Nintendo, avec une pastille qui
-dit si l'entité ou l'appareil existe dans Home Assistant) et leurs quotas, loisirs par défaut, mots du calendrier scolaire et notifications. Les
-modifications restent en brouillon jusqu'à « Enregistrer » ; le moteur valide et, en cas d'erreur,
-indique le champ fautif. Un onglet JSON garde l'accès à la configuration brute.
+The integration adds a **Rules** panel to the sidebar to edit the configuration
+without writing JSON: children and timelines per day type (segments, quotas, warnings), leisure
+services, mode per device, logical devices as a tree (physical devices, then integrations:
+player, switch, AdGuard clients, Nintendo console, with a badge telling whether the entity or
+device exists in Home Assistant) and their quotas, your services, default leisure services,
+school-calendar words and notifications. Changes stay as a draft until "Save";
+the engine validates them and, on error, points to the faulty field. A JSON tab keeps access to
+the raw configuration.
 
-**Qui est parent.** Peuvent ouvrir et modifier le panneau (onglet JSON et liste des téléphones des
-parents compris), sans code et sans « Demander » :
+![Rules panel, Children tab](docs/images/panel-children-en.png)
 
-- les **administrateurs** de Home Assistant ;
-- les utilisateurs non administrateurs **propriétaires d'un téléphone** de la liste « Demandes de
-  temps (parents) » (voir ci-dessous).
+![Rules panel, Devices tab](docs/images/panel-devices-en.png)
 
-L'entrée « Règles » est visible dans la barre latérale de tous les comptes, mais un compte non
-parent n'y lit que « Réservé aux parents. » : le serveur refuse aussi `config/get`, `config/set`
-et `services/catalog` aux non-parents (`unauthorized`). Un compte administrateur désactivé n'est
-plus dispensé du code.
+![Rules panel, General tab](docs/images/panel-general-en.png)
 
-## Services configurables
+### Who is a parent
 
-Un **service** est défini par le parent dans le panneau « Règles », onglet Général, carte
-« Services » : un nom, une icône, et ce qui le bloque réellement :
+The following can open and edit the panel (JSON tab and parents' phone list included), without
+code and without "Ask":
 
-- un ou plusieurs **services AdGuard Home**, choisis par leur nom dans le catalogue AdGuard ;
-- et/ou un ou plusieurs **labels HA** posés sur des `switch` (règle de pare-feu UniFi, etc.).
+- Home Assistant **administrators**;
+- non-administrator users who **own a phone** listed under "Time requests (parents)" (see
+  [Time requests](#time-requests)).
 
-Exemple : « Jeux vidéo » = Roblox et Fortnite (AdGuard) + le label « Console », posé sur une
-règle UniFi « Couper internet console ». Bloquer « Jeux vidéo » bloque tout cela d'un coup ;
-une exception ou une demande acceptée l'ouvre de même.
+The "Rules" entry is visible in every account's sidebar, but a non-parent account only reads
+"Parents only.": the server also refuses `config/get`, `config/set` and
+`services/catalog` to non-parents (`unauthorized`). A disabled administrator account no longer
+skips the code.
 
-Seuls ces services apparaissent ailleurs : loisirs et sur demande (par défaut et par enfant),
-demandes d'accès, exceptions, notifications, cartes. Le catalogue AdGuard ne sert qu'à choisir
-ce qu'on rattache.
+## Configurable services
 
-- **AdGuard.** Un client AdGuard bloque l'union des services AdGuard des services bloqués. Un
-  même service AdGuard peut figurer dans plusieurs services : il est bloqué dès qu'un service
-  géré qui le contient est bloqué. Les services AdGuard que vous n'avez rattachés à aucun
-  service géré ne sont jamais touchés. Retirer un service AdGuard d'un service (ou supprimer un
-  service) pendant qu'il est bloqué le laisse bloqué sur le client : débloquez-le dans AdGuard
-  si besoin.
-- **Interrupteurs.** Un `switch` qui porte un label rattaché à un service et le **label de
-  cible** d'un enfant ou d'un appareil logique (champ « Label de cible » de l'enfant ou de
-  l'appareil) est piloté pour cette cible. Par défaut, **allumé = bloqué**, comme une règle de
-  pare-feu active ; l'option « Allumé = autorisé » se règle **par label**.
-- **Cible enfant ou appareil.** Avec un enfant pour cible, l'interrupteur suit l'état de
-  l'enfant (et les exceptions qui le visent ou visent un de ses appareils) ; avec un appareil,
-  il suit l'état du service pour cet appareil, même sans client AdGuard. Plusieurs cibles :
-  bloqué dès qu'une l'exige.
-- **Un label** est rattaché à un seul service, et n'est jamais à la fois rattaché et label de
-  cible : le panneau refuse le cumul.
-- **Exceptions.** Une autorisation sur un service qui n'a que des labels n'ouvre que ses
-  interrupteurs : elle ne garde pas allumés les lecteurs ou la prise d'un appareil fermé. Les
-  avertissements de fermeture ne concernent que la partie AdGuard des services.
-- **Pause.** La pause générale bloque aussi ces services (s'ils sont gérés).
-- **Cas ignorés.** Un interrupteur est laissé tel quel :
-  - sans cible, ou si son label a été supprimé : avertissement dans le journal et dans le
-    récapitulatif « Interrupteurs pilotés » de la carte Services (en rouge) ;
-  - si son service n'est ni en loisir ni sur demande d'une cible : état « non géré » ;
-  - s'il est indisponible : avertissement dans le journal ; il est piloté dès son retour.
+A **service** is defined by the parent in the Rules panel, "General" tab, "Services" card: a name, an icon, and what actually blocks it:
 
-**Mise à jour depuis la v0.3.** On repart d'une liste de services vide : les anciens
-identifiants AdGuard des loisirs, sur demande, exceptions et demandes sont ignorés. Les services
-AdGuard que l'ancienne configuration avait bloqués **restent bloqués** sur les clients jusqu'à ce
-que vous les débloquiez dans AdGuard ou les rattachiez à un service.
+- one or more **AdGuard Home services**, picked by name from the AdGuard catalog;
+- and/or one or more **HA labels** set on `switch` entities (a UniFi firewall rule, etc.).
 
-## Demandes de temps
+Example: "Video games" = Roblox and Fortnite (AdGuard) + the "Console" label, set on a UniFi
+rule "Cut console internet". Blocking "Video games" blocks all of it at once; an
+exception or an accepted request opens it the same way.
 
-Un enfant qui n'est pas parent peut **demander** du temps plutôt que de le débloquer :
-les fenêtres des cartes (autorisation, bonus, devoirs, minuteur) ont un bouton « Demander », sans
-code. Les parents reçoivent une notification actionnable dans l'app Home Assistant (« Hugo
-demande 30 min de YouTube sur iPhone Hugo ») avec un bouton par durée proposée et « Refuser ».
-La première réponse valable applique l'action (exception, bonus, minuteur ou devoirs terminés) ; la
-notification disparaît chez tous les parents. La carte de l'enfant montre « Demande envoyée · en
-attente », puis le résultat (accepté, refusé, sans réponse) pendant 5 minutes.
+Only these services appear elsewhere: leisure and on-demand lists (default and per child),
+access requests, exceptions, notifications, cards. The AdGuard catalog is only used to choose
+what to attach.
 
-**Activer.** Dans le panneau « Règles », carte « Demandes de temps (parents) », ajoutez les
-téléphones des parents (clé `request_notify`, par exemple `notify.mobile_app_iphone_de_marc`).
-Sans cette liste, les demandes sont désactivées. Cette liste est distincte de `notify`, qui sert
-aux avertissements de fermeture destinés aux enfants.
+- **AdGuard.** An AdGuard client blocks the union of the AdGuard services of the blocked
+  services. The same AdGuard service can belong to several services: it is blocked as soon as
+  one managed service containing it is blocked. AdGuard services that you have not attached to
+  any managed service are never touched. Removing an AdGuard service from a service (or deleting
+  a service) while it is blocked leaves it blocked on the client: unblock it in AdGuard if
+  needed.
+- **Switches.** A `switch` that carries a label attached to a service and the **target label**
+  of a child or a logical device (the "Target label" field of the child or device) is
+  controlled for that target. By default, **on = blocked**, like an active firewall rule; the
+  "On = allowed" option is set **per label**.
+- **Child or device target.** With a child as target, the switch follows the child's state (and
+  the exceptions targeting the child or one of their devices); with a device, it follows the
+  service's state for that device, even without an AdGuard client. Several targets: blocked as
+  soon as one requires it.
+- **A label** is attached to a single service, and is never both attached and a target label:
+  the panel refuses the combination.
+- **Exceptions.** A permission on a service that only has labels opens only its switches: it
+  does not keep a closed device's players or plug on. Closing warnings only concern the AdGuard
+  part of services.
+- **Pause.** The global pause also blocks these services (if they are managed).
+- **Ignored cases.** A switch is left as is:
+  - without a target, or if its label was deleted: warning in the log and in the "Controlled
+    switches" summary of the Services card (in red);
+  - if its service is neither leisure nor on demand for any target: "not managed" state;
+  - if it is unavailable: warning in the log; it is controlled again as soon as it comes back.
 
-**Propriétaire d'un téléphone.** À l'enregistrement (ou à l'import), le serveur cherche l'appareil
-`mobile_app` du même nom que chaque téléphone et mémorise l'utilisateur à qui il appartient
-(clé `request_notify_owners`, écrite par le serveur : une valeur envoyée par le client, panneau
-ou import, est ignorée). Ce propriétaire est un parent tant que l'appareil lui appartient encore,
-de façon unique. Chaque téléphone enregistré affiche dans le panneau un statut et le nom du
-propriétaire mémorisé ; un téléphone qui vient d'être ajouté n'a de statut qu'après
-l'enregistrement :
+## Time requests
 
-| Statut | Sens |
+A child who is not a parent can **ask** for time instead of unlocking it: the cards' dialogs
+(permission, bonus, homework, timer) have an "Ask" button, without code. Parents get an
+actionable notification in the Home Assistant app ("Hugo asks for 30 min of YouTube on Hugo's
+iPhone") with one button per offered duration and "Refuse". The first valid answer applies the
+action (exception, bonus, timer or homework done); the notification disappears for all
+parents. The child's card shows "Request sent · waiting", then the outcome (accepted, refused,
+no answer) for 5 minutes.
+
+![Requests screen with two pending requests](docs/images/requests-en.png)
+
+**Enabling.** In the Rules panel, "Time requests (parents)" card, add the parents' phones
+(`request_notify` key, for example `notify.mobile_app_marc_iphone`). Without this list,
+requests are disabled. This list is distinct from `notify`, which is used for closing warnings
+aimed at the children.
+
+**Phone owner.** On save (or import), the server looks for the `mobile_app` device with the same
+name as each phone and remembers the user it belongs to (`request_notify_owners` key, written by
+the server: a value sent by the client, panel or import, is ignored). That owner is a parent as
+long as the device still belongs to them, unambiguously. Each saved phone shows a status and the
+remembered owner's name in the panel; a phone that was just added only gets a status after
+saving:
+
+| Status | Meaning |
 |---|---|
-| Associé | Propriétaire mémorisé, appareil toujours à lui. |
-| À associer | Aucun propriétaire mémorisé : « Réassocier à <nom> ». |
-| Appareil introuvable | Aucun appareil `mobile_app` de ce nom. |
-| Changé de compte | L'appareil appartient maintenant à un autre utilisateur : « Réassocier à <nom> ». |
-| Nom en double | Plusieurs appareils portent ce nom : les renommer. |
+| Linked | Owner remembered, device still theirs. |
+| To link | No remembered owner: "Relink to <name>". |
+| Device not found | No `mobile_app` device with this name. |
+| Account changed | The device now belongs to another user: "Relink to <name>". |
+| Duplicate name | Several devices have this name: rename them. |
 
-Le bouton « Réassocier à <nom> » n'existe que pour « À associer » et « Changé de compte » ; il
-nomme le compte actuel de l'appareil, qui deviendra parent à l'enregistrement. Retirer son propre
-dernier téléphone demande confirmation (« Vous ne serez plus parent après l'enregistrement.
-Continuer ? »).
+The "Relink to <name>" button only exists for "To link" and "Account changed"; it names the
+device's current account, which becomes a parent on save. Removing your own last phone asks
+for confirmation ("You will no longer be a parent after saving. Continue?").
 
-**Réinstallation de l'app** Home Assistant sur un téléphone (l'appareil `mobile_app` est
-recréé) :
+**Reinstalling the Home Assistant app** on a phone (the `mobile_app` device is recreated):
 
-- même compte, ancien appareil supprimé de Home Assistant : le téléphone reste « Associé », rien
-  à faire ;
-- ancien appareil conservé : « Nom en double » ; supprimer (ou renommer) l'ancien appareil dans
-  Paramètres → Appareils et services → Mobile App ;
-- nouvel appareil nommé avec un suffixe (`iPhone de Julie 2`, par exemple) : l'ancien téléphone
-  passe « Appareil introuvable » ; retirer cette cible et ajouter la nouvelle ;
-- autre compte sur le même nom d'appareil : « Changé de compte », puis « Réassocier à <nom> » si
-  ce compte doit être parent.
+- same account, old device deleted from Home Assistant: the phone stays "Linked", nothing to
+  do;
+- old device kept: "Duplicate name"; delete (or rename) the old device in Settings → Devices &
+  services → Mobile App;
+- new device named with a suffix (`Julie's iPhone 2`, for example): the old phone becomes
+  "Device not found"; remove that target and add the new one;
+- another account on the same device name: "Account changed", then "Relink to <name>" if that
+  account should be a parent.
 
-**Mise à jour.** L'association automatique a lieu une seule fois, au premier démarrage de la
-0.3.0 : chaque téléphone listé dont le propriétaire actuel est unique est associé (ligne dans les
-journaux). Les autres restent « À associer » jusqu'à « Réassocier », même si un appareil de ce
-nom apparaît ensuite.
+**Requests screen.** The integration creates the `/parental-control-requests` screen: no
+dashboard to set up. It lists pending requests with their remaining time and the same buttons
+as the notification, then the answers from the last 5 minutes (who answered, what was
+granted). It updates live. Any user can open it, but only parents (as defined below) see the
+buttons, and the engine re-checks each answer. On iPhone, a long press on the notification also
+lets you answer without opening the app.
 
-**Écran « Demandes ».** L'intégration crée l'écran `/parental-control-requests` : aucun tableau
-de bord à configurer. Il liste les demandes en attente avec le temps restant et les mêmes boutons
-que la notification, puis les réponses des 5 dernières minutes (qui a répondu, ce qui a été
-accordé). Il se met à jour en direct. Tout utilisateur peut l'ouvrir, mais seuls les parents
-définis ci-dessous y voient les boutons, et le moteur revérifie chaque réponse. Sur iPhone, un
-appui long sur la notification permet aussi de répondre sans ouvrir l'app.
+The screen has no sidebar entry, so that children do not see it. You get there:
 
-L'écran n'a pas d'entrée dans la barre latérale, pour que les enfants ne le voient pas. On y
-arrive :
-
-- en touchant la notification d'une demande ;
-- **parents** (administrateurs ou non) : par le bouton « Demandes » du panneau « Règles », qui
-  affiche le nombre de demandes en attente ;
-- **sans le panneau** (si vous préférez ne pas l'utiliser) : la notification ne
-  suffit plus une fois qu'elle a été ignorée ou effacée. Pour revenir à l'écran :
-  - dans un navigateur, ouvrir `https://<votre-instance>/parental-control-requests` et l'ajouter
-    aux favoris ;
-  - ou ajouter un bouton sur un tableau de bord que ce parent utilise. La condition de
-    visibilité `user` le cache aux autres comptes, dont celui de la tablette des enfants
-    (l'identifiant se trouve dans Paramètres → Personnes → Utilisateurs) :
+- by tapping a request notification;
+- **parents** (administrators or not): through the "Requests" button of the Rules panel, which
+  shows the number of pending requests;
+- **without the panel** (if you prefer not to use it): the notification is no longer enough
+  once it has been dismissed or cleared. To get back to the screen:
+  - in a browser, open `https://<your-instance>/parental-control-requests` and bookmark it;
+  - or add a button to a dashboard this parent uses. The `user` visibility condition hides it
+    from other accounts, including the children's tablet (the id is under Settings → People →
+    Users):
 
     ```yaml
     type: button
-    name: Demandes
+    name: Requests
     icon: mdi:hand-back-right
     tap_action:
       action: navigate
@@ -578,118 +584,151 @@ arrive :
     visibility:
       - condition: user
         users:
-          - <identifiant de l'utilisateur du parent>
+          - <id of the parent's user>
     ```
 
-**Qui peut répondre.** Une réponse n'est acceptée que si elle vient de l'**utilisateur
-propriétaire d'un téléphone de la liste** (propriétaire mémorisé, voir plus haut), depuis la notification (qui porte en plus le **jeton
-secret** propre à la demande) ou depuis l'écran « Demandes » : être administrateur ne suffit
-pas, et un parent sans téléphone listé ne peut pas répondre. Si deux appareils `mobile_app` portent le même nom, aucun des deux ne peut répondre (un
-avertissement est journalisé) : donnez-leur des noms distincts.
+**Who can answer.** An answer is only accepted if it comes from the **user who owns a listed
+phone** (remembered owner, see above), from the notification (which also carries the request's
+own **secret token**) or from the Requests screen: being an administrator is not enough, and a
+parent without a listed phone cannot answer. If two `mobile_app` devices have the same name,
+neither can answer (a warning is logged): give them distinct names.
 
-**Règles.**
+**Rules.**
 
-- Une demande impossible (cible inconnue, ressource qui n'est pas à l'enfant, bonus non
-  applicable à la ressource…) est refusée dès l'envoi, pas à la réponse du parent.
-- Une seule demande en attente par enfant et par action.
-- Sans réponse après **15 minutes**, la demande expire.
-- Les demandes sont gardées **en mémoire** : elles sont perdues au redémarrage de Home Assistant
-  (la notification reste alors sur le téléphone, mais sa réponse est ignorée).
-- Chaque issue (acceptée, refusée, impossible, sans réponse) laisse une ligne dans le journal
-  (« Contrôle parental »).
-- Un **iPhone** est recommandé : Android n'affiche que 3 boutons au plus par notification, ce
-  qui coupe les durées proposées.
+- An impossible request (unknown target, resource that does not belong to the child, bonus not
+  applicable to the resource…) is rejected when sent, not when the parent answers.
+- One pending request per child, action and target (device, service); at most three pending
+  per child.
+- Without an answer after **15 minutes**, the request expires.
+- Requests are kept **in memory**: they are lost when Home Assistant restarts (the notification
+  then stays on the phone, but its answer is ignored).
+- Each outcome (accepted, refused, impossible, no answer) leaves a line in the logbook
+  ("Parental control", in the system language).
+- An **iPhone** is recommended: Android shows at most 3 buttons per notification, which cuts the
+  offered durations.
 
-**Service `parental_control.demander`.** Utilisé par les cartes ; appelable aussi depuis un
-script ou une automatisation. Il ne demande pas de code et n'accorde rien tant qu'un parent n'a
-pas répondu. Avec `response_variable`, il retourne `{"id": "..."}`.
+**`parental_control.request` action.** Used by the cards; can also be called from a script or
+an automation. It asks for no code and grants nothing until a parent has answered. With
+`response_variable`, it returns `{"id": "..."}`.
 
-| Champ | Détail |
+| Field | Details |
 |---|---|
-| `kind` | `open` (autoriser), `bonus`, `homework` (devoirs terminés) ou `timer` (minuteur). Obligatoire. |
-| `kid_id` | L'enfant qui demande. Obligatoire. |
-| `resource_id` | La ressource visée (`open` et `bonus` seulement) ; elle doit appartenir à l'enfant. |
-| `service` | Identifiant d'un de vos services à débloquer (`open`). |
-| `minutes` | Durée proposée (1 à 240), obligatoire pour `bonus` et `timer`, interdite pour `homework`. Mise en tête des boutons. |
-| `options` | Autres durées proposées, en minutes ; `null` pour `open` = « jusqu'au prochain changement ». Six boutons de durée au plus. |
-| `replace` | Identifiants d'exceptions à annuler quand le parent accepte (`open`). |
+| `kind` | `open` (allow), `bonus`, `homework` (homework done) or `timer`. Required. |
+| `kid_id` | The requesting child. Required. |
+| `resource_id` | The targeted resource (`open` and `bonus` only); it must belong to the child. |
+| `service` | Id of one of your services to unblock (`open`). |
+| `minutes` | Offered duration (1 to 240), required for `bonus` and `timer`, forbidden for `homework`. Shown first among the buttons. |
+| `options` | Other offered durations, in minutes; `null` for `open` = "until the next change". At most six duration buttons. |
+| `replace` | Ids of exceptions to cancel when the parent accepts (`open`). |
 
-## Mode simulation
+## Simulation mode
 
-Le mode simulation fait tourner tout le moteur (états, frises, exceptions, avertissements) sans
-piloter aucun appareil : rien n'est bloqué, éteint ni limité. Il sert à valider les règles avant de
-les laisser agir.
+Simulation mode runs the whole engine (states, timelines, exceptions, warnings) without
+controlling any device: nothing is blocked, turned off or limited. It is used to check the rules
+before letting them act.
 
-- **Interrupteur** `switch` « Simulation », à côté de « Pause ». Les cartes affichent une pastille
-  « SIMULATION » dans leur en-tête et le panneau « Règles » un bandeau en tête.
-- **Journal de bord.** Chaque action que le moteur aurait faite (fermer une ressource, rebloquer un
-  service, remettre la limite Nintendo à 0…) y est inscrite à la place de l'appel réel.
-- **Installations.** Une nouvelle installation démarre en simulation ; une installation existante
-  reste en mode réel.
-- **Code parent.** **Activer** la simulation relâche tous les appareils : un compte non
-  parent doit donc fournir le code parent. Un interrupteur ne transmet pas de code : il est
-  refusé à un non-parent, comme pour l'arrêt de la pause. Un parent l'active sans code. La désactiver n'en demande pas.
-- **Notifications.** Les notifications aux parents partent toujours, préfixées « [Simulation] ».
-- **Sortie de simulation.** En la quittant, le moteur réapplique tout de suite l'état voulu à
-  chaque appareil.
+- **Switch**: a "Simulation" `switch`, next to "Global pause". The cards show a "SIMULATION"
+  badge in their header and the Rules panel a banner at the top.
+- **Logbook.** Every action the engine would have taken (closing a resource, blocking a service
+  again, resetting the Nintendo limit to 0…) is recorded there instead of the real call.
+- **Installation.** A new installation starts in simulation: turn it off once the rules are
+  checked.
+- **Parent code.** **Turning on** simulation releases every device: a non-parent account must
+  therefore provide the parent code. A switch cannot carry a code: it is rejected for a
+  non-parent, as for lifting the pause. A parent turns it on without code. Turning it off needs
+  none.
+- **Notifications.** Notifications to parents are still sent, prefixed with "[Simulation]".
+- **Leaving simulation.** When it is turned off, the engine immediately reapplies the intended
+  state to every device.
 
-## Tablette murale
+## Wall tablet
 
-1. Créer un **utilisateur Home Assistant dédié, non administrateur**, pour la tablette.
-2. Y afficher le tableau de bord. Les [cartes](#cartes) demandent le code pour débloquer ; le bouton « Devoirs
-   terminés » et l'arrêt de la pause restent refusés sur la tablette : les parents les
-   utilisent depuis leur téléphone (administrateur, ou parent déclaré dans « Demandes de temps »).
-3. Les actions qui débloquent demandent le **code parent** dans le champ `code` d'un appel
-   de service. **N'écrivez jamais le code** dans une action `perform-action` d'un tableau de
-   bord ni dans une automatisation ou un script qu'un non-parent peut déclencher.
-4. **Masquez à l'utilisateur de la tablette les entités brutes** AdGuard
-   (appareils `adguard_clients`), Nintendo et télé : il pourrait les manipuler directement. Le
-   moteur corrige une dérive (service AdGuard débloqué pendant une fermeture, télé rallumée, limite
-   Nintendo relevée), mais pas avant qu'elle ait eu lieu.
-5. **Verrouillage** : après 5 codes faux consécutifs, les essais sont refusés 60 s ; chaque
-   échec suivant double la durée, jusqu'à 15 minutes. Un bon code remet le compteur à zéro.
-   Le compteur est par utilisateur et **en mémoire** : un redémarrage de Home Assistant le
-   remet à zéro.
+1. Create a **dedicated, non-administrator Home Assistant user** for the tablet.
+2. Show the dashboard there. The [cards](#cards) ask for the code to unlock; the "Homework
+   done" button and lifting the pause remain refused on the tablet: parents use them from their
+   phone (administrator, or parent declared in "Time requests (parents)").
+3. Actions that unlock something require the **parent code** in the `code` field of an action
+   call. **Never write the code** in a dashboard `perform-action`, nor in an automation or a
+   script that a non-parent can trigger.
+4. **Hide the raw AdGuard** (`adguard_clients` devices), **Nintendo and TV entities** from the
+   tablet user: they could manipulate them directly. The engine corrects a drift (AdGuard
+   service unblocked during a closure, TV turned back on, Nintendo limit raised), but not before
+   it has happened.
+5. **Lockout**: after 5 consecutive wrong codes, attempts are refused for 60 s; each further
+   failure doubles the duration, up to 15 minutes. A correct code resets the counter. The counter
+   is per user and **in memory**: a Home Assistant restart resets it.
 
-## Limites connues
+## Languages
 
-- **Appels sans utilisateur.** Une automatisation ou un script appelle les services sans
-  utilisateur : le code n'est alors pas demandé. Ne créez pas d'automatisation ou de script qui
-  débloque quelque chose et qu'un utilisateur non parent peut déclencher
-  (`automation.trigger`, `script.turn_on`, etc.), ce serait un contournement du code.
-- **AdGuard.** L'appareil vient de la configuration (`device_id`) ; son capteur « Services
-  bloqués » est retrouvé au démarrage du moteur. Un capteur absent ou indisponible est signalé
-  dans les journaux et ignoré : **les services ne sont alors pas bloqués sur cet appareil**.
-  Un client réglé sur « Utiliser les services bloqués globaux » n'applique pas sa propre liste :
-  le moteur l'écrit quand même et prévient dans les journaux ; désactivez ce réglage sur les
-  appareils des enfants. Un appareil créé après le démarrage du moteur demande de recharger
-  l'intégration.
-- **Retrait d'un loisir.** Retirer un service de `default_leisure` (ou via `leisure_remove`)
-  pendant qu'il est bloqué le laisse bloqué : le moteur ne le gère plus.
-- **Nintendo.** Le moteur ne coupe jamais une partie en cours : il n'accorde que du temps
-  bonus (tranches de 30 minutes par appel, espacées de 5 s) et garde la limite du jour à 0.
-  Une limite relevée (par exemple depuis la tablette) est remise à 0. La pause générale remet
-  aussi la limite à 0 ; on **n'a pas vérifié sur la vraie console** si cela coupe un bonus
-  déjà accordé. L'action `nintendo_parental_controls.add_bonus_time` appelée directement ne
-  peut pas être contrôlée par le moteur (il ne retire pas un bonus) : masquez-la et ne
-  laissez pas l'utilisateur de la tablette l'appeler.
-- **Statut de l'enfant.** Le capteur de statut suit la frise : il ne reflète pas les
-  exceptions manuelles (une ressource ouverte par exception n'y change rien).
-- **Minuteur après minuit.** Un minuteur qui franchit minuit est décompté entièrement sur le
-  jour où il a démarré.
-- **Pause et exceptions.** Pendant la pause, les exceptions « jusqu'au prochain changement de
-  règle » n'échoient pas.
-- **Redémarrage et exceptions.** Un service hors loisirs bloqué par une exception reste
-  bloqué après un redémarrage de Home Assistant (échec du côté fermé), jusqu'à ce qu'un parent
-  le débloque.
-- **Précision de la télé.** L'usage est compté une fois par minute (précision de ± 1 minute).
-- **Le code est une chaîne.** Envoyez-le entre guillemets : en YAML, `code: 0123` devient
-  l'entier `123`.
+The interface is available in **English** and **French**; English is the default.
 
-## Développement
+- **Cards, Rules panel, Requests screen**: the language of each Home Assistant user's profile
+  (`hass.locale.language`, then `hass.language`). Dates, times and durations follow that
+  language and the profile's 12/24-hour setting.
+- **Texts produced by the server without a user**: notifications to parents (warnings, requests
+  and their buttons), the "[Simulation]" prefix, logbook entries, the persistent notification,
+  the sidebar title ("Rules" / "Règles") and the name of the global device. They follow the
+  Home Assistant **system language** (`hass.config.language`).
+- **Home Assistant metadata** (actions and their fields, entities and states, setup and options
+  dialogs, action errors): translated by Home Assistant for each user.
+
+A regional language (`fr-CA`, `en-GB`) uses its base language; a language without a catalogue
+falls back to English. Identifiers (action names, day types, segment types, modes, statuses)
+are English in every language.
+
+**Adding a language** (`<lang>` being the code, for example `de`):
+
+1. `custom_components/parental_control/www/i18n/<lang>.js`: copy `en.js` and translate the
+   values, then add the catalogue to `CATALOGUES` in `www/i18n.js`;
+2. `custom_components/parental_control/core/i18n.py`: add a `<lang>` entry to `MESSAGES`, with
+   the same keys as `en`;
+3. `custom_components/parental_control/translations/<lang>.json`: copy `en.json` and translate
+   the values;
+4. extend the key-parity tests (`tests/js/i18n.test.mjs`, `tests/core/test_i18n.py`) to the new
+   language: every catalogue must have exactly the keys of the English one.
+
+See [architecture](docs/architecture.md#12-internationalisation) for how the three layers fit
+together.
+
+## Known limitations
+
+- **Calls without a user.** An automation or a script calls actions without a user: the code is
+  then not required. Do not create an automation or a script that unblocks something and that a
+  non-parent user can trigger (`automation.trigger`, `script.turn_on`, etc.): that would bypass
+  the code.
+- **AdGuard.** The device comes from the configuration (`device_id`); its blocked services
+  sensor is looked up when the engine starts. A missing or unavailable sensor is reported in the
+  logs and ignored: **services are then not blocked on that device**. A client set to "Use
+  global blocked services" does not apply its own list: the engine writes it anyway and warns in
+  the logs; turn that setting off on the children's devices. A device created after the engine
+  started requires reloading the integration.
+- **Removing a leisure service.** Removing a service from `default_leisure` (or through
+  `leisure_remove`) while it is blocked leaves it blocked: the engine no longer manages it.
+- **Nintendo.** The engine never cuts a game in progress: it only grants bonus time (30-minute
+  chunks per call, 5 s apart) and keeps the daily limit at 0. A raised limit (for example from
+  the tablet) is reset to 0. The global pause also resets the limit to 0; it has **not been
+  checked on a real console** whether this cuts a bonus already granted. The
+  `nintendo_parental_controls.add_bonus_time` action called directly cannot be controlled by the
+  engine (it does not take back a bonus): hide it and do not let the tablet user call it.
+- **Child status.** The status sensor follows the timeline: it does not reflect manual
+  exceptions (a resource opened by exception changes nothing there).
+- **Timer past midnight.** A timer that crosses midnight is counted entirely on the day it
+  started.
+- **Pause and exceptions.** During the pause, "until the next rule change" exceptions do not
+  expire.
+- **Restart and exceptions.** A non-leisure service blocked by an exception stays blocked after
+  a Home Assistant restart (fail closed), until a parent unblocks it.
+- **TV accuracy.** Usage is counted once per minute (± 1 minute accuracy).
+- **The code is a string.** Send it in quotes: in YAML, `code: 0123` becomes the integer `123`.
+
+## Development
 
 ```bash
 uv venv --python 3.14 .venv
 uv pip install --python .venv/bin/python -r requirements_test.txt
 .venv/bin/pytest
+node --test tests/js/*.test.mjs
 ```
+
+The code layout, the design choices and their reasons are described in
+[docs/architecture.md](docs/architecture.md).

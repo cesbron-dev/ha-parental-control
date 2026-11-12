@@ -19,6 +19,11 @@
       "already_configured": "Parental control is already configured."
     }
   },
+  "device": {
+    "global": {
+      "name": "Parental control"
+    }
+  },
   "options": {
     "step": {
       "init": {
@@ -40,13 +45,13 @@
       "status": {
         "name": "Status",
         "state": {
-          "autorise": "Allowed",
-          "bloque": "Blocked",
-          "attente_devoirs": "Waiting for homework",
-          "attente_minuteur": "Waiting for a timer",
-          "quota_epuise": "Quota exhausted",
-          "sur_demande": "On request",
-          "pause": "Paused"
+          "allowed": "Allowed",
+          "blocked": "Blocked",
+          "waiting_homework": "Waiting for homework",
+          "waiting_timer": "Waiting for a timer",
+          "quota_exhausted": "Quota exhausted",
+          "on_demand": "On request",
+          "paused": "Paused"
         }
       },
       "used_time": {
@@ -106,11 +111,8 @@
     "code_locked": {
       "message": "Too many wrong parent codes. Try again in {seconds} s."
     },
-    "invalid_config": {
-      "message": "Invalid configuration: {error}"
-    },
     "nintendo_use_bonus": {
-      "message": "For the Switch, use add_bonus (ajouter_bonus)."
+      "message": "For the Switch, use add_bonus."
     },
     "requests_disabled": {
       "message": "No parent receives the requests."
@@ -123,10 +125,85 @@
     },
     "invalid_request": {
       "message": "Invalid request."
+    },
+    "config_object_expected": {
+      "message": "{path}: object expected"
+    },
+    "config_list_expected": {
+      "message": "{path}: list expected"
+    },
+    "config_text_expected": {
+      "message": "{path}: non-empty text expected"
+    },
+    "config_integer_expected": {
+      "message": "{path}: non-negative integer expected"
+    },
+    "config_boolean_expected": {
+      "message": "{path}: boolean expected"
+    },
+    "config_unknown_value": {
+      "message": "{path}: unknown value {value} (expected: {expected})"
+    },
+    "config_invalid_time": {
+      "message": "{path}: invalid time {value} (format HH:MM)"
+    },
+    "config_segment_required": {
+      "message": "{path}: at least one segment is required"
+    },
+    "config_first_segment_midnight": {
+      "message": "{path}: the first segment must start at 00:00"
+    },
+    "config_segments_not_increasing": {
+      "message": "{path}: start times must be strictly increasing"
+    },
+    "config_profile_required": {
+      "message": "{path}: the “{profile}” profile is required"
+    },
+    "config_switch_entity_expected": {
+      "message": "{path}: switch.* entity expected"
+    },
+    "config_integration_required": {
+      "message": "{path}: at least one integration"
+    },
+    "config_nintendo_alone": {
+      "message": "{path}: a Nintendo console cannot be grouped"
+    },
+    "config_duplicate_id": {
+      "message": "{path}: duplicate identifier: {id}"
+    },
+    "config_duplicate_label": {
+      "message": "{path}: duplicate label: {label}"
+    },
+    "config_label_already_attached": {
+      "message": "{path}: label {label} already attached to service {service}"
+    },
+    "config_label_is_target": {
+      "message": "{path}: label {label} is also the target label of {target}"
+    },
+    "config_target_label_used": {
+      "message": "{path}: target label already used: {label}"
+    },
+    "config_unknown_service": {
+      "message": "{path}: unknown service: {service}"
+    },
+    "config_unknown_kid": {
+      "message": "{path}: unknown child: {kid}"
+    },
+    "config_unknown_resource": {
+      "message": "{path}: unknown resource: {resource}"
+    },
+    "config_unsupported_version": {
+      "message": "{path}: unsupported version: {version}"
+    },
+    "config_not_in_request_notify": {
+      "message": "{path}: target missing from request_notify"
+    },
+    "config_phone_not_found": {
+      "message": "{path}: {target}: device not found or ambiguous"
     }
   },
   "services": {
-    "devoirs_termines": {
+    "homework_done": {
       "name": "Homework done",
       "description": "Marks today's homework as done for a child, which unlocks the after-homework period. Unlocks: parent code required from a non-admin account.",
       "fields": {
@@ -140,7 +217,7 @@
         }
       }
     },
-    "ajouter_bonus": {
+    "add_bonus": {
       "name": "Add bonus",
       "description": "Adds bonus minutes for today to a child or to a resource (exactly one of the two). Unlocks: parent code required from a non-admin account.",
       "fields": {
@@ -192,7 +269,7 @@
         }
       }
     },
-    "annuler_exception": {
+    "cancel_exception": {
       "name": "Cancel exception",
       "description": "Removes a manual exception. Cancelling a closure re-opens and requires the parent code from a non-admin account.",
       "fields": {
@@ -206,7 +283,7 @@
         }
       }
     },
-    "demarrer_minuteur": {
+    "start_timer": {
       "name": "Start timer",
       "description": "Starts a screen-time timer for a child during a quota period, capped to the remaining quota. Unlocks: parent code required from a non-admin account.",
       "fields": {
@@ -224,7 +301,7 @@
         }
       }
     },
-    "arreter_minuteur": {
+    "stop_timer": {
       "name": "Stop timer",
       "description": "Stops the running timer of a child. No code required.",
       "fields": {
@@ -248,7 +325,7 @@
         }
       }
     },
-    "importer_configuration": {
+    "import_config": {
       "name": "Import configuration",
       "description": "Replaces the whole configuration (kids, resources, schedules). Administrators only.",
       "fields": {
@@ -258,7 +335,7 @@
         }
       }
     },
-    "demander": {
+    "request": {
       "name": "Request time",
       "description": "A child asks the parents for time. No code required: a parent must answer from the notification. Returns the request id.",
       "fields": {

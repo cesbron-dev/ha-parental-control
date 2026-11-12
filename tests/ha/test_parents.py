@@ -21,6 +21,7 @@ from custom_components.parental_control.parents import (
     phone_status,
     trusted_phone_owners,
 )
+from custom_components.parental_control.store import ParentalStore
 from tests.fixtures import EX
 
 JULIE = "notify.mobile_app_iphone_de_julie"
@@ -88,7 +89,7 @@ async def test_ambiguous_device_not_trusted(
     config = cfg([JULIE], {JULIE: users["julie"].id})
     with caplog.at_level(logging.WARNING):
         assert trusted_phone_owners(hass, config) == set()
-    assert "mobile_app_iphone_de_julie" in caplog.text and "plusieurs" in caplog.text
+    assert "mobile_app_iphone_de_julie" in caplog.text and "several mobile_app devices" in caplog.text
 
 
 async def test_ambiguous_warning_logged_once(
@@ -104,7 +105,7 @@ async def test_ambiguous_warning_logged_once(
         for _ in range(3):
             assert trusted_phone_owners(hass, config) == set()
             assert not await is_parent(hass, config, users["julie"].id)
-    warnings = [r.getMessage() for r in caplog.records if "plusieurs" in r.getMessage()]
+    warnings = [r.getMessage() for r in caplog.records if "several mobile_app devices" in r.getMessage()]
     assert len(warnings) == 2
     assert any(JULIE in w for w in warnings) and any(MARC in w for w in warnings)
 
@@ -286,7 +287,7 @@ async def test_migration_binds_unique_owner(
         await migrate_phone_owners(hass, engine)
     assert engine.config.request_notify_owners == {JULIE: users["julie"].id}
     assert engine.saved == 1
-    assert f"Téléphone {JULIE} associé à l'utilisateur Julie" in caplog.text
+    assert f"Phone {JULIE} bound to user Julie" in caplog.text
 
 
 async def test_migration_logs_user_id_when_user_unknown(
@@ -297,7 +298,7 @@ async def test_migration_logs_user_id_when_user_unknown(
     with caplog.at_level(logging.INFO):
         await migrate_phone_owners(hass, engine)
     assert engine.config.request_notify_owners == {JULIE: "inconnu"}
-    assert f"Téléphone {JULIE} associé à l'utilisateur inconnu" in caplog.text
+    assert f"Phone {JULIE} bound to user inconnu" in caplog.text
 
 
 async def test_migration_skips_ambiguous_and_missing(hass, users) -> None:
@@ -378,3 +379,31 @@ async def test_setup_entry_runs_migration(hass, users, make_env) -> None:
         raw=True,
     )
     assert env.engine.config.request_notify_owners == {JULIE: users["julie"].id}
+
+
+async def test_v2_store_not_resaved_before_owner_migration(hass, users) -> None:
+    """Ancien format v2 sans `request_notify_owners` : `load` ne réécrit pas la config, sinon
+    la clé (vide) enregistrée avant la migration l'empêcherait après un arrêt intempestif."""
+    v2 = {**EX, "version": 2, "request_notify": [JULIE]}
+    await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_save(v2)
+    store = ParentalStore(hass)
+    cfg_loaded, _ = await store.load()
+    assert cfg_loaded is not None and store.owners_migration_pending
+    stored = await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_load()
+    assert stored["version"] == 2 and "request_notify_owners" not in stored
+
+
+async def test_setup_v2_store_migrates_owners_and_saves_v3(hass, users, make_env) -> None:
+    """Config v2 stockée, sans propriétaires, avec un téléphone : au démarrage, le téléphone
+    est associé et la configuration enregistrée en version 3."""
+    add_phone(hass, "iPhone de Julie", users["julie"].id)
+    env = await make_env(
+        datetime(2026, 11, 3, 16, 30, tzinfo=ZoneInfo("America/Toronto")),
+        {**EX, "version": 2, "request_notify": [JULIE]},
+        raw=True,
+    )
+    assert env.engine.config.request_notify_owners == {JULIE: users["julie"].id}
+    await hass.async_block_till_done()
+    stored = await Store(hass, STORE_VERSION, f"{DOMAIN}.config").async_load()
+    assert stored["version"] == 3
+    assert stored["request_notify_owners"] == {JULIE: users["julie"].id}

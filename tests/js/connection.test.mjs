@@ -55,6 +55,28 @@ test("callAction adds code only when given and never throws", async () => {
   assert.deepEqual(await callAction(hass, "exception", {}, "0"), { ok: false, error: "Code invalide" });
 });
 
+test("callAction traduit l'erreur du service dans la langue de l'utilisateur", async () => {
+  const hass = fakeHass();
+  // Erreur WebSocket de HA pour un ServiceValidationError : message toujours anglais et préfixé.
+  const err = (key, placeholders) => Object.assign(new Error(`Validation error: ${key}`), {
+    code: "service_validation_error",
+    translation_domain: "parental_control",
+    translation_key: key,
+    translation_placeholders: placeholders,
+  });
+  hass.callService = async () => { throw err("code_invalid", null); };
+  hass.locale = { language: "fr" };
+  assert.deepEqual(await callAction(hass, "exception", {}, "0"), { ok: false, error: "Code parent invalide." });
+  hass.locale = { language: "en" };
+  assert.deepEqual(await callAction(hass, "exception", {}, "0"), { ok: false, error: "Invalid parent code." });
+  hass.callService = async () => { throw err("code_locked", { seconds: "30" }); };
+  hass.locale = { language: "fr" };
+  assert.match((await callAction(hass, "exception", {})).error, /30/);
+  // clé absente du catalogue : message du serveur
+  hass.callService = async () => { throw err("nouvelle_cle", null); };
+  assert.deepEqual(await callAction(hass, "exception", {}), { ok: false, error: "Validation error: nouvelle_cle" });
+});
+
 test("un callback qui lève n'empêche pas les autres de recevoir l'état", async () => {
   const hass = fakeHass();
   const errors = [];

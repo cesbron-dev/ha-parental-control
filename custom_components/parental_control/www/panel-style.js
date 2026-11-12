@@ -2,13 +2,14 @@
 // variables du thème de l'utilisateur quand elles existent, valeurs sombres en repli.
 import { esc } from "./lib.js";
 
-export const SEGMENT_COLORS = { bloque: "#e0525a", libre: "#35b779", apres_devoirs: "#f0a640", quota: "#4a86f0", sur_demande: "#7c8591" };
+export const SEGMENT_COLORS = { blocked: "#e0525a", free: "#35b779", after_homework: "#f0a640", quota: "#4a86f0", on_demand: "#7c8591" };
 
 // Couleurs proposées pour un enfant (valeur enregistrée : #rrggbb).
+// (`name` : clé `panel.color.<name>` du libellé).
 export const KID_COLORS = [
-  { value: "#4D96FF", label: "Bleu" }, { value: "#FF6B6B", label: "Rouge" }, { value: "#6BCB77", label: "Vert" },
-  { value: "#FFA94D", label: "Orange" }, { value: "#9775FA", label: "Violet" }, { value: "#F783AC", label: "Rose" },
-  { value: "#FFD43B", label: "Jaune" }, { value: "#3BC9DB", label: "Turquoise" },
+  { value: "#4D96FF", name: "blue" }, { value: "#FF6B6B", name: "red" }, { value: "#6BCB77", name: "green" },
+  { value: "#FFA94D", name: "orange" }, { value: "#9775FA", name: "purple" }, { value: "#F783AC", name: "pink" },
+  { value: "#FFD43B", name: "yellow" }, { value: "#3BC9DB", name: "turquoise" },
 ];
 
 // Lecture d'une table de correspondance sans remonter au prototype (« constructor », « toString »…).

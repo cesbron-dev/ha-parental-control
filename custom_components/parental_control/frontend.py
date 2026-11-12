@@ -12,6 +12,7 @@ from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
 
 from .const import DOMAIN, REQUESTS_PANEL_PATH
+from .texts import text
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -25,11 +26,11 @@ _WWW = Path(__file__).parent / "www"
 
 
 def files_version(folder: Path) -> str:
-    """Empreinte courte du contenu des fichiers de `folder` (noms compris)."""
+    """Empreinte courte du contenu des fichiers de `folder` et de ses sous-dossiers (chemins compris)."""
     digest = hashlib.sha256()
-    for path in sorted(folder.iterdir()):
+    for path in sorted(folder.rglob("*")):
         if path.is_file():
-            digest.update(path.name.encode())
+            digest.update(path.relative_to(folder).as_posix().encode())
             digest.update(path.read_bytes())
     return digest.hexdigest()[:12]
 
@@ -48,7 +49,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
             await http.async_register_static_paths([StaticPathConfig(_URL_BASE, str(_WWW), True)])
         except RuntimeError:
             # Routeur déjà figé (serveur démarré) : les cartes manquent, pas le moteur.
-            _LOGGER.warning("Chemin statique des cartes non enregistré", exc_info=True)
+            _LOGGER.warning("Static path for the cards not registered", exc_info=True)
         else:
             hass.data[_PATH_REGISTERED] = True
     if not hass.data.get(_PANEL_REGISTERED):
@@ -58,7 +59,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
             hass,
             frontend_url_path=PANEL_URL_PATH,
             webcomponent_name="parental-control-panel",
-            sidebar_title="Règles",
+            sidebar_title=text(hass, "panel.rules"),
             sidebar_icon="mdi:shield-edit",
             module_url=f"{_URL_BASE}/panel.js",
             require_admin=False,
@@ -79,7 +80,7 @@ async def async_register_frontend(hass: HomeAssistant) -> None:
         return
     # `add_extra_js_url` lit ce registre, créé par le setup du composant `frontend`.
     if DATA_EXTRA_MODULE_URL not in hass.data:
-        _LOGGER.warning("Composant frontend non chargé : les cartes ne seront pas injectées")
+        _LOGGER.warning("Frontend component not loaded: the cards will not be injected")
         return
     add_extra_js_url(hass, f"{_URL_BASE}/parental-cards.js")
     hass.data[_MODULE_REGISTERED] = True

@@ -22,7 +22,6 @@ if TYPE_CHECKING:
     from . import ParentalConfigEntry
 
 GLOBAL_DEVICE = "global"
-GLOBAL_NAME = "Contrôle parental"
 
 type EntityFactories = dict[str, Callable[[], Entity]]
 
@@ -97,7 +96,13 @@ class ResourceEntity(ParentalEntity):
 
 class GlobalEntity(ParentalEntity):
     def __init__(self, entry: ParentalConfigEntry, key: str) -> None:
-        super().__init__(entry, GLOBAL_DEVICE, key, _device_info(GLOBAL_DEVICE, GLOBAL_NAME))
+        # Nom traduit par HA (`device.global.name`) dans la langue système, à la création.
+        device = DeviceInfo(
+            identifiers={(DOMAIN, GLOBAL_DEVICE)},
+            translation_key=GLOBAL_DEVICE,
+            entry_type=DeviceEntryType.SERVICE,
+        )
+        super().__init__(entry, GLOBAL_DEVICE, key, device)
 
     @property
     def available(self) -> bool:
@@ -147,10 +152,11 @@ def async_sync_devices(hass: HomeAssistant, entry: ParentalConfigEntry) -> None:
         return
     names = {kid_device_id(k.id): k.name for k in cfg.kids}
     names |= {resource_device_id(r.id): r.name for r in cfg.resources}
-    names[GLOBAL_DEVICE] = GLOBAL_NAME
     registry = dr.async_get(hass)
     for device in dr.async_entries_for_config_entry(registry, entry.entry_id):
         idents = [i for d, i in device.identifiers if d == DOMAIN]
+        if GLOBAL_DEVICE in idents:
+            continue  # nom traduit par HA (`translation_key`), jamais renommé ici
         name = next((names[i] for i in idents if i in names), None)
         if name is None:
             registry.async_remove_device(device.id)

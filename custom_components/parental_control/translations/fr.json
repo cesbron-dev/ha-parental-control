@@ -19,6 +19,11 @@
       "already_configured": "Le contrôle parental est déjà configuré."
     }
   },
+  "device": {
+    "global": {
+      "name": "Contrôle parental"
+    }
+  },
   "options": {
     "step": {
       "init": {
@@ -40,13 +45,13 @@
       "status": {
         "name": "Statut",
         "state": {
-          "autorise": "Autorisé",
-          "bloque": "Bloqué",
-          "attente_devoirs": "En attente des devoirs",
-          "attente_minuteur": "En attente d'un minuteur",
-          "quota_epuise": "Quota épuisé",
-          "sur_demande": "Sur demande",
-          "pause": "En pause"
+          "allowed": "Autorisé",
+          "blocked": "Bloqué",
+          "waiting_homework": "En attente des devoirs",
+          "waiting_timer": "En attente d'un minuteur",
+          "quota_exhausted": "Quota épuisé",
+          "on_demand": "Sur demande",
+          "paused": "En pause"
         }
       },
       "used_time": {
@@ -106,11 +111,8 @@
     "code_locked": {
       "message": "Trop de codes parent erronés. Réessayez dans {seconds} s."
     },
-    "invalid_config": {
-      "message": "Configuration invalide : {error}"
-    },
     "nintendo_use_bonus": {
-      "message": "Pour la Switch, utilisez ajouter_bonus."
+      "message": "Pour la Switch, utilisez add_bonus."
     },
     "requests_disabled": {
       "message": "Aucun parent ne reçoit les demandes."
@@ -123,10 +125,85 @@
     },
     "invalid_request": {
       "message": "Demande invalide."
+    },
+    "config_object_expected": {
+      "message": "{path} : objet attendu"
+    },
+    "config_list_expected": {
+      "message": "{path} : liste attendue"
+    },
+    "config_text_expected": {
+      "message": "{path} : texte non vide attendu"
+    },
+    "config_integer_expected": {
+      "message": "{path} : entier positif ou nul attendu"
+    },
+    "config_boolean_expected": {
+      "message": "{path} : booléen attendu"
+    },
+    "config_unknown_value": {
+      "message": "{path} : valeur inconnue {value} (attendu : {expected})"
+    },
+    "config_invalid_time": {
+      "message": "{path} : heure invalide {value} (format HH:MM)"
+    },
+    "config_segment_required": {
+      "message": "{path} : au moins un segment est requis"
+    },
+    "config_first_segment_midnight": {
+      "message": "{path} : le premier segment doit commencer à 00:00"
+    },
+    "config_segments_not_increasing": {
+      "message": "{path} : les heures de début doivent être strictement croissantes"
+    },
+    "config_profile_required": {
+      "message": "{path} : le profil « {profile} » est requis"
+    },
+    "config_switch_entity_expected": {
+      "message": "{path} : entité switch.* attendue"
+    },
+    "config_integration_required": {
+      "message": "{path} : au moins une intégration"
+    },
+    "config_nintendo_alone": {
+      "message": "{path} : une console Nintendo ne se regroupe pas"
+    },
+    "config_duplicate_id": {
+      "message": "{path} : identifiant en double : {id}"
+    },
+    "config_duplicate_label": {
+      "message": "{path} : label en double : {label}"
+    },
+    "config_label_already_attached": {
+      "message": "{path} : label {label} déjà rattaché au service {service}"
+    },
+    "config_label_is_target": {
+      "message": "{path} : le label {label} est aussi le label de cible de {target}"
+    },
+    "config_target_label_used": {
+      "message": "{path} : label de cible déjà utilisé : {label}"
+    },
+    "config_unknown_service": {
+      "message": "{path} : service inconnu : {service}"
+    },
+    "config_unknown_kid": {
+      "message": "{path} : enfant inconnu : {kid}"
+    },
+    "config_unknown_resource": {
+      "message": "{path} : ressource inconnue : {resource}"
+    },
+    "config_unsupported_version": {
+      "message": "{path} : version non prise en charge : {version}"
+    },
+    "config_not_in_request_notify": {
+      "message": "{path} : cible absente de request_notify"
+    },
+    "config_phone_not_found": {
+      "message": "{path} : {target} — appareil introuvable ou en double"
     }
   },
   "services": {
-    "devoirs_termines": {
+    "homework_done": {
       "name": "Devoirs terminés",
       "description": "Marque les devoirs du jour comme terminés pour un enfant, ce qui débloque la période après les devoirs. Débloque : code parent exigé depuis un compte non administrateur.",
       "fields": {
@@ -140,7 +217,7 @@
         }
       }
     },
-    "ajouter_bonus": {
+    "add_bonus": {
       "name": "Ajouter un bonus",
       "description": "Ajoute des minutes de bonus pour aujourd'hui à un enfant ou à une ressource (exactement l'un des deux). Débloque : code parent exigé depuis un compte non administrateur.",
       "fields": {
@@ -192,7 +269,7 @@
         }
       }
     },
-    "annuler_exception": {
+    "cancel_exception": {
       "name": "Annuler une exception",
       "description": "Retire une exception manuelle. Annuler une fermeture rouvre et exige le code parent depuis un compte non administrateur.",
       "fields": {
@@ -206,7 +283,7 @@
         }
       }
     },
-    "demarrer_minuteur": {
+    "start_timer": {
       "name": "Démarrer un minuteur",
       "description": "Démarre un minuteur de temps d'écran pour un enfant pendant une période de quota, plafonné au quota restant. Débloque : code parent exigé depuis un compte non administrateur.",
       "fields": {
@@ -224,7 +301,7 @@
         }
       }
     },
-    "arreter_minuteur": {
+    "stop_timer": {
       "name": "Arrêter le minuteur",
       "description": "Arrête le minuteur en cours d'un enfant. Aucun code exigé.",
       "fields": {
@@ -248,7 +325,7 @@
         }
       }
     },
-    "importer_configuration": {
+    "import_config": {
       "name": "Importer la configuration",
       "description": "Remplace toute la configuration (enfants, ressources, horaires). Réservé aux administrateurs.",
       "fields": {
@@ -258,7 +335,7 @@
         }
       }
     },
-    "demander": {
+    "request": {
       "name": "Demander du temps",
       "description": "Un enfant demande du temps aux parents. Aucun code exigé : un parent doit répondre depuis la notification. Renvoie l'identifiant de la demande.",
       "fields": {

@@ -4,6 +4,7 @@ import {
   esc, needsCode, bonusLabel, keypadInput, canRequest, findRequest, ownerChoices, bonusMinutes,
 } from "./lib.js";
 import { callAction } from "./connection.js";
+import { t } from "./i18n.js";
 
 const DIALOG_CSS = `
   dialog {
@@ -36,7 +37,8 @@ const pickPills = (name, items, selected) => items
   .map((it, i) => `<button type="button" class="pill bleu ${i === selected ? "selected" : ""}" data-pick="${name}" data-index="${i}">${esc(it.label)}</button>`)
   .join("");
 
-// Ouvre la fenêtre dans `root` (shadow root de la carte) ; une seule à la fois.
+// Ouvre la fenêtre dans `root` (shadow root de la carte) ; une seule à la fois. Textes dans la
+// langue de `hass`.
 // - choices / durations : listes `{value, label}` à choisir (« Quoi », « Pendant »), ou null pour omettre ;
 // - needCode : affiche un pavé numérique tactile ; le code saisi est vidé après chaque appel ;
 // - onSubmit({choice, duration, code}) -> Promise<{ok} | {ok:false, error}> : la fenêtre se ferme sur
@@ -45,7 +47,7 @@ const pickPills = (name, items, selected) => items
 //   (compte non admin), sans code : `kids` ([{value, label}], ou null) ajoute « Qui demande ? » ;
 //   `pending` désactive le bouton (« En attente… »). Même retour que `onSubmit`.
 // Renvoie `{close}`.
-export function openActionDialog(root, { title, choices = null, durations = null, needCode = false, submitLabel = "Valider", request = null, onSubmit }) {
+export function openActionDialog(root, { hass, title, choices = null, durations = null, needCode = false, submitLabel = null, request = null, onSubmit }) {
   root.querySelector("dialog.parental")?.close();
   const sel = { choice: choices ? 0 : null, duration: null, kid: request?.kids?.length === 1 ? 0 : null };
   let busy = false;
@@ -54,22 +56,22 @@ export function openActionDialog(root, { title, choices = null, durations = null
   dlg.className = "parental";
   dlg.innerHTML = `<style>${DIALOG_CSS}</style>
     <div class="title">${esc(title)}</div>
-    ${choices ? `<div class="dlg-label">Quoi</div><div class="pills">${pickPills("choice", choices, sel.choice)}</div>` : ""}
-    ${durations ? `<div class="dlg-label">Pendant</div><div class="pills">${pickPills("duration", durations, sel.duration)}</div>` : ""}
-    ${request?.kids ? `<div class="dlg-label">Qui demande ?</div><div class="pills">${pickPills("kid", request.kids, sel.kid)}</div>` : ""}
-    ${needCode ? `<div class="dlg-label">Code parent</div>
-      <div class="dlg-code" aria-label="Code parent saisi"></div>
+    ${choices ? `<div class="dlg-label">${esc(t(hass, "dialog.what"))}</div><div class="pills">${pickPills("choice", choices, sel.choice)}</div>` : ""}
+    ${durations ? `<div class="dlg-label">${esc(t(hass, "dialog.for"))}</div><div class="pills">${pickPills("duration", durations, sel.duration)}</div>` : ""}
+    ${request?.kids ? `<div class="dlg-label">${esc(t(hass, "dialog.who"))}</div><div class="pills">${pickPills("kid", request.kids, sel.kid)}</div>` : ""}
+    ${needCode ? `<div class="dlg-label">${esc(t(hass, "dialog.code"))}</div>
+      <div class="dlg-code" aria-label="${esc(t(hass, "dialog.code_entered"))}"></div>
       <div class="keypad">
         ${["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => `<button type="button" data-key="${d}">${d}</button>`).join("")}
-        <button type="button" data-key="clear" aria-label="Effacer tout">C</button>
+        <button type="button" data-key="clear" aria-label="${esc(t(hass, "dialog.clear_all"))}">C</button>
         <button type="button" data-key="0">0</button>
-        <button type="button" data-key="back" aria-label="Effacer">⌫</button>
+        <button type="button" data-key="back" aria-label="${esc(t(hass, "dialog.erase"))}">⌫</button>
       </div>` : ""}
     <div class="error"></div>
     <div class="dlg-actions">
-      ${request ? `<button type="button" class="pill" data-btn="request">${request.pending ? "En attente…" : "Demander"}</button>` : ""}
-      <button type="button" class="pill" data-btn="cancel">Annuler</button>
-      <button type="button" class="pill bleu" data-btn="ok">${esc(submitLabel)}</button>
+      ${request ? `<button type="button" class="pill" data-btn="request">${esc(t(hass, request.pending ? "dialog.waiting" : "dialog.request"))}</button>` : ""}
+      <button type="button" class="pill" data-btn="cancel">${esc(t(hass, "dialog.cancel"))}</button>
+      <button type="button" class="pill bleu" data-btn="ok">${esc(submitLabel ?? t(hass, "dialog.ok"))}</button>
     </div>`;
 
   // Le code ne vit que dans cette variable, le temps de la fenêtre ; l'écran n'en montre que des points.
@@ -124,7 +126,7 @@ export function openActionDialog(root, { title, choices = null, durations = null
       dlg.close();
       return;
     }
-    errEl.textContent = res?.error || "Action refusée";
+    errEl.textContent = res?.error || t(hass, "common.action_refused");
     refresh();
   };
 
@@ -177,13 +179,14 @@ export function openActionDialog(root, { title, choices = null, durations = null
 // Bonus nintendo : admin -> `call` direct (déjà confirmé par deux appuis) ; sinon fenêtre de saisie du code.
 export function runBonus(root, hass, { resource_id, minutes, title, call, request = null, parent = false }) {
   const data = { resource_id, minutes };
-  if (!needsCode(hass, "bonus", parent)) return call("ajouter_bonus", data);
+  if (!needsCode(hass, "bonus", parent)) return call("add_bonus", data);
   openActionDialog(root, {
+    hass,
     title: `${bonusLabel(minutes)} · ${title}`,
     needCode: true,
-    submitLabel: "Ajouter",
+    submitLabel: t(hass, "dialog.add"),
     request,
-    onSubmit: ({ code }) => callAction(hass, "ajouter_bonus", data, code),
+    onSubmit: ({ code }) => callAction(hass, "add_bonus", data, code),
   });
 }
 
@@ -198,7 +201,7 @@ export function bonusRequest(hass, state, config, resource_id, minutes, parent =
   return {
     kids: ownerChoices(state, owners),
     pending,
-    onRequest: ({ kid }) => callAction(hass, "demander", {
+    onRequest: ({ kid }) => callAction(hass, "request", {
       kind: "bonus", kid_id: kid, resource_id, minutes, options: bonusMinutes(config),
     }),
   };

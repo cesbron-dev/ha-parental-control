@@ -68,8 +68,8 @@ def trusted_phone_owners(hass: HomeAssistant, cfg: Config | None) -> set[str]:
                 continue
             warned.add(target)
             _LOGGER.warning(
-                "%s : plusieurs appareils mobile_app portent ce nom ; ce téléphone ne donne "
-                "aucun droit de parent ni de réponse aux demandes",
+                "%s: several mobile_app devices have this name; this phone grants "
+                "no parent rights and cannot answer requests",
                 target,
             )
             continue
@@ -147,7 +147,7 @@ def bind_owners(
                 owners[target] = remembered
             continue
         if len(current) != 1 or not current[0]:
-            raise ConfigError(f"request_notify : {target} — appareil introuvable ou en double")
+            raise ConfigError("request_notify", "phone_not_found", target=target)
         owners[target] = current[0]
     return dataclasses.replace(new, request_notify_owners=owners)
 
@@ -173,5 +173,5 @@ async def migrate_phone_owners(hass: HomeAssistant, engine: ParentalEngine) -> N
         owners[target] = current[0]
         user = await hass.auth.async_get_user(current[0])
         name = user.name if user else current[0]
-        _LOGGER.info("Téléphone %s associé à l'utilisateur %s", target, name)
+        _LOGGER.info("Phone %s bound to user %s", target, name)
     await engine.set_config(dataclasses.replace(cfg, request_notify_owners=owners))

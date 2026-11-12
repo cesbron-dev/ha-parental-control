@@ -3,13 +3,13 @@
 NAMES = {"youtube": "YouTube", "tiktok": "TikTok", "disneyplus": "Disney+"}
 
 EX = {
-    "version": 2,
+    "version": 3,
     "services": [
         {"id": s, "name": NAMES.get(s, s.capitalize()), "adguard": [s], "labels": []}
         for s in ("youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch", "minecraft")
     ],
     "default_leisure": ["youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch"],
-    "calendar_map": {"pédagogique": "conge_peda", "vacances": "vacances", "relâche": "vacances"},
+    "calendar_map": {"pédagogique": "day_off", "vacances": "holidays", "relâche": "holidays"},
     "notify": ["notify.mobile_app_iphone_de_marc"],
     "kids": [
         {
@@ -20,22 +20,22 @@ EX = {
             "calendar": "calendar.ecole_primaire",
             "leisure_add": [],
             "leisure_remove": [],
-            "resource_modes": {"switch": "sur_demande"},
+            "resource_modes": {"switch": "on_demand"},
             "profiles": {
-                "ecole": {
+                "school": {
                     "segments": [
-                        {"start": "00:00", "type": "bloque"},
-                        {"start": "15:25", "type": "libre"},
-                        {"start": "16:00", "type": "apres_devoirs"},
-                        {"start": "19:00", "type": "bloque"},
+                        {"start": "00:00", "type": "blocked"},
+                        {"start": "15:25", "type": "free"},
+                        {"start": "16:00", "type": "after_homework"},
+                        {"start": "19:00", "type": "blocked"},
                     ]
                 },
-                "fin_de_semaine": {
+                "weekend": {
                     "quota_minutes": 120,
                     "segments": [
-                        {"start": "00:00", "type": "bloque"},
+                        {"start": "00:00", "type": "blocked"},
                         {"start": "08:00", "type": "quota"},
-                        {"start": "20:00", "type": "bloque"},
+                        {"start": "20:00", "type": "blocked"},
                     ],
                 },
             },
@@ -46,7 +46,7 @@ EX = {
             "id": "tv",
             "name": "Télé salon",
             "owners": ["hugo"],
-            "quota_minutes": {"fin_de_semaine": 180},
+            "quota_minutes": {"weekend": 180},
             "devices": [{"name": "Télé salon", "integrations": [
                 {"kind": "media_player", "entity_id": "media_player.tv_salon", "notify_service": None},
             ]}],

@@ -8,18 +8,21 @@ const {
   profileGeometry, isDirty, emptyConfig, hasDevices,
 } = await import("../../custom_components/parental_control/www/panel-lib.js");
 
+const FR = { locale: { language: "fr" } };
+const EN = { locale: { language: "en" } };
+
 const draft = () => ({
-  version: 2,
+  version: 3,
   default_leisure: ["youtube", "roblox"],
   calendar_map: {},
   notify: [],
   kids: [
     {
       id: "hugo", name: "Hugo", emoji: null, color: null, calendar: null,
-      leisure_add: [], leisure_remove: [], resource_modes: { switch: "sur_demande", tv_adguard: "bloque" },
+      leisure_add: [], leisure_remove: [], resource_modes: { switch: "on_demand", tv_adguard: "blocked" },
       profiles: {
-        ecole: { segments: [{ start: "00:00", type: "bloque" }, { start: "16:00", type: "libre" }] },
-        fin_de_semaine: { quota_minutes: 120, segments: [{ start: "00:00", type: "quota" }] },
+        school: { segments: [{ start: "00:00", type: "blocked" }, { start: "16:00", type: "free" }] },
+        weekend: { quota_minutes: 120, segments: [{ start: "00:00", type: "quota" }] },
       },
     },
   ],
@@ -51,17 +54,17 @@ test("setPath sets nested values, empty optional text becomes null", () => {
   const d = draft();
   setPath(d, "kids.0.name", "Gaby");
   assert.equal(d.kids[0].name, "Gaby");
-  setPath(d, "kids.0.profiles.ecole.segments.1.start", "15:30");
-  assert.equal(d.kids[0].profiles.ecole.segments[1].start, "15:30");
+  setPath(d, "kids.0.profiles.school.segments.1.start", "15:30");
+  assert.equal(d.kids[0].profiles.school.segments[1].start, "15:30");
   setPath(d, "kids.0.emoji", "");
   assert.equal(d.kids[0].emoji, null);
-  setPath(d, "kids.0.profiles.fin_de_semaine.quota_minutes", null);
-  assert.equal("quota_minutes" in d.kids[0].profiles.fin_de_semaine, false);
-  setPath(d, "kids.0.profiles.ecole.segments.0.warn_minutes", 10);
-  setPath(d, "kids.0.profiles.ecole.segments.0.warn_minutes", null);
-  assert.equal("warn_minutes" in d.kids[0].profiles.ecole.segments[0], false);
-  setPath(d, "resources.0.quota_minutes.ecole", 90);
-  assert.deepEqual(d.resources[0].quota_minutes, { ecole: 90 });
+  setPath(d, "kids.0.profiles.weekend.quota_minutes", null);
+  assert.equal("quota_minutes" in d.kids[0].profiles.weekend, false);
+  setPath(d, "kids.0.profiles.school.segments.0.warn_minutes", 10);
+  setPath(d, "kids.0.profiles.school.segments.0.warn_minutes", null);
+  assert.equal("warn_minutes" in d.kids[0].profiles.school.segments[0], false);
+  setPath(d, "resources.0.quota_minutes.school", 90);
+  assert.deepEqual(d.resources[0].quota_minutes, { school: 90 });
   setPath(d, "resources.0.devices.0.integrations.0.entity_id", "media_player.autre");
   assert.equal(d.resources[0].devices[0].integrations[0].entity_id, "media_player.autre");
 });
@@ -75,8 +78,8 @@ test("addKid copies the first kid's profiles and gets a unique id", () => {
   assert.notEqual(kid.profiles, d.kids[0].profiles); // copie, pas la même référence
   const empty = { ...draft(), kids: [] };
   const first = addKid(empty, "Hugo");
-  assert.deepEqual(Object.keys(first.profiles).sort(), ["ecole", "fin_de_semaine"]);
-  assert.deepEqual(first.profiles.ecole.segments, [{ start: "00:00", type: "bloque" }]);
+  assert.deepEqual(Object.keys(first.profiles).sort(), ["school", "weekend"]);
+  assert.deepEqual(first.profiles.school.segments, [{ start: "00:00", type: "blocked" }]);
 });
 
 test("removeKid also removes it from owners", () => {
@@ -163,10 +166,10 @@ test("moveTargets respecte la règle Nintendo seule dans sa ressource", () => {
 });
 
 test("addSegment / removeSegment", () => {
-  const segs = [{ start: "00:00", type: "bloque" }, { start: "16:00", type: "libre" }];
+  const segs = [{ start: "00:00", type: "blocked" }, { start: "16:00", type: "free" }];
   addSegment(segs);
-  assert.deepEqual(segs[2], { start: "17:00", type: "bloque" });
-  const late = [{ start: "00:00", type: "bloque" }, { start: "23:30", type: "libre" }];
+  assert.deepEqual(segs[2], { start: "17:00", type: "blocked" });
+  const late = [{ start: "00:00", type: "blocked" }, { start: "23:30", type: "free" }];
   addSegment(late);
   assert.equal(late[2].start, "23:59");
   removeSegment(segs, 0); // le premier (00:00) ne se supprime pas
@@ -175,12 +178,12 @@ test("addSegment / removeSegment", () => {
   assert.deepEqual(segs.map((s) => s.start), ["00:00", "17:00"]);
 });
 
-test("setMode: suit_frise removes the entry", () => {
+test("setMode: schedule removes the entry", () => {
   const kid = draft().kids[0];
-  setMode(kid, "tv", "bloque");
-  assert.equal(kid.resource_modes.tv, "bloque");
-  setMode(kid, "switch", "suit_frise");
-  assert.deepEqual(kid.resource_modes, { tv_adguard: "bloque", tv: "bloque" });
+  setMode(kid, "tv", "blocked");
+  assert.equal(kid.resource_modes.tv, "blocked");
+  setMode(kid, "switch", "schedule");
+  assert.deepEqual(kid.resource_modes, { tv_adguard: "blocked", tv: "blocked" });
 });
 
 test("toggleOwner and toggleListValue", () => {
@@ -195,26 +198,26 @@ test("toggleOwner and toggleListValue", () => {
   assert.deepEqual(list, ["b"]);
 });
 
-test("toggleProfile only for optional days, copying fin_de_semaine", () => {
+test("toggleProfile only for optional days, copying weekend", () => {
   const kid = draft().kids[0];
-  toggleProfile(kid, "vacances");
-  assert.deepEqual(kid.profiles.vacances, kid.profiles.fin_de_semaine);
-  assert.notEqual(kid.profiles.vacances, kid.profiles.fin_de_semaine);
-  toggleProfile(kid, "vacances");
-  assert.equal("vacances" in kid.profiles, false);
-  toggleProfile(kid, "ecole"); // obligatoire : rien
-  assert.equal("ecole" in kid.profiles, true);
+  toggleProfile(kid, "holidays");
+  assert.deepEqual(kid.profiles.holidays, kid.profiles.weekend);
+  assert.notEqual(kid.profiles.holidays, kid.profiles.weekend);
+  toggleProfile(kid, "holidays");
+  assert.equal("holidays" in kid.profiles, false);
+  toggleProfile(kid, "school"); // obligatoire : rien
+  assert.equal("school" in kid.profiles, true);
 });
 
 test("profileGeometry", () => {
-  const g = profileGeometry([{ start: "00:00", type: "bloque" }, { start: "12:00", type: "libre" }, { start: "18:00", type: "bloque" }]);
+  const g = profileGeometry([{ start: "00:00", type: "blocked" }, { start: "12:00", type: "free" }, { start: "18:00", type: "blocked" }]);
   assert.deepEqual(g, [
-    { left: 0, width: 50, type: "bloque" },
-    { left: 50, width: 25, type: "libre" },
-    { left: 75, width: 25, type: "bloque" },
+    { left: 0, width: 50, type: "blocked" },
+    { left: 50, width: 25, type: "free" },
+    { left: 75, width: 25, type: "blocked" },
   ]);
-  assert.deepEqual(profileGeometry([{ start: "00:00", type: "bloque" }, { start: "zz", type: "libre" }]),
-    [{ left: 0, width: 100, type: "bloque" }]); // heure invalide ignorée
+  assert.deepEqual(profileGeometry([{ start: "00:00", type: "blocked" }, { start: "zz", type: "free" }]),
+    [{ left: 0, width: 100, type: "blocked" }]); // heure invalide ignorée
 });
 
 test("isDirty", () => {
@@ -225,12 +228,12 @@ test("isDirty", () => {
   assert.equal(isDirty(a, b), true);
 });
 
-test("emptyConfig : brouillon v2 d'une nouvelle installation, prêt à recevoir un appareil", () => {
+test("emptyConfig : brouillon v3 d'une nouvelle installation, prêt à recevoir un appareil", () => {
   const cfg = emptyConfig();
-  assert.deepEqual(cfg, { version: 2, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], request_notify_owners: {}, kids: [], resources: [] });
+  assert.deepEqual(cfg, { version: 3, default_leisure: [], default_on_demand: [], calendar_map: {}, notify: [], request_notify: [], request_notify_owners: {}, kids: [], resources: [] });
   const res = addResource(cfg, "Télé");
   addIntegration(res.devices[0], "media_player");
-  assert.equal(cfg.version, 2);
+  assert.equal(cfg.version, 3);
   assert.deepEqual(cfg.resources, [{ id: "tele", name: "Télé", owners: [], quota_minutes: {},
     devices: [{ name: "Télé", integrations: [{ kind: "media_player", entity_id: "" }] }] }]);
   assert.notEqual(emptyConfig(), emptyConfig()); // une copie neuve à chaque appel
@@ -281,7 +284,7 @@ test("addIntegration builds a switch integration", async () => {
 // --- Refonte A : frise à poignées, services, résumés ---
 
 const lib = await import("../../custom_components/parental_control/www/panel-lib.js");
-const segs = () => [{ start: "00:00", type: "bloque" }, { start: "16:15", type: "apres_devoirs" }, { start: "19:00", type: "bloque" }];
+const segs = () => [{ start: "00:00", type: "blocked" }, { start: "16:15", type: "after_homework" }, { start: "19:00", type: "blocked" }];
 
 test("fractionToMinutes : position sur la frise -> minutes, au pas de 5 min", () => {
   assert.equal(lib.fractionToMinutes(0), 0);
@@ -300,10 +303,10 @@ test("segmentBounds : bornes d'une limite entre ses voisines, au pas de 5 min", 
   assert.equal(lib.segmentBounds(segs(), 0), null); // 00:00 fixe
   assert.equal(lib.segmentBounds(segs(), 3), null);
   // Voisines hors grille : bornes arrondies vers l'intérieur.
-  const odd = [{ start: "00:00", type: "bloque" }, { start: "10:02", type: "libre" }, { start: "10:09", type: "bloque" }, { start: "10:13", type: "libre" }];
+  const odd = [{ start: "00:00", type: "blocked" }, { start: "10:02", type: "free" }, { start: "10:09", type: "blocked" }, { start: "10:13", type: "free" }];
   assert.deepEqual(lib.segmentBounds(odd, 2), { min: 605, max: 610 });
   // Pas de place sur la grille.
-  const tight = [{ start: "00:00", type: "bloque" }, { start: "10:01", type: "libre" }, { start: "10:03", type: "bloque" }, { start: "10:04", type: "libre" }];
+  const tight = [{ start: "00:00", type: "blocked" }, { start: "10:01", type: "free" }, { start: "10:03", type: "blocked" }, { start: "10:04", type: "free" }];
   assert.equal(lib.segmentBounds(tight, 2), null);
 });
 
@@ -322,11 +325,11 @@ test("setSegmentStart : arrondi au pas de 5 min et borné par les voisines", () 
 
 test("timelineBlocks : plages de la frise avec heures de début et de fin", () => {
   assert.deepEqual(lib.timelineBlocks(segs()), [
-    { index: 0, left: 0, width: (975 / 1440) * 100, type: "bloque", start: "00:00", end: "16:15" },
-    { index: 1, left: (975 / 1440) * 100, width: (165 / 1440) * 100, type: "apres_devoirs", start: "16:15", end: "19:00" },
-    { index: 2, left: (1140 / 1440) * 100, width: (300 / 1440) * 100, type: "bloque", start: "19:00", end: "24:00" },
+    { index: 0, left: 0, width: (975 / 1440) * 100, type: "blocked", start: "00:00", end: "16:15" },
+    { index: 1, left: (975 / 1440) * 100, width: (165 / 1440) * 100, type: "after_homework", start: "16:15", end: "19:00" },
+    { index: 2, left: (1140 / 1440) * 100, width: (300 / 1440) * 100, type: "blocked", start: "19:00", end: "24:00" },
   ]);
-  assert.deepEqual(lib.timelineBlocks([{ start: "00:00", type: "libre" }, { start: "zz", type: "bloque" }]).map((b) => [b.index, b.end]),
+  assert.deepEqual(lib.timelineBlocks([{ start: "00:00", type: "free" }, { start: "zz", type: "blocked" }]).map((b) => [b.index, b.end]),
     [[0, "24:00"]]); // heure invalide ignorée, index d'origine conservé
 });
 
@@ -420,27 +423,33 @@ test("moveCommonService : passe d'une liste commune à l'autre avec les exceptio
 
 test("dayLabels : journées définies de l'enfant, en libellés courts", () => {
   const kid = draft().kids[0];
-  assert.equal(lib.dayLabels(kid), "École · Fin de semaine");
-  kid.profiles.vacances = { segments: [{ start: "00:00", type: "libre" }] };
-  assert.equal(lib.dayLabels(kid), "École · Fin de semaine · Vacances");
-  assert.equal(lib.dayLabels({ profiles: {} }), "Aucune journée");
+  assert.equal(lib.dayLabels(kid, FR), "École · Fin de semaine");
+  kid.profiles.holidays = { segments: [{ start: "00:00", type: "free" }] };
+  assert.equal(lib.dayLabels(kid, FR), "École · Fin de semaine · Vacances");
+  assert.equal(lib.dayLabels({ profiles: {} }, FR), "Aucune journée");
+  assert.equal(lib.dayLabels(kid, EN), "School · Weekend · Holidays");
+  assert.equal(lib.dayLabels({ profiles: {} }), "No day");
 });
 
 test("resourceSummary : appareils physiques et intégrations, Nintendo à part", () => {
   const cfg = draft();
-  assert.equal(lib.resourceSummary(cfg.resources[0]), "1 intégration");
-  assert.equal(lib.resourceSummary(cfg.resources[2]), "Console Nintendo");
+  assert.equal(lib.resourceSummary(cfg.resources[0], FR), "1 intégration");
+  assert.equal(lib.resourceSummary(cfg.resources[0], EN), "1 integration");
+  assert.equal(lib.resourceSummary(cfg.resources[2], FR), "Console Nintendo");
   const r = cfg.resources[0];
   lib.addDevice(r, "Google TV");
   lib.addIntegration(r.devices[1], "adguard_services");
   lib.addIntegration(r.devices[1], "switch");
-  assert.equal(lib.resourceSummary(r), "2 appareils · 3 intégrations");
-  assert.equal(lib.resourceSummary({ id: "x", devices: [{ name: "x", integrations: [] }] }), "Aucune intégration");
-  assert.equal(lib.resourceSummary({ id: "tv", kind: "media_player" }), "Format ancien");
+  assert.equal(lib.resourceSummary(r, FR), "2 appareils · 3 intégrations");
+  assert.equal(lib.resourceSummary(r, EN), "2 devices · 3 integrations");
+  assert.equal(lib.resourceSummary({ id: "x", devices: [{ name: "x", integrations: [] }] }, FR), "Aucune intégration");
+  assert.equal(lib.resourceSummary({ id: "tv", kind: "media_player" }, FR), "Format ancien");
+  assert.equal(lib.resourceSummary({ id: "tv", kind: "media_player" }), "Old format");
 });
 
 test("integrationSummary : ce qui est piloté, en une ligne", () => {
   const hass = {
+    locale: { language: "fr" },
     states: { "media_player.tv": { attributes: { friendly_name: "Tv salon" } }, "switch.prise": { attributes: {} } },
     entities: { "media_player.tv": { platform: "smartthings" }, "switch.prise": { platform: "shelly" } },
   };
@@ -449,6 +458,8 @@ test("integrationSummary : ce qui est piloté, en une ligne", () => {
     { title: "Tv salon", detail: "SmartThings · media_player.tv", found: true });
   assert.deepEqual(lib.integrationSummary(hass, registry, { kind: "switch", entity_id: "switch.prise", turn_on_when_allowed: true }),
     { title: "switch.prise", detail: "Shelly · switch.prise · rallumée à l'autorisation", found: true });
+  assert.equal(lib.integrationSummary({ ...hass, locale: { language: "en" } }, registry,
+    { kind: "switch", entity_id: "switch.prise", turn_on_when_allowed: true }).detail, "Shelly · switch.prise · turned back on when allowed");
   assert.deepEqual(lib.integrationSummary(hass, registry, { kind: "media_player", entity_id: "media_player.vieux" }),
     { title: "media_player.vieux", detail: "media_player.vieux", found: false });
   assert.deepEqual(lib.integrationSummary(hass, registry, { kind: "media_player", entity_id: "" }),
@@ -553,11 +564,14 @@ test("Notification services: menu choices with mobile_app device names", () => {
 });
 
 test("Phone badge: label and tone for each status", () => {
-  assert.deepEqual(lib.phoneBadge("ok"), { label: "Associé", tone: "ok" });
-  assert.deepEqual(lib.phoneBadge("unbound"), { label: "À associer", tone: "warn" });
-  assert.deepEqual(lib.phoneBadge("missing"), { label: "Appareil introuvable", tone: "warn" });
-  assert.deepEqual(lib.phoneBadge("changed"), { label: "Changé de compte", tone: "warn" });
-  assert.deepEqual(lib.phoneBadge("ambiguous"), { label: "Nom en double", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("ok", FR), { label: "Associé", tone: "ok" });
+  assert.deepEqual(lib.phoneBadge("unbound", FR), { label: "À associer", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("missing", FR), { label: "Appareil introuvable", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("changed", FR), { label: "Changé de compte", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("ambiguous", FR), { label: "Nom en double", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("unbound"), { label: "To link", tone: "warn" });
+  assert.deepEqual(lib.phoneBadge("ok", EN), { label: "Linked", tone: "ok" });
+  assert.deepEqual(lib.phoneBadge("weird", FR), { label: "weird", tone: "warn" });
 });
 
 test("losesParentOnSave: warns a non-admin who keeps no phone of their own that is ok", () => {
@@ -583,11 +597,11 @@ test("losesParentOnSave: warns a non-admin who keeps no phone of their own that 
 });
 
 test("saveMessage: rebind sent beside the configuration, never inside it", () => {
-  const draft = { version: 2, request_notify: ["notify.mobile_app_a"], rebind: ["notify.mobile_app_a"] };
+  const draft = { version: 3, request_notify: ["notify.mobile_app_a"], rebind: ["notify.mobile_app_a"] };
   const msg = lib.saveMessage(draft);
   assert.deepEqual(msg, {
     type: "parental_control/config/set",
-    config: { version: 2, request_notify: ["notify.mobile_app_a"] },
+    config: { version: 3, request_notify: ["notify.mobile_app_a"] },
     rebind: ["notify.mobile_app_a"],
   });
   assert.deepEqual(draft.rebind, ["notify.mobile_app_a"]); // brouillon intact
@@ -610,13 +624,15 @@ test("saveMessage: request_notify_owners never sent (the server determines owner
 });
 
 test("phoneRebind: offered only for unbound and changed, naming who will become parent", () => {
-  assert.deepEqual(lib.phoneRebind({ status: "unbound", owner_name: null, current_name: "Julie" }),
+  assert.deepEqual(lib.phoneRebind({ status: "unbound", owner_name: null, current_name: "Julie" }, FR),
     { current: "Julie", label: "Réassocier à Julie" });
-  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Julie", current_name: "Tablette" }),
+  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Julie", current_name: "Tablette" }, FR),
     { current: "Tablette", label: "Réassocier à Tablette" });
   // Propriétaire actuel inconnu de HA : bouton sans nom.
-  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Julie", current_name: null }),
+  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Julie", current_name: null }, FR),
     { current: null, label: "Réassocier" });
+  assert.deepEqual(lib.phoneRebind({ status: "changed", owner_name: "Julie", current_name: "Tablette" }, EN),
+    { current: "Tablette", label: "Relink to Tablette" });
   for (const status of ["ok", "missing", "ambiguous"]) {
     assert.equal(lib.phoneRebind({ status, owner_name: "Julie", current_name: "Julie" }), null);
   }
@@ -759,14 +775,76 @@ test("setTargetLabel: refuse un label de service ou déjà pris par un autre", (
 
 test("labelSwitchStatus: unmanaged service shown as « non géré », not « autorisé »", async () => {
   const { labelSwitchStatus } = await import("../../custom_components/parental_control/www/panel-lib.js");
-  assert.equal(labelSwitchStatus({ state: "on", blocked: true }), "on · bloqué");
-  assert.equal(labelSwitchStatus({ state: "off", blocked: false }), "off · autorisé");
-  assert.equal(labelSwitchStatus({ state: "off", blocked: null }), "off · non géré");
-  assert.equal(labelSwitchStatus({ state: null }), "non géré");
+  assert.equal(labelSwitchStatus({ state: "on", blocked: true }, FR), "on · bloqué");
+  assert.equal(labelSwitchStatus({ state: "off", blocked: false }, FR), "off · autorisé");
+  assert.equal(labelSwitchStatus({ state: "off", blocked: null }, FR), "off · non géré");
+  assert.equal(labelSwitchStatus({ state: null }, FR), "non géré");
+  assert.equal(labelSwitchStatus({ state: "off", blocked: null }), "off · not managed");
 });
 
 test("panel CSS styles label switch problems in red", async () => {
   const { CSS } = await import("../../custom_components/parental_control/www/panel-style.js");
   assert.match(CSS, /\.lsw\.bad[^{]*\{[^}]*var\(--pc-red\)/);
   assert.match(CSS, /\.st\.missing\s*\{[^}]*var\(--pc-red\)/);
+});
+
+test("brouillon vide : version 3 et profils school / weekend pour un premier enfant", () => {
+  const cfg = emptyConfig();
+  assert.equal(cfg.version, 3);
+  const kid = addKid(cfg, "Hugo");
+  assert.deepEqual(Object.keys(kid.profiles).sort(), ["school", "weekend"]);
+});
+
+test("erreur de configuration traduite (configErrorText)", async () => {
+  const { configErrorText } = await import("../../custom_components/parental_control/www/panel-lib.js");
+  const FR = { locale: { language: "fr" } };
+  const EN = { locale: { language: "en" } };
+  const err = {
+    code: "invalid_config",
+    message: "kids[0].profiles: the “school” profile is required",
+    translation_domain: "parental_control",
+    translation_key: "config_profile_required",
+    translation_placeholders: { path: "kids[0].profiles", profile: "school" },
+  };
+  assert.equal(configErrorText(FR, err), "kids[0].profiles : le profil « school » est requis");
+  assert.equal(configErrorText(EN, err), "kids[0].profiles: the “school” profile is required");
+  const noParams = { message: "x", translation_key: "config_segment_required", translation_placeholders: { path: "p" } };
+  assert.equal(configErrorText(FR, noParams), "p : au moins un segment est requis");
+  // repli sur le message du serveur : clé inconnue, pas de clé, autre erreur
+  assert.equal(configErrorText(FR, { message: "Server text", translation_key: "config_nouveau" }), "Server text");
+  assert.equal(configErrorText(FR, { message: "Server text" }), "Server text");
+  assert.equal(configErrorText(FR, { message: "Server text", translation_key: "nouvelle_cle" }), "Server text");
+  // erreur d'action connue (`error.<clé>`) : traduite
+  assert.equal(configErrorText(FR, { message: "Server text", translation_key: "code_invalid" }), "Code parent invalide.");
+  // erreurs WebSocket non liées à la configuration : traduites aussi
+  assert.equal(configErrorText(FR, { code: "unauthorized", message: "Parents only" }), "Réservé aux parents.");
+  assert.equal(configErrorText(EN, { code: "not_loaded", message: "x" }), "Parental control is not loaded.");
+  assert.equal(configErrorText(EN, null), "");
+  assert.equal(configErrorText(EN, "boom"), "boom");
+});
+
+test("libellés des listes du panneau en anglais et en français", () => {
+  assert.deepEqual(lib.dayTypes(FR).map((d) => d.short), ["École", "Fin de semaine", "Congé péd.", "Vacances"]);
+  assert.deepEqual(lib.dayTypes(EN).map((d) => d.label), ["School day", "Weekend", "Day off", "Holidays"]);
+  assert.deepEqual(lib.dayTypes(EN).map((d) => d.required), [true, true, false, false]);
+  assert.deepEqual(lib.segmentTypes(FR).map((s) => s.label), ["Bloqué", "Libre", "Après devoirs", "Quota", "Sur demande"]);
+  assert.deepEqual(lib.segmentTypes(EN).map((s) => s.label), ["Blocked", "Free", "After homework", "Quota", "On demand"]);
+  assert.deepEqual(lib.modes(FR).map((m) => m.label), ["Suit la frise", "Sur demande", "Bloqué", "Libre"]);
+  assert.deepEqual(lib.modes(EN).map((m) => m.short), ["Timeline", "On demand", "Blocked", "Free"]);
+  assert.equal(lib.kinds(FR).find((k) => k.value === "nintendo").label, "Console Nintendo");
+  assert.equal(lib.kinds(EN).find((k) => k.value === "adguard_services").short, "AdGuard client");
+  assert.deepEqual(lib.kinds(EN).find((k) => k.value === "nintendo").options, ["device_id", "limit_entity", "remaining_entity", "used_entity"]);
+});
+
+// Sélecteur d'icône de HA : seul son propre `value-changed` (non propagé, d'où l'écoute en capture)
+// compte ; les événements internes retransmis (même cible après reciblage) sont ignorés.
+test("svcIconChange retient l'événement propre au sélecteur d'icône", async () => {
+  const { svcIconChange } = await import("../../custom_components/parental_control/www/panel-lib.js");
+  const picker = { dataset: { svcIcon: "youtube" } };
+  const inner = { tagName: "HA-PICKER-COMBO-BOX" };
+  const ev = (first, value, target = picker) => ({ target, detail: { value }, composedPath: () => [first, target] });
+  assert.deepEqual(svcIconChange(ev(picker, "mdi:star")), { id: "youtube", icon: "mdi:star" });
+  assert.deepEqual(svcIconChange(ev(picker, undefined)), { id: "youtube", icon: "" });
+  assert.equal(svcIconChange(ev(inner, "mdi:star")), null);
+  assert.equal(svcIconChange(ev({ dataset: {} }, "x", { dataset: {} })), null);
 });

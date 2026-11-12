@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant, State
 from homeassistant.exceptions import HomeAssistantError
 
 from ..core.evaluator import ResourceState
+from ..texts import text
 from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ class MediaPlayerAdapter:
         state = self.hass.states.get(self._entity_id)
         if state is None and not self._missing_logged and ha_started(self.hass):
             self._missing_logged = True
-            _LOGGER.warning("%s : entité introuvable", self.label)
+            _LOGGER.warning("%s: entity not found", self.label)
         return state
 
     def in_use(self) -> bool:
@@ -51,7 +52,7 @@ class MediaPlayerAdapter:
     def describe(self, desired: ResourceState) -> list[str]:
         if not self._must_turn_off(desired):
             return []
-        return [f"éteindrait {self.label}"]
+        return [text(self.hass, "simulation.media_off", label=self.label)]
 
     def describe_grant(self, minutes: int) -> list[str]:
         return []
@@ -67,12 +68,12 @@ class MediaPlayerAdapter:
                 blocking=True,
             )
         except HomeAssistantError as err:
-            _LOGGER.warning("%s : échec de l'extinction : %s", self.label, err)
+            _LOGGER.warning("%s: turn off failed: %s", self.label, err)
 
     def describe_warn(self, message: str) -> list[str]:
         if not self._notify_service:
             return []
-        return [f"afficherait « {message} » sur {self.label}"]
+        return [text(self.hass, "simulation.media_warn", message=message, label=self.label)]
 
     async def warn(self, message: str) -> None:
         if not self._notify_service:
@@ -89,7 +90,7 @@ class MediaPlayerAdapter:
         """État fermé de la pause (aussi décrit en simulation)."""
         return ResourceState(
             open=False,
-            reason="pause",
+            reason_code="paused",
             until=None,
             used_minutes=None,
             remaining_minutes=None,

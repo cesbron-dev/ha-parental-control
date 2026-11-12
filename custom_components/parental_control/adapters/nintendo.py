@@ -11,6 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
 from ..core.evaluator import ResourceState
+from ..texts import text
 from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,10 +55,10 @@ class NintendoAdapter:
         # même condition qu'`apply` : seule la dérive de la limite est corrigée
         if not self.drifted(desired):
             return []
-        return [f"remettrait la limite de {self.label} à 0 min"]
+        return [text(self.hass, "simulation.nintendo_reset", label=self.label)]
 
     def describe_grant(self, minutes: int) -> list[str]:
-        return [f"accorderait {minutes} min sur {self.label}"]
+        return [text(self.hass, "simulation.nintendo_grant", minutes=minutes, label=self.label)]
 
     def describe_warn(self, message: str) -> list[str]:
         return []
@@ -71,7 +72,7 @@ class NintendoAdapter:
             if entity_id not in self._missing_logged and ha_started(self.hass):
                 self._missing_logged.add(entity_id)
                 _LOGGER.warning(
-                    "%s : entité introuvable %s", self.label, entity_id
+                    "%s: entity not found %s", self.label, entity_id
                 )
             return None
         if state.state in _UNUSABLE:
@@ -107,7 +108,7 @@ class NintendoAdapter:
                 await self._add_bonus(amount)
             except HomeAssistantError as err:
                 _LOGGER.warning(
-                    "%s : échec du bonus de %d min, nouvel essai : %s",
+                    "%s: %d min bonus failed, retrying: %s",
                     self.label,
                     amount,
                     err,
@@ -119,7 +120,7 @@ class NintendoAdapter:
     def pause_state(self) -> ResourceState:
         return ResourceState(
             open=False,
-            reason="pause",
+            reason_code="paused",
             until=None,
             used_minutes=None,
             remaining_minutes=None,

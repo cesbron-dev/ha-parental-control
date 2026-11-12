@@ -18,6 +18,7 @@ from homeassistant.exceptions import HomeAssistantError
 
 from ..core.config_io import TURN_ON_WHEN_ALLOWED
 from ..core.evaluator import ResourceState
+from ..texts import text
 from .base import ha_started
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class SwitchAdapter:
         state = self.hass.states.get(self._entity_id)
         if state is None and not self._missing_logged and ha_started(self.hass):
             self._missing_logged = True
-            _LOGGER.warning("%s : entité introuvable", self.label)
+            _LOGGER.warning("%s: entity not found", self.label)
         return state
 
     def in_use(self) -> bool:
@@ -74,9 +75,9 @@ class SwitchAdapter:
         # place, une fois par application.
         action = self._action(desired)
         if action == "turn_off":
-            return [f"couperait {self.label}"]
+            return [text(self.hass, "simulation.switch_off", label=self.label)]
         if action == "turn_on":
-            return [f"rallumerait {self.label}"]
+            return [text(self.hass, "simulation.switch_on", label=self.label)]
         return []
 
     def describe_grant(self, minutes: int) -> list[str]:
@@ -94,7 +95,7 @@ class SwitchAdapter:
                 "switch", action, {"entity_id": self._entity_id}, blocking=True
             )
         except HomeAssistantError as err:
-            _LOGGER.warning("%s : échec de %s : %s", self.label, action, err)
+            _LOGGER.warning("%s: %s failed: %s", self.label, action, err)
 
     async def warn(self, message: str) -> None:
         return
@@ -106,7 +107,7 @@ class SwitchAdapter:
         """État fermé de la pause (aussi décrit en simulation)."""
         return ResourceState(
             open=False,
-            reason="pause",
+            reason_code="paused",
             until=None,
             used_minutes=None,
             remaining_minutes=None,

@@ -2,18 +2,15 @@
 // trait « maintenant », exceptions ouvertes en hachuré bleu).
 import {
   esc, shouldSubscribe, timelineGeometry, exceptionsForKid, exceptionSpans, dayTypeLabel, segmentClass, statusClass, nextStepLabel, simulationBadge,
+  reasonText, statusEntity,
 } from "./lib.js";
 import { subscribeState } from "./connection.js";
 import { BASE_CSS, TIMELINE_CSS, applyTheme } from "./style.js";
 import { createEditor } from "./editor.js";
+import { t, lang, formatTime, formatHour } from "./i18n.js";
 
-const LEGEND = [
-  ["libre", "libre"],
-  ["apres_devoirs", "après devoirs"],
-  ["quota", "quota"],
-  ["sur_demande", "sur demande"],
-  ["bloque", "bloqué"],
-];
+// Légende : segments de la frise (libellés `segment.*`), puis les exceptions hachurées.
+const LEGEND = ["free", "after_homework", "quota", "on_demand", "blocked"];
 
 const CSS = `
   ${BASE_CSS}
@@ -41,7 +38,7 @@ class ParentalTimelineCard extends HTMLElement {
 
   setConfig(config) {
     if (config?.kids !== undefined && !Array.isArray(config.kids)) {
-      throw new Error("« kids » doit être une liste d'identifiants d'enfants");
+      throw new Error(t(this._hass, "card.timeline.kids_list"));
     }
     this._config = { ...config };
     this._render();
@@ -64,9 +61,11 @@ class ParentalTimelineCard extends HTMLElement {
   }
 
   set hass(hass) {
+    const relang = lang(hass) !== lang(this._hass);
     this._hass = hass;
     applyTheme(this, hass);
     if (this.isConnected) this._subscribe();
+    if (relang) this._render(); // la langue de l'utilisateur a changé
   }
 
   get hass() {
@@ -140,26 +139,27 @@ class ParentalTimelineCard extends HTMLElement {
   }
 
   _body() {
-    if (this._state === undefined) return '<div class="muted">Chargement…</div>';
+    const hass = this._hass;
+    if (this._state === undefined) return `<div class="muted">${esc(t(hass, "common.loading"))}</div>`;
     const kids = this._state?.kids ?? {};
     const ids = (this._config.kids ?? Object.keys(kids)).filter((k) => kids[k]);
     if (this._state === null || Object.keys(kids).length === 0) {
-      return '<div class="muted">Contrôle parental indisponible</div>';
+      return `<div class="muted">${esc(t(hass, "common.unavailable"))}</div>`;
     }
 
-    if (ids.length === 0) return '<div class="muted">Aucun enfant à afficher</div>';
+    if (ids.length === 0) return `<div class="muted">${esc(t(hass, "card.timeline.no_kid"))}</div>`;
 
     const now = new Date();
-    const hh = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    const dayType = dayTypeLabel(kids[ids[0]]?.day_type);
+    const hh = formatTime(hass, now);
+    const dayType = dayTypeLabel(kids[ids[0]]?.day_type, hass);
 
     const rows = ids.map((id) => this._kidRow(id, kids[id], now)).join("");
-    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${h}h</span>`).join("");
-    const legend = LEGEND.map(([cls, label]) => `<i class="${cls}"></i>${label}`).join("")
-      + '<i class="exc"></i>exception';
+    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${esc(formatHour(hass, h))}</span>`).join("");
+    const legend = LEGEND.map((cls) => `<i class="${cls}"></i>${esc(t(hass, `segment.${cls}`))}`).join("")
+      + `<i class="exc"></i>${esc(t(hass, "segment.exception"))}`;
 
     return `
-      <div class="head"><div class="titlebar"><div class="title">Aujourd'hui</div>${simulationBadge(this._state)}</div>
+      <div class="head"><div class="titlebar"><div class="title">${esc(t(hass, "card.timeline.today"))}</div>${simulationBadge(this._state, hass)}</div>
         <div class="muted">${[dayType, hh].filter(Boolean).map(esc).join(" · ")}</div></div>
       ${rows}
       <div class="hours">${hours}</div>
@@ -169,8 +169,8 @@ class ParentalTimelineCard extends HTMLElement {
   _kidRow(id, kid, now) {
     const { bars, nowPct } = timelineGeometry(kid.timeline, now);
     const spans = exceptionSpans(exceptionsForKid(this._state, id), now);
-    const step = nextStepLabel(kid);
-    const tap = !!this._hass?.states?.[`sensor.${id}_statut`];
+    const step = nextStepLabel(kid, this._hass);
+    const tap = statusEntity(kid, this._hass) !== null;
     const segs = bars
       .map((b) => `<div class="${segmentClass(b.type)}" style="left:${b.left}%;width:${b.width}%"></div>`)
       .join("");
@@ -179,7 +179,7 @@ class ParentalTimelineCard extends HTMLElement {
     return `
       <div class="kid">
         <div><span class="name">${name}</span>
-          <span class="status badge ${statusClass(kid.status)}">· ${esc(kid.reason)}</span>
+          <span class="status badge ${statusClass(kid.status)}">· ${esc(reasonText(kid, this._hass))}</span>
           ${step ? `<span class="muted status">— ${esc(step)}</span>` : ""}</div>
         <div class="tl${tap ? " tap" : ""}" data-kid="${esc(id)}">${segs}${excs}<div class="now" style="left:${nowPct}%"></div></div>
       </div>`;
@@ -189,8 +189,8 @@ class ParentalTimelineCard extends HTMLElement {
   _onClick(ev) {
     const el = ev.target.closest("[data-kid]");
     if (!el) return;
-    const entityId = `sensor.${el.dataset.kid}_statut`;
-    if (!this._hass?.states?.[entityId]) return;
+    const entityId = statusEntity(this._state?.kids?.[el.dataset.kid], this._hass);
+    if (!entityId) return;
     this.dispatchEvent(new CustomEvent("hass-more-info", { detail: { entityId }, bubbles: true, composed: true }));
   }
 }

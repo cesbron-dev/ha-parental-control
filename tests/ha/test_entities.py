@@ -47,16 +47,48 @@ async def call(env: Env, domain: str, service: str, eid: str, context: Context) 
     await env.hass.async_block_till_done()
 
 
+@pytest.mark.parametrize(
+    ("language", "reason", "device_name"),
+    [("en", "Homework to finish", "Parental control"),
+     ("fr", "Devoirs à terminer", "Contrôle parental")],
+)
+async def test_reason_and_global_device_follow_system_language(
+    hass, make_env, language, reason, device_name  # noqa: F811
+) -> None:
+    hass.config.language = language
+    env = await make_env(at(TUESDAY, 16, 30))
+    attrs = state(env, "sensor", "kid_hugo_status").attributes
+    assert attrs["reason_code"] == "waiting_homework" and attrs["reason_params"] == {}
+    assert attrs["reason"] == reason
+    kid = serialize_snapshot(env.engine, display=True)["kids"]["hugo"]
+    assert (kid["reason_code"], kid["reason_params"], kid["reason"]) == (
+        "waiting_homework", {}, reason)
+    assert device(env, "global").name == device_name
+
+
+async def test_display_snapshot_carries_status_entity_id(make_env) -> None:  # noqa: F811
+    """La frise ouvre le détail du statut par l'identifiant réel, lu dans le registre : il
+    suit la langue et un renommage, pas `sensor.<id>_statut`."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    kid = serialize_snapshot(env.engine, display=True)["kids"]["hugo"]
+    assert kid["status_entity"] == "sensor.hugo_status"
+    er.async_get(env.hass).async_update_entity("sensor.hugo_status", new_entity_id="sensor.mon_fils")
+    kid = serialize_snapshot(env.engine, display=True)["kids"]["hugo"]
+    assert kid["status_entity"] == "sensor.mon_fils"
+    # Hors affichage (attributs d'entité) : pas de champ.
+    assert "status_entity" not in serialize_snapshot(env.engine)["kids"]["hugo"]
+
+
 async def test_kid_status_sensor_reflects_snapshot(make_env) -> None:  # noqa: F811
     env = await make_env(at(TUESDAY, 16, 30))
     assert entity_id(env, "sensor", "kid_hugo_status") == "sensor.hugo_status"
     st = state(env, "sensor", "kid_hugo_status")
-    assert st.state == KidStatus.ATTENTE_DEVOIRS
+    assert st.state == KidStatus.WAITING_HOMEWORK
     assert st.attributes["device_class"] == SensorDeviceClass.ENUM
     assert st.attributes["options"] == [s.value for s in KidStatus]
     attrs = st.attributes
-    assert attrs["day_type"] == "ecole"
-    assert attrs["segment"] == "apres_devoirs"
+    assert attrs["day_type"] == "school"
+    assert attrs["segment"] == "after_homework"
     assert attrs["segment_end"] == at(TUESDAY, 19, 0).isoformat()
     assert attrs["reason"]
     for key in ("until", "remaining_minutes", "timer_end", "closes_at"):
@@ -65,7 +97,7 @@ async def test_kid_status_sensor_reflects_snapshot(make_env) -> None:  # noqa: F
     hugo = device(env, "kid_hugo")
     assert hugo is not None and hugo.name == "Hugo"
 
-    await env.call("devoirs_termines", {"kid_id": "hugo"}, env.admin_ctx)
+    await env.call("homework_done", {"kid_id": "hugo"}, env.admin_ctx)
     # Exception sur une ressource de Hugo : listée dans ses attributs.
     await env.call("exception", {"open": False, "resource_id": "tv", "minutes": 30},
                    env.admin_ctx)
@@ -79,10 +111,10 @@ async def test_kid_status_sensor_reflects_snapshot(make_env) -> None:  # noqa: F
         "until": exc.until.isoformat(),
     }]
 
-    await env.call("annuler_exception", {"exception_id": exc.id}, env.admin_ctx)
+    await env.call("cancel_exception", {"exception_id": exc.id}, env.admin_ctx)
     await env.hass.async_block_till_done()
     st = state(env, "sensor", "kid_hugo_status")
-    assert st.state == KidStatus.AUTORISE
+    assert st.state == KidStatus.ALLOWED
     assert st.attributes["closes_at"] == at(TUESDAY, 19, 0).isoformat()
 
 
@@ -157,7 +189,7 @@ async def test_button_press_admin_marks_homework(make_env) -> None:  # noqa: F81
     eid = entity_id(env, "button", "kid_hugo_homework_done")
     await call(env, "button", "press", eid, env.admin_ctx)
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
-    assert state(env, "sensor", "kid_hugo_status").state == KidStatus.AUTORISE
+    assert state(env, "sensor", "kid_hugo_status").state == KidStatus.ALLOWED
 
 
 async def test_pause_switch_turn_off_non_admin_rejected(make_env) -> None:  # noqa: F811
@@ -166,12 +198,12 @@ async def test_pause_switch_turn_off_non_admin_rejected(make_env) -> None:  # no
     assert eid is not None
     assert env.hass.states.get(eid).state == STATE_OFF
     glob = device(env, "global")
-    assert glob is not None and glob.name == "Contrôle parental"
+    assert glob is not None and glob.name == "Parental control"  # langue système : en
 
     await call(env, "switch", "turn_on", eid, env.kid_ctx)  # la pause ne demande rien
     assert env.engine.decisions.paused
     assert env.hass.states.get(eid).state == STATE_ON
-    assert state(env, "sensor", "kid_hugo_status").state == KidStatus.PAUSE
+    assert state(env, "sensor", "kid_hugo_status").state == KidStatus.PAUSED
 
     with pytest.raises(ServiceValidationError) as err:
         await call(env, "switch", "turn_off", eid, env.kid_ctx)
@@ -272,7 +304,7 @@ async def test_serialize_snapshot_shape(make_env) -> None:  # noqa: F811
     data = serialize_snapshot(env.engine)
     assert set(data) == {"kids", "resources", "closures", "paused", "simulation", "exceptions"}
     hugo = data["kids"]["hugo"]
-    assert hugo["status"] == "attente_devoirs"
+    assert hugo["status"] == "waiting_homework"
     assert hugo["segment_end"] == at(TUESDAY, 19, 0).isoformat()
     assert "closes_at" in hugo
     assert data["resources"]["iphone_hugo"]["blocked_services"] == LEISURE

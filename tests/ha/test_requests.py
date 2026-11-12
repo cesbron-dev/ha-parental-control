@@ -1,4 +1,4 @@
-"""Demandes de temps : service `demander`, notifications, expiration, état publié."""
+"""Demandes de temps : service `request`, notifications, expiration, état publié."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from custom_components.parental_control.core.model import ResourceKind
 from custom_components.parental_control.core.requests import RequestKind
 from custom_components.parental_control.parents import trusted_phone_owners
 from custom_components.parental_control.request_listener import parse_action
-from custom_components.parental_control.serialize import serialize_snapshot
+from custom_components.parental_control.serialize import serialize_requests, serialize_snapshot
 from tests.fixtures import EX
 from tests.ha.test_engine import (
     SATURDAY,
@@ -73,7 +73,7 @@ async def test_request_sends_actionable_notification_to_each_parent(
     make_env, julie, catalog
 ) -> None:
     env = await _env(make_env)
-    req_id = await env.call("demander", OPEN_CALL, env.kid_ctx, return_response=True)
+    req_id = await env.call("request", OPEN_CALL, env.kid_ctx, return_response=True)
     await env.hass.async_block_till_done()
     marc = env.services.of("notify", "mobile_app_iphone_de_marc")
     assert len(marc) == 1 and len(julie) == 1
@@ -89,9 +89,30 @@ async def test_request_sends_actionable_notification_to_each_parent(
         assert actions[0]["action"].endswith(":0")
 
 
+@pytest.mark.parametrize(
+    ("language", "message", "first", "last"),
+    [
+        ("fr", "Hugo demande 30 min de YouTube sur iPhone Hugo", "Accepter 30 min", "Refuser"),
+        ("en", "Hugo asks for 30 min of YouTube on iPhone Hugo", "Accept 30 min", "Refuse"),
+    ],
+)
+async def test_request_notification_follows_system_language(
+    make_env, julie, catalog, language, message, first, last
+) -> None:
+    env = await _env(make_env)
+    env.hass.config.language = language
+    await env.call("request", OPEN_CALL, env.kid_ctx)
+    await env.hass.async_block_till_done()
+    (call,) = julie
+    assert call.data["message"] == message
+    actions = call.data["data"]["actions"]
+    assert actions[0]["title"] == first and actions[-1]["title"] == last
+    assert call.data["title"] == ("Contrôle parental" if language == "fr" else "Parental control")
+
+
 async def test_request_needs_no_code(make_env, julie) -> None:
     env = await _env(make_env)
-    await env.call("demander", OPEN_CALL, env.kid_ctx)
+    await env.call("request", OPEN_CALL, env.kid_ctx)
     assert env.engine.decisions.exceptions == []
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
@@ -99,15 +120,15 @@ async def test_request_needs_no_code(make_env, julie) -> None:
 async def test_request_disabled_without_parents(make_env) -> None:
     env = await _env(make_env, {**EX, "request_notify": []})
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", OPEN_CALL, env.kid_ctx)
+        await env.call("request", OPEN_CALL, env.kid_ctx)
     assert err.value.translation_key == "requests_disabled"
 
 
 async def test_duplicate_request_rejected(make_env, julie) -> None:
     env = await _env(make_env)
-    await env.call("demander", OPEN_CALL, env.kid_ctx)
+    await env.call("request", OPEN_CALL, env.kid_ctx)
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", OPEN_CALL, env.kid_ctx)
+        await env.call("request", OPEN_CALL, env.kid_ctx)
     assert err.value.translation_key == "request_pending"
 
 
@@ -116,7 +137,7 @@ async def test_request_kid_must_own_resource(make_env, julie) -> None:
     cfg["kids"].append({**cfg["kids"][0], "id": "autre", "name": "Autre", "calendar": None})
     env = await _env(make_env, cfg)
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", {**OPEN_CALL, "kid_id": "autre"}, env.kid_ctx)
+        await env.call("request", {**OPEN_CALL, "kid_id": "autre"}, env.kid_ctx)
     assert err.value.translation_key == "invalid_target"
 
 
@@ -124,14 +145,14 @@ async def test_request_invalid_duration_translated(make_env, julie) -> None:
     env = await _env(make_env)
     data = {"kind": "bonus", "kid_id": "hugo"}  # bonus sans durée
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", data, env.kid_ctx)
+        await env.call("request", data, env.kid_ctx)
     assert err.value.translation_key == "invalid_request"
 
 
 async def test_request_expires_after_15_minutes(hass, freezer, make_env, julie) -> None:
     env = await _env(make_env)
     entries = async_capture_events(hass, "logbook_entry")
-    req_id = (await env.call("demander", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
+    req_id = (await env.call("request", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
     await hass.async_block_till_done()
     await tick(hass, freezer, 15)
     assert env.engine.requests.get(req_id).status == "expired"
@@ -143,7 +164,7 @@ async def test_request_expires_after_15_minutes(hass, freezer, make_env, julie) 
 
 async def test_state_exposes_requests_without_token(make_env, julie) -> None:
     env = await _env(make_env)
-    req_id = (await env.call("demander", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
+    req_id = (await env.call("request", OPEN_CALL, env.kid_ctx, return_response=True))["id"]
     req = env.engine.requests.get(req_id)
     payload = serialize_snapshot(env.engine, display=True)
     assert payload["requests_enabled"] is True
@@ -158,7 +179,7 @@ async def test_state_exposes_requests_without_token(make_env, julie) -> None:
 async def test_simulation_prefixes_request_message(make_env, julie, catalog) -> None:
     env = await _env(make_env)
     env.engine.decisions.simulation = True
-    await env.call("demander", OPEN_CALL, env.kid_ctx)
+    await env.call("request", OPEN_CALL, env.kid_ctx)
     await env.hass.async_block_till_done()
     assert julie[0].data["message"] == (
         "[Simulation] Hugo demande 30 min de YouTube sur iPhone Hugo"
@@ -247,7 +268,7 @@ def _with_owners(config: dict, env, julie_user) -> dict:
 
 
 async def _parents_env(make_env, julie_user, moment=None, config=CONFIG, *, marc=True):
-    """Téléphones de Julie (et de Marc) enregistrés et mémorisés comme les leurs."""
+    """Téléphones de Julie (et d'Marc) enregistrés et mémorisés comme les leurs."""
     env = await make_env(moment or at(TUESDAY, 16, 30), config)
     await env.engine.set_config(parse_config(_with_owners(config, env, julie_user)))
     add_phone(env.hass, "iPhone de Julie", julie_user.id)
@@ -257,7 +278,7 @@ async def _parents_env(make_env, julie_user, moment=None, config=CONFIG, *, marc
 
 
 async def _ask(env, data=OPEN_CALL) -> str:
-    req_id = (await env.call("demander", data, env.kid_ctx, return_response=True))["id"]
+    req_id = (await env.call("request", data, env.kid_ctx, return_response=True))["id"]
     await env.hass.async_block_till_done()
     return req_id
 
@@ -321,6 +342,17 @@ async def test_parent_non_admin_accepts_with_other_duration(
     assert "Demande de Hugo acceptée par Julie : 1 h" in logbook_messages(entries)
 
 
+async def test_answer_logbook_in_english(hass, make_env, julie, julie_user) -> None:
+    env = await _parents_env(make_env, julie_user)
+    hass.config.language = "en"
+    entries = async_capture_events(hass, "logbook_entry")
+    req_id = await _ask(env)
+    req = env.engine.requests.get(req_id)
+    await _answer(env, _actions(julie)[str(req.options.index(60))], julie_user.id)
+    assert "Request from Hugo accepted by Julie: 1 h" in logbook_messages(entries)
+    assert [e.data["name"] for e in entries][-1] == "Parental control"
+
+
 async def test_tablet_user_cannot_answer(make_env, julie, julie_user) -> None:
     env = await _parents_env(make_env, julie_user)
     req_id = await _ask(env)
@@ -359,7 +391,7 @@ async def test_unauthorized_answer_logs_without_token(
     req_id = await _ask(env)
     req = env.engine.requests.get(req_id)
     await _answer(env, _actions(julie)["0"], env.kid.id)
-    assert f"Réponse à la demande {req_id} ignorée" in caplog.text
+    assert f"Answer to request {req_id} ignored" in caplog.text
     assert req.token not in caplog.text
 
 
@@ -499,6 +531,7 @@ async def test_unknown_choice_marks_failed(make_env, julie, julie_user) -> None:
     base = _actions(julie)["0"].rsplit(":", 1)[0]
     await _answer(env, f"{base}:accept", julie_user.id)  # « accept » : devoirs seulement
     assert req.status == "failed" and req.reason == "Choix inconnu"
+    assert (req.reason_code, req.reason_params) == ("unknown_choice", {})
     assert env.engine.decisions.exceptions == []
     assert len(_clears(julie, req_id)) == 1
 
@@ -512,7 +545,15 @@ async def test_accept_impossible_marks_failed(
     await tick(hass, freezer, 6)  # 20:01 : hors de la plage quota
     await _answer(env, _actions(julie)["0"], julie_user.id)
     req = env.engine.requests.get(req_id)
-    assert req.status == "failed" and req.reason
+    assert req.status == "failed"
+    assert (req.reason_code, req.reason_params) == ("not_in_quota", {})
+    assert req.reason == "Un minuteur ne peut démarrer que pendant une période de quota."
+    (item,) = serialize_snapshot(env.engine, display=True)["requests"]
+    assert (item["reason_code"], item["reason_params"], item["reason"]) == (
+        "not_in_quota", {}, req.reason)
+    (item,) = serialize_requests(env.engine, can_answer=True)["requests"]
+    assert (item["reason_code"], item["reason_params"], item["reason"]) == (
+        "not_in_quota", {}, req.reason)
     assert env.engine.decisions.timers == []
     assert any(
         m.startswith("Demande de Hugo acceptée par Julie, mais impossible : ")
@@ -543,9 +584,9 @@ async def test_answer_from_recreated_device_refused(
         await _answer(env, _actions(julie)["0"], user_id)
         assert req.status == "pending"
     assert env.engine.decisions.exceptions == []
-    assert f"Réponse à la demande {req_id} ignorée" in caplog.text
+    assert f"Answer to request {req_id} ignored" in caplog.text
     # Julie a toujours son téléphone dans la liste : c'est la reconnaissance qui échoue.
-    assert "n'est pas le propriétaire reconnu d'un téléphone de la liste des demandes" in caplog.text
+    assert "is not the recognized owner of a phone in the request list" in caplog.text
 
 
 async def test_answer_after_config_removed_kid(make_env, julie, julie_user) -> None:
@@ -559,7 +600,27 @@ async def test_answer_after_config_removed_kid(make_env, julie, julie_user) -> N
     await env.engine.set_config(parse_config(_with_owners(cfg, env, julie_user)))
     await _answer(env, _actions(julie)["accept"], julie_user.id)
     req = env.engine.requests.get(req_id)
-    assert req.status == "failed" and req.reason
+    assert req.status == "failed"
+    assert (req.reason_code, req.reason_params) == ("unknown_kid", {"kid_id": "hugo"})
+    assert req.reason == "Enfant inconnu : hugo."
+
+
+async def test_accept_unexpected_error_marks_impossible(
+    hass, make_env, julie, julie_user
+) -> None:
+    env = await _parents_env(make_env, julie_user, at(SATURDAY, 10, 0))
+    hass.config.language = "en"
+    req_id = await _ask(env, {"kind": "timer", "kid_id": "hugo", "minutes": 30})
+
+    async def broken(*_args, **_kwargs):
+        raise KeyError("hugo")
+
+    env.engine.start_timer = broken
+    await _answer(env, _actions(julie)["0"], julie_user.id)
+    req = env.engine.requests.get(req_id)
+    assert req.status == "failed"
+    assert (req.reason_code, req.reason_params, req.reason) == (
+        "impossible", {}, "Action not possible")
 
 
 async def test_late_answer_after_expiry_ignored(
@@ -599,7 +660,7 @@ async def test_duplicate_device_name_trusted_for_nobody(
     env = await _parents_env(make_env, julie_user, marc=False)
     add_phone(env.hass, "iPhone de Julie", env.kid.id)
     assert trusted_phone_owners(env.hass, env.engine.config) == set()
-    assert "mobile_app_iphone_de_julie" in caplog.text and "plusieurs" in caplog.text
+    assert "mobile_app_iphone_de_julie" in caplog.text and "several mobile_app devices" in caplog.text
     req_id = await _ask(env)
     req = env.engine.requests.get(req_id)
     for user_id in (env.kid.id, julie_user.id):
@@ -632,7 +693,7 @@ async def test_impossible_request_rejected_at_creation(make_env, julie, data, ke
     env = await _env(make_env)
     data = {k: v for k, v in data.items() if v is not None}
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", data, env.kid_ctx)
+        await env.call("request", data, env.kid_ctx)
     assert err.value.translation_key == key
     assert env.engine.requests.visible(at(TUESDAY, 16, 30)) == []
     assert julie == []
@@ -649,7 +710,7 @@ async def test_request_service_outside_target_rejected(make_env, julie, data) ->
     env = await _env(make_env)
     data = {k: v for k, v in data.items() if v is not None}
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", data, env.kid_ctx)
+        await env.call("request", data, env.kid_ctx)
     assert err.value.translation_key == "invalid_target"
     assert julie == []
 
@@ -659,9 +720,9 @@ async def test_request_on_demand_service_accepted(make_env, julie) -> None:
     cfg["services"].append({"id": "steam", "name": "Steam", "adguard": ["steam"], "labels": []})
     cfg["default_on_demand"] = ["steam"]
     env = await _env(make_env, cfg)
-    await env.call("demander", {**OPEN_CALL, "service": "steam"}, env.kid_ctx)
+    await env.call("request", {**OPEN_CALL, "service": "steam"}, env.kid_ctx)
     kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
-    await env.call("demander", {**kid_wide, "service": "steam"}, env.kid_ctx)
+    await env.call("request", {**kid_wide, "service": "steam"}, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 2
 
 
@@ -675,16 +736,16 @@ async def test_request_label_service_without_adguard_accepted(make_env, julie) -
     env = await _env(make_env, cfg)
     assert not any(r.has(ResourceKind.ADGUARD) for r in env.engine.config.resources)
     kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
-    await env.call("demander", {**kid_wide, "service": "internet"}, env.kid_ctx)
+    await env.call("request", {**kid_wide, "service": "internet"}, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
 
 async def test_too_many_pending_requests_rejected(make_env, julie) -> None:
     env = await _env(make_env)
     for service in ("youtube", "roblox", "tiktok"):
-        await env.call("demander", {**OPEN_CALL, "service": service}, env.kid_ctx)
+        await env.call("request", {**OPEN_CALL, "service": service}, env.kid_ctx)
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("demander", {**OPEN_CALL, "service": "netflix"}, env.kid_ctx)
+        await env.call("request", {**OPEN_CALL, "service": "netflix"}, env.kid_ctx)
     assert err.value.translation_key == "too_many_requests"
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 3
 
@@ -702,7 +763,7 @@ async def test_too_many_pending_requests_rejected(make_env, julie) -> None:
 async def test_possible_request_accepted_at_creation(make_env, julie, data) -> None:
     env = await _env(make_env)
     data = {k: v for k, v in data.items() if v is not None}
-    await env.call("demander", data, env.kid_ctx)
+    await env.call("request", data, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
 
@@ -750,9 +811,15 @@ async def test_requests_screen_lists_choices_without_token(
         assert event["can_answer"] is can_answer
         (req,) = event["requests"]
         assert req["id"] == req_id and req["status"] == "pending"
+        # Champs sans langue : l'écran rend le texte dans la langue de l'utilisateur ;
+        # `message` (langue système) reste en repli.
         assert req["message"] == "Hugo demande 30 min de YouTube sur iPhone Hugo"
-        assert req["choices"][0] == ["0", "Accepter 30 min"]
-        assert req["choices"][-1] == ["refuse", "Refuser"]
+        assert (req["kid_name"], req["resource_name"], req["service_name"], req["proposed"]) == (
+            "Hugo", "iPhone Hugo", "YouTube", 30)
+        assert req["choices"][0] == {"choice": "0", "label": "accept_duration", "minutes": 30}
+        assert req["choices"][-1] == {"choice": "refuse", "label": "refuse", "minutes": None}
+        assert not any(isinstance(v, str) and "Accepter" in v
+                       for c in req["choices"] for v in c.values())
 
 
 @_ws
@@ -800,3 +867,9 @@ async def test_requests_screen_unknown_choice_keeps_request(
     assert env.engine.requests.get(req_id).status == "pending"
     resp = await _ws_answer(client, "inconnue", "0")
     assert resp["error"]["code"] == "not_pending"
+
+
+@pytest.fixture(autouse=True)
+def _french_system_language(hass) -> None:
+    """Textes du serveur (notifications, journal de bord) vérifiés en français."""
+    hass.config.language = "fr"

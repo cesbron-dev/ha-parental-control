@@ -14,10 +14,13 @@ const state = {
   },
 };
 
+const FR = { locale: { language: "fr" } };
+const EN = { locale: { language: "en" } };
+
 const field = (schema, name) => schema.find((f) => f.name === name);
 
 test("resource card: every resource is offered, plus name and icon", () => {
-  const schema = editorSchema("resource", state, { resource: "tv" });
+  const schema = editorSchema("resource", state, { resource: "tv" }, FR);
   const res = field(schema, "resource");
   assert.equal(res.required, true);
   assert.deepEqual(res.selector.select.options.map((o) => o.value), ["tv", "ipad", "mixte", "switch"]);
@@ -34,7 +37,7 @@ test("switch card: only Nintendo resources, plus a title", () => {
 });
 
 test("an unknown current resource stays selectable", () => {
-  const schema = editorSchema("resource", state, { resource: "ancien" });
+  const schema = editorSchema("resource", state, { resource: "ancien" }, FR);
   const opts = field(schema, "resource").selector.select.options;
   assert.deepEqual(opts.at(-1), { value: "ancien", label: "ancien (introuvable)" });
 });
@@ -50,7 +53,7 @@ test("timeline card: kids as a multiple choice", () => {
   assert.equal(sel.multiple, true);
   assert.deepEqual(sel.options, [{ value: "hugo", label: "Hugo" }, { value: "zoe", label: "Zoé" }]);
   // Un enfant déjà choisi mais retiré des règles reste visible pour pouvoir le décocher.
-  const kept = field(editorSchema("timeline", state, { kids: ["alice"] }), "kids").selector.select.options;
+  const kept = field(editorSchema("timeline", state, { kids: ["alice"] }, FR), "kids").selector.select.options;
   assert.deepEqual(kept.at(-1), { value: "alice", label: "alice (introuvable)" });
 });
 
@@ -127,4 +130,18 @@ test("services fields: noms du parent, filtre AdGuard / labels", () => {
   assert.deepEqual(opts(editorSchema("kid", s, { kid: "alice" })), [
     { value: "jeux", label: "Jeux vidéo" }, { value: "internet", label: "Internet" },
   ]);
+});
+
+test("libellés de l'éditeur en anglais et en français", () => {
+  const en = editorSchema("resource", state, { resource: "gone" }, EN);
+  assert.equal(field(en, "resource").label, "Device");
+  assert.equal(field(en, "name").label, "Display name");
+  assert.deepEqual(field(en, "resource").selector.select.options.slice(0, 1), [{ value: "tv", label: "Télé salon (TV)" }]);
+  assert.deepEqual(field(en, "resource").selector.select.options.at(-1), { value: "gone", label: "gone (not found)" });
+  assert.equal(field(editorSchema("kid", state, {}, FR), "kid").label, "Enfant");
+  assert.equal(field(editorSchema("kid", state, {}, EN), "kid").label, "Child");
+  assert.equal(field(editorSchema("timeline", state, {}, EN), "kids").label, "Children shown");
+  assert.equal(field(editorSchema("switch", state, {}, FR), "bonus_minutes").label, "Minutes bonus proposées");
+  // sans hass : anglais
+  assert.equal(field(editorSchema("switch", state, {}), "title").label, "Title");
 });

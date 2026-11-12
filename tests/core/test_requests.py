@@ -12,6 +12,7 @@ from custom_components.parental_control.core.requests import (
     RequestKind,
     RequestStatus,
     action_choices,
+    choice_specs,
     duration_label,
     normalize_options,
 )
@@ -128,33 +129,66 @@ def test_visible_keeps_results_five_minutes():
 
 def test_action_choices_open():
     req = make(RequestBook())
-    assert action_choices(req) == [
+    assert action_choices(req, "fr") == [
         ("0", "Accepter 30 min"),
         ("1", "15 min"),
         ("2", "Jusqu'au prochain changement"),
         ("refuse", "Refuser"),
     ]
+    assert action_choices(req) == [
+        ("0", "Accept 30 min"),
+        ("1", "15 min"),
+        ("2", "Until the next change"),
+        ("refuse", "Refuse"),
+    ]
 
 
 def test_action_choices_open_without_proposal():
     req = make(RequestBook(), proposed=None, options=(None,))
-    assert action_choices(req) == [
+    assert action_choices(req, "fr") == [
         ("0", "Accepter jusqu'au prochain changement"),
         ("refuse", "Refuser"),
+    ]
+    assert action_choices(req, "en") == [
+        ("0", "Accept until the next change"),
+        ("refuse", "Refuse"),
     ]
 
 
 def test_action_choices_homework():
     req = make(RequestBook(), kind=RequestKind.HOMEWORK, proposed=None, options=())
-    assert action_choices(req) == [("accept", "Accepter"), ("refuse", "Refuser")]
+    assert action_choices(req, "fr") == [("accept", "Accepter"), ("refuse", "Refuser")]
+    assert action_choices(req, "en") == [("accept", "Accept"), ("refuse", "Refuse")]
+
+
+def test_choice_specs_language_neutral():
+    """Boutons sans texte : l'écran « Demandes » les rend dans la langue de l'utilisateur."""
+    assert choice_specs(make(RequestBook())) == [
+        {"choice": "0", "label": "accept_duration", "minutes": 30},
+        {"choice": "1", "label": "duration", "minutes": 15},
+        {"choice": "2", "label": "duration", "minutes": None},
+        {"choice": "refuse", "label": "refuse", "minutes": None},
+    ]
+    assert choice_specs(make(RequestBook(), proposed=None, options=(None, 15))) == [
+        {"choice": "0", "label": "accept_until", "minutes": None},
+        {"choice": "1", "label": "duration", "minutes": 15},
+        {"choice": "refuse", "label": "refuse", "minutes": None},
+    ]
+    homework = make(RequestBook(), kind=RequestKind.HOMEWORK, proposed=None, options=())
+    assert choice_specs(homework) == [
+        {"choice": "accept", "label": "accept", "minutes": None},
+        {"choice": "refuse", "label": "refuse", "minutes": None},
+    ]
 
 
 def test_duration_label():
     assert duration_label(15) == "15 min"
     assert duration_label(60) == "1 h"
-    assert duration_label(90) == "1 h 30"
+    assert duration_label(90) == "1 h 30 min"
     assert duration_label(120) == "2 h"
-    assert duration_label(None) == "Jusqu'au prochain changement"
+    assert duration_label(None) == "Until the next change"
+    assert duration_label(None, "fr") == "Jusqu'au prochain changement"
+    assert duration_label(65, "fr-CA") == "1 h 05"
 
 
 def test_repr_does_not_leak_token():

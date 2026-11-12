@@ -2,6 +2,7 @@
 // l'écrit avec `parental_control/config/set` ; le moteur valide et cite le chemin fautif.
 // Un non-parent ne voit que « Réservé aux parents » (rien d'autre n'est demandé au serveur).
 import { esc, pendingCount } from "./lib.js";
+import { t, lang, errorText } from "./i18n.js";
 import { subscribeState } from "./connection.js";
 import * as L from "./panel-lib.js";
 import { CSS, opt } from "./panel-style.js";
@@ -10,18 +11,10 @@ import { devicesView } from "./panel-devices.js";
 
 const CONFIRM_MS = 3000;
 const LOSE_PARENT_MS = 8000; // le temps de lire l'avertissement avant de confirmer
-const TABS = [
-  { id: "kids", label: "Enfants" },
-  { id: "resources", label: "Appareils" },
-  { id: "general", label: "Général" },
-  { id: "json", label: "JSON" },
-];
-const COMMON_LISTS = {
-  leisure: { title: "Loisirs par défaut", other: "Sur demande",
-    help: "Bloqués en dehors des plages libres, pour tous les enfants (ajustable par enfant)." },
-  on_demand: { title: "Services sur demande par défaut", other: "Loisirs",
-    help: "Toujours bloqués, même quand l'appareil est ouvert : seule une autorisation explicite les ouvre (ajustable par enfant)." },
-};
+const TABS = ["kids", "resources", "general", "json"]; // libellés : `panel.tab.<id>`
+// Listes communes : titre et aide `panel.common_list.<list>_title|_help` ; `other` : l'autre liste
+// (son nom court, `panel.kids.<other>`).
+const COMMON_LISTS = { leisure: { other: "on_demand" }, on_demand: { other: "leisure" } };
 
 const DEFAULT_SVC_ICON = "mdi:shape-outline";
 
@@ -57,7 +50,7 @@ class ParentalControlPanel extends HTMLElement {
     this._subConn = null;
     this._armed = null;
     this._armTimer = null;
-    this._day = "ecole"; // journée affichée dans la carte « Journée type »
+    this._day = "school"; // journée affichée dans la carte « Journée type »
     this._adding = null; // "kid" | "res" | "dev" : petit formulaire d'ajout ouvert
     this._menu = null; // menu ⋮ ouvert ("res")
     this._edit = null; // intégration en cours d'édition ("j:k")
@@ -87,11 +80,12 @@ class ParentalControlPanel extends HTMLElement {
         if (box) box.innerHTML = this._agResults();
       }
     });
-    // Sélecteur d'icône de Home Assistant (édition d'un service).
+    // Sélecteur d'icône de Home Assistant (édition d'un service). Son `value-changed` ne se propage
+    // pas : écouté en phase de capture.
     this.shadowRoot.addEventListener("value-changed", (ev) => {
-      const id = ev.target?.dataset?.svcIcon;
-      if (id && this._draft) this._setSvcIcon(id, ev.detail?.value ?? "");
-    });
+      const change = L.svcIconChange(ev);
+      if (change && this._draft) this._setSvcIcon(change.id, change.icon);
+    }, true);
     this._beforeUnload = (ev) => {
       if (this._dirty()) ev.preventDefault();
     };
@@ -99,11 +93,22 @@ class ParentalControlPanel extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    const code = lang(hass);
     if (!this._started) {
       this._started = true;
+      this._lang = code;
       this._load();
+    } else if (code !== this._lang) {
+      // Langue du profil changée : tout est redessiné (le brouillon est gardé).
+      this._lang = code;
+      if (this._me) this._render();
     }
     this._subscribe();
+  }
+
+  // Texte dans la langue de l'utilisateur (méthodes des onglets comprises).
+  _t(key, params) {
+    return t(this._hass, key, params);
   }
 
   connectedCallback() {
@@ -165,14 +170,14 @@ class ParentalControlPanel extends HTMLElement {
   _requestsButton() {
     if (!this._requests?.enabled) return "";
     const n = this._requests.pending;
-    return this._btn("requests", n ? `Demandes (${n})` : "Demandes", {
-      cls: `btn${n ? " pending" : ""}`, icon: "mdi:hand-back-right", title: "Demandes de temps des enfants",
+    return this._btn("requests", n ? this._t("panel.requests.button_count", { count: n }) : this._t("panel.requests.button"), {
+      cls: `btn${n ? " pending" : ""}`, icon: "mdi:hand-back-right", title: this._t("panel.requests.title"),
       confirmKey: "requests",
     });
   }
 
   _simBanner() {
-    return this._simulation ? `<span class="sim">Simulation : aucun appareil n'est piloté</span>` : "";
+    return this._simulation ? `<span class="sim">${esc(this._t("panel.simulation"))}</span>` : "";
   }
 
   _dirty() {
@@ -184,7 +189,7 @@ class ParentalControlPanel extends HTMLElement {
     try {
       this._me = await this._hass.connection.sendMessagePromise({ type: "parental_control/whoami" });
     } catch (err) {
-      this._message = { kind: "error", text: `Droits illisibles : ${err?.message ?? err}` };
+      this._message = { kind: "error", text: this._t("panel.message.whoami_failed", { error: errorText(this._hass, err) }) };
       this._render();
       return;
     }
@@ -199,7 +204,7 @@ class ParentalControlPanel extends HTMLElement {
       this._draft = clone(this._original);
       this._newIds.clear();
     } catch (err) {
-      this._message = { kind: "error", text: `Configuration illisible : ${err?.message ?? err}` };
+      this._message = { kind: "error", text: this._t("panel.message.load_failed", { error: errorText(this._hass, err) }) };
     }
     try {
       this._devices = await this._hass.connection.sendMessagePromise({ type: "config/device_registry/list" });
@@ -242,9 +247,9 @@ class ParentalControlPanel extends HTMLElement {
       this._original = config;
       this._draft = clone(config); // sans `rebind` : réassociations faites
       this._newIds.clear();
-      this._message = { kind: "ok", text: "Règles enregistrées." };
+      this._message = { kind: "ok", text: this._t("panel.message.saved") };
     } catch (err) {
-      this._message = { kind: "error", text: `Non enregistré : ${err?.message ?? err}` };
+      this._message = { kind: "error", text: this._t("panel.message.save_failed", { error: L.configErrorText(this._hass, err) }) };
     }
     try {
       // Statut des téléphones après enregistrement (ajouts, retraits, réassociations).
@@ -414,9 +419,9 @@ class ParentalControlPanel extends HTMLElement {
         const text = this.shadowRoot.querySelector("textarea").value;
         try {
           this._draft = JSON.parse(text);
-          this._message = { kind: "ok", text: "JSON appliqué au brouillon : enregistrez pour l'envoyer au moteur." };
+          this._message = { kind: "ok", text: this._t("panel.message.json_applied") };
         } catch (err) {
-          this._message = { kind: "error", text: `JSON invalide : ${err.message}` };
+          this._message = { kind: "error", text: this._t("panel.message.json_invalid", { error: err.message }) };
         }
         break;
       }
@@ -486,7 +491,7 @@ class ParentalControlPanel extends HTMLElement {
   // Rattache ou détache un label du service édité ; refus expliqué (autre service ou cible).
   _toggleSvcLabel(labelId) {
     if (L.toggleServiceLabel(this._draft, this._svcEdit, labelId)) this._message = null;
-    else this._message = { kind: "error", text: `${this._labelName(labelId)} est déjà rattaché à un autre service ou sert de label de cible : retirez-le d'abord.` };
+    else this._message = { kind: "error", text: this._t("panel.message.label_taken_service", { label: this._labelName(labelId) }) };
   }
 
   // Icône du service édité : brouillon, aperçu et en-tête mis à jour sur place (le sélecteur reste ouvert).
@@ -515,7 +520,7 @@ class ParentalControlPanel extends HTMLElement {
       const valid = !value || L.isIconName(value);
       if (!valid) {
         el.setAttribute("aria-invalid", "true");
-        el.title = "Icône attendue sous la forme mdi:nom (ex. mdi:television)";
+        el.title = this._t("panel.message.icon_expected", { example: "mdi:television" });
         return;
       }
       el.removeAttribute("aria-invalid");
@@ -537,7 +542,7 @@ class ParentalControlPanel extends HTMLElement {
       const value = el.value.trim();
       if (value && !L.isIconName(value)) {
         el.setAttribute("aria-invalid", "true");
-        el.title = "Icône attendue sous la forme mdi:nom (ex. mdi:gamepad-variant)";
+        el.title = this._t("panel.message.icon_expected", { example: "mdi:gamepad-variant" });
         return;
       }
       el.removeAttribute("aria-invalid");
@@ -566,7 +571,7 @@ class ParentalControlPanel extends HTMLElement {
       const entity = getPath(this._draft, el.dataset.targetLabel);
       if (!entity) return;
       this._message = L.setTargetLabel(entity, el.value, this._draft) ? null
-        : { kind: "error", text: `${this._labelName(el.value)} est déjà un label de service ou la cible d'un autre.` };
+        : { kind: "error", text: this._t("panel.message.label_taken_target", { label: this._labelName(el.value) }) };
     } else if (el.dataset.rename) {
       this._rename(el.dataset.rename, el.value);
     } else if (el.dataset.path) {
@@ -715,20 +720,20 @@ class ParentalControlPanel extends HTMLElement {
   _btn(act, label, { arg = "", cls = "", icon = "", title = "", disabled = false, confirmKey = null } = {}) {
     const armed = confirmKey && this._armed === confirmKey;
     return `<button type="button" class="${cls} ${armed ? "armed" : ""}" data-act="${act}" data-arg="${esc(arg)}" ${title ? `title="${esc(title)}"` : ""} ${disabled ? "disabled" : ""}>
-      ${icon ? `<ha-icon icon="${armed ? "mdi:check" : icon}"></ha-icon>` : ""}${armed ? "Confirmer ?" : esc(label)}</button>`;
+      ${icon ? `<ha-icon icon="${armed ? "mdi:check" : icon}"></ha-icon>` : ""}${armed ? esc(this._t("panel.header.confirm")) : esc(label)}</button>`;
   }
 
   _header() {
     const dirty = this._dirty();
     const msg = this._message;
     const tabs = this._draft
-      ? `<nav class="tabs">${TABS.map((t) => `<button type="button" class="${t.id === this._tab ? "on" : ""}" data-act="tab" data-arg="${t.id}">${t.label}</button>`).join("")}</nav>`
+      ? `<nav class="tabs">${TABS.map((id) => `<button type="button" class="${id === this._tab ? "on" : ""}" data-act="tab" data-arg="${id}">${esc(this._t(`panel.tab.${id}`))}</button>`).join("")}</nav>`
       : "";
-    return `<h1>Règles</h1><span class="sim-slot">${this._simBanner()}</span>${tabs}<span class="sp"></span>
+    return `<h1>${esc(this._t("panel.title"))}</h1><span class="sim-slot">${this._simBanner()}</span>${tabs}<span class="sp"></span>
       <span class="req-slot">${this._requestsButton()}</span>
-      ${dirty ? `<span class="dirty">Modifications non enregistrées</span>` : msg?.kind === "ok" ? `<span class="ok">${esc(msg.text)}</span>` : ""}
-      ${this._btn("revert", "Annuler", { cls: "btn", title: "Annuler les modifications", disabled: !dirty || this._saving, confirmKey: "revert" })}
-      ${this._btn("save", this._saving ? "Enregistrement…" : "Enregistrer", { cls: "btn primary", disabled: !dirty || this._saving, confirmKey: "lose-parent" })}`;
+      ${dirty ? `<span class="dirty">${esc(this._t("panel.header.unsaved"))}</span>` : msg?.kind === "ok" ? `<span class="ok">${esc(msg.text)}</span>` : ""}
+      ${this._btn("revert", this._t("panel.header.revert"), { cls: "btn", title: this._t("panel.header.revert_title"), disabled: !dirty || this._saving, confirmKey: "revert" })}
+      ${this._btn("save", this._t(this._saving ? "panel.header.saving" : "panel.header.save"), { cls: "btn primary", disabled: !dirty || this._saving, confirmKey: "lose-parent" })}`;
   }
 
   _renderHeader() {
@@ -741,17 +746,17 @@ class ParentalControlPanel extends HTMLElement {
     const msg = this._message;
     if (this._me && !this._me.parent) {
       this.shadowRoot.innerHTML = `<style>${CSS}</style>
-        <div class="wrap"><header><h1>Règles</h1></header>
-          <div class="card mut">Réservé aux parents.</div></div>`;
+        <div class="wrap"><header><h1>${esc(this._t("panel.title"))}</h1></header>
+          <div class="card mut">${esc(this._t("panel.parents_only"))}</div></div>`;
       return;
     }
     this.shadowRoot.innerHTML = `<style>${CSS}</style>
       <div class="wrap">
         <header>${this._header()}</header>
-        ${this._armed === "lose-parent" ? `<div class="notice">Vous ne serez plus parent après l'enregistrement. Continuer ?</div>` : ""}
+        ${this._armed === "lose-parent" ? `<div class="notice">${esc(this._t("panel.lose_parent"))}</div>` : ""}
         ${this._removedNotice()}
         ${msg?.kind === "error" ? `<div class="error">${esc(msg.text)}</div>` : ""}
-        ${d ? this._body() : `<div class="card mut">Chargement…</div>`}
+        ${d ? this._body() : `<div class="card mut">${esc(this._t("common.loading"))}</div>`}
       </div>`;
     this._setupIconPicker();
     if (this._focus) {
@@ -778,7 +783,7 @@ class ParentalControlPanel extends HTMLElement {
   _removedNotice() {
     const kept = new Set((this._draft?.resources ?? []).map((r) => r.id));
     return (this._original?.resources ?? []).filter((r) => !kept.has(r.id))
-      .map((r) => `<div class="notice">« ${esc(r.name)} » sera supprimé à l'enregistrement : ses autorisations en cours et son temps du jour sont perdus.</div>`)
+      .map((r) => `<div class="notice">${esc(this._t("panel.removed", { name: r.name }))}</div>`)
       .join("");
   }
 
@@ -807,26 +812,25 @@ class ParentalControlPanel extends HTMLElement {
 
   // Liste commune (loisirs ou sur demande) : ✕ retire, ⇄ passe dans l'autre liste.
   _commonList(list) {
-    const spec = COMMON_LISTS[list];
-    return `<div class="card"><h2>${spec.title}</h2>
+    return `<div class="card"><h2>${esc(this._t(`panel.common_list.${list}_title`))}</h2>
       <div class="lz" data-chips="common:${list}">${this._commonChips(list)}</div>
-      <div class="mut help">${spec.help}</div></div>`;
+      <div class="mut help">${esc(this._t(`panel.common_list.${list}_help`))}</div></div>`;
   }
 
   _commonChips(list) {
-    const spec = COMMON_LISTS[list];
+    const other = this._t(`panel.kids.${COMMON_LISTS[list].other}`);
     const chips = (this._draft[L.SERVICE_LISTS[list].common] ?? []).map((s) => `<span class="pill split ${this._svcClass(s)}" title="${esc(this._svcTitle(s))}">${this._svcIcon(s)}${esc(this._svcName(s))}
-        <button type="button" data-act="move-common" data-arg="${esc(s)}" title="Passer dans « ${spec.other} »">⇄</button>
-        <button type="button" data-act="del-common" data-list="${list}" data-arg="${esc(s)}" title="Retirer de la liste">✕</button></span>`).join("");
+        <button type="button" data-act="move-common" data-arg="${esc(s)}" title="${esc(this._t("panel.common_list.move", { list: other }))}">⇄</button>
+        <button type="button" data-act="del-common" data-list="${list}" data-arg="${esc(s)}" title="${esc(this._t("panel.common_list.remove"))}">✕</button></span>`).join("");
     return chips + this._serviceAdder(`common-${list}`, "add-common", list, L.commonServices(this._draft));
   }
 
   // « + Ajouter » d'une liste de services : menu des services du parent pas encore pris.
   _serviceAdder(input, enter, list, taken) {
     const options = L.serviceOptions(L.serviceNames(this._draft), taken);
-    const title = (this._draft.services ?? []).length ? "Ajouter un service" : "Aucun service : créez-en dans l'onglet Général";
+    const title = this._t((this._draft.services ?? []).length ? "panel.service.add" : "panel.service.adder_none");
     return `<select class="pill-in" data-input="${input}" data-enter="${enter}" data-list="${list}" title="${esc(title)}" ${options.length ? "" : "disabled"}>
-      <option value="">+ Ajouter…</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
+      <option value="">${esc(this._t("panel.action.add_menu"))}</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
   }
 
   // Nom d'un service du parent (à défaut son identifiant).
@@ -846,7 +850,7 @@ class ParentalControlPanel extends HTMLElement {
   }
 
   _svcTitle(service) {
-    return Object.hasOwn(L.serviceNames(this._draft), service) ? this._svcName(service) : `${service} : service inconnu, à retirer`;
+    return Object.hasOwn(L.serviceNames(this._draft), service) ? this._svcName(service) : this._t("panel.service.unknown", { service });
   }
 
   // Nom d'un label HA d'après le registre (à défaut son identifiant).
@@ -865,10 +869,10 @@ class ParentalControlPanel extends HTMLElement {
       ...[...this._draft.kids, ...this._draft.resources].filter((e) => e !== entity).map((e) => e.target_label),
     ]);
     const known = this._labels.some((l) => l.label_id === current);
-    return `<label class="field"${spaced ? ' style="margin-top:14px"' : ""}><span>Label de cible</span>
-      <select data-target-label="${path}" title="Un interrupteur portant ce label et un label rattaché à un service est piloté pour cette cible">
-        <option value="" ${current ? "" : "selected"}>Aucun</option>
-        ${current && !known ? opt(current, `${current} (introuvable)`, current) : ""}
+    return `<label class="field"${spaced ? ' style="margin-top:14px"' : ""}><span>${esc(this._t("panel.target_label.label"))}</span>
+      <select data-target-label="${path}" title="${esc(this._t("panel.target_label.title"))}">
+        <option value="" ${current ? "" : "selected"}>${esc(this._t("panel.target_label.none"))}</option>
+        ${current && !known ? opt(current, this._t("panel.not_found_value", { value: current }), current) : ""}
         ${this._labels.filter((l) => !taken.has(l.label_id)).map((l) => opt(l.label_id, l.name, current)).join("")}
       </select></label>`;
   }
@@ -884,12 +888,12 @@ class ParentalControlPanel extends HTMLElement {
     if (svc) return this._serviceEditCard(svc);
     const rows = (this._draft.services ?? []).map((s) => this._serviceRow(s)).join("");
     const adding = this._adding === "svc"
-      ? `<div class="adding"><input data-input="new-svc" data-enter="add-svc" placeholder="Nom (ex. Jeux vidéo)" autofocus>
-          <div class="row">${this._btn("add-svc", "Ajouter", { cls: "btn primary" })}${this._btn("adding", "Annuler", { cls: "btn" })}</div></div>`
-      : this._btn("adding", "Ajouter un service", { arg: "svc", cls: "link", icon: "mdi:plus" });
-    return `<div class="card"><h2>Services</h2>
-      <div class="mut">Les services que vous gérez. Chacun bloque ce que vous y rattachez : services AdGuard Home et interrupteurs par label.</div>
-      ${rows ? `<div class="svcs">${rows}</div>` : `<div class="mut" style="margin:12px 0">Aucun service pour l'instant.</div>`}
+      ? `<div class="adding"><input data-input="new-svc" data-enter="add-svc" placeholder="${esc(this._t("panel.service.name_placeholder"))}" autofocus>
+          <div class="row">${this._btn("add-svc", this._t("panel.action.add"), { cls: "btn primary" })}${this._btn("adding", this._t("panel.action.cancel"), { cls: "btn" })}</div></div>`
+      : this._btn("adding", this._t("panel.service.add"), { arg: "svc", cls: "link", icon: "mdi:plus" });
+    return `<div class="card"><h2>${esc(this._t("panel.service.title"))}</h2>
+      <div class="mut">${esc(this._t("panel.service.intro"))}</div>
+      ${rows ? `<div class="svcs">${rows}</div>` : `<div class="mut" style="margin:12px 0">${esc(this._t("panel.service.empty"))}</div>`}
       <div class="svc-add">${adding}</div>
       ${this._labelSwitchesView()}</div>`;
   }
@@ -905,11 +909,11 @@ class ParentalControlPanel extends HTMLElement {
       const count = this._labelSwitches && this._savedLabel(s.id, l.label_id)
         ? L.serviceSwitches(this._labelSwitches, this._hass?.entities, s.id, l.label_id).length : null;
       const known = !this._labels || this._labels.some((x) => x.label_id === l.label_id);
-      const text = count === null ? this._labelName(l.label_id) : `${this._labelName(l.label_id)} · ${count} interrupteur${count > 1 ? "s" : ""}`;
+      const text = count === null ? this._labelName(l.label_id) : `${this._labelName(l.label_id)} · ${this._switchCount(count)}`;
       return `<span class="tag lb ${known ? "" : "unk"}"><ha-icon icon="mdi:label-outline"></ha-icon>${esc(text)}</span>`;
     });
-    const tags = [...ag, ...lb].join("") || `<span class="mut">Rien de rattaché</span>`;
-    return `<button type="button" class="svcrow" data-act="svc-edit" data-arg="${esc(s.id)}" title="Modifier ${esc(s.name)}">
+    const tags = [...ag, ...lb].join("") || `<span class="mut">${esc(this._t("panel.service.nothing_attached"))}</span>`;
+    return `<button type="button" class="svcrow" data-act="svc-edit" data-arg="${esc(s.id)}" title="${esc(this._t("panel.service.edit", { name: s.name }))}">
       <span class="av"><ha-icon icon="${esc(s.icon || DEFAULT_SVC_ICON)}"></ha-icon></span>
       <span class="body"><span class="n">${esc(s.name)}</span><span class="tags">${tags}</span></span>
       <ha-icon class="chev" icon="mdi:chevron-right"></ha-icon></button>`;
@@ -923,44 +927,45 @@ class ParentalControlPanel extends HTMLElement {
       : `<input data-svc-icon="${id}" value="${esc(s.icon ?? "")}" placeholder="mdi:gamepad-variant">`;
     const agItems = (s.adguard ?? []).map((a) => {
       const { name, known } = L.serviceLabel(this._adguard, a);
-      return `<div class="sitem"><span class="${known ? "" : "unk-text"}" title="${esc(known ? a : `${a} : inconnu d'AdGuard`)}">${esc(name)}</span>
-        ${this._btn("svc-ag", "", { arg: a, icon: "mdi:close", cls: "icon-btn", title: `Retirer ${name}` })}</div>`;
+      return `<div class="sitem"><span class="${known ? "" : "unk-text"}" title="${esc(known ? a : this._t("panel.service.adguard_unknown", { id: a }))}">${esc(name)}</span>
+        ${this._btn("svc-ag", "", { arg: a, icon: "mdi:close", cls: "icon-btn", title: this._t("panel.action.remove_name", { name }) })}</div>`;
     }).join("");
     const agAdd = this._adding === "svc-ag"
       ? `<div class="ag-search">
           <input type="search" data-ag-search data-enter="svc-ag-first" value="${esc(this._agQuery)}" autofocus
-            placeholder="${Object.keys(this._adguard ?? {}).length ? "Rechercher (ex. minecraft)" : "Identifiant AdGuard (ex. minecraft)"}">
+            placeholder="${esc(this._t(Object.keys(this._adguard ?? {}).length ? "panel.service.adguard_search" : "panel.service.adguard_id"))}">
           <div class="ag-results">${this._agResults()}</div>
-          ${this._btn("adding", "Fermer", { cls: "link" })}</div>`
-      : this._btn("adding", "Ajouter un service AdGuard", { arg: "svc-ag", cls: "link", icon: "mdi:plus" });
+          ${this._btn("adding", this._t("panel.action.close"), { cls: "link" })}</div>`
+      : this._btn("adding", this._t("panel.service.adguard_add"), { arg: "svc-ag", cls: "link", icon: "mdi:plus" });
     const lbItems = (s.labels ?? []).map((l) => `<div class="sitem"><div class="lbinfo">
         <span class="${!this._labels || this._labels.some((x) => x.label_id === l.label_id) ? "" : "unk-text"}">${esc(this._labelName(l.label_id))}</span>
         <span class="mut">${esc(this._labelSwitchesText(s.id, l.label_id))}</span>
-        <label class="check"><input type="checkbox" data-act="svc-label-inv" data-arg="${esc(l.label_id)}" ${l.on_means_allowed ? "checked" : ""}> Allumé = autorisé</label></div>
-        ${this._btn("svc-label", "", { arg: l.label_id, icon: "mdi:close", cls: "icon-btn", title: `Retirer ${this._labelName(l.label_id)}` })}</div>`).join("");
+        <label class="check"><input type="checkbox" data-act="svc-label-inv" data-arg="${esc(l.label_id)}" ${l.on_means_allowed ? "checked" : ""}> ${esc(this._t("panel.service.on_means_allowed"))}</label></div>
+        ${this._btn("svc-label", "", { arg: l.label_id, icon: "mdi:close", cls: "icon-btn", title: this._t("panel.action.remove_name", { name: this._labelName(l.label_id) }) })}</div>`).join("");
     const attached = new Set((s.labels ?? []).map((l) => l.label_id));
     const free = L.freeLabels(this._draft, this._labels, s.id).filter((l) => !attached.has(l.label_id));
     const lbAdd = this._labels
-      ? `<select class="add-select" data-svc-label-add title="Rattacher un label d'interrupteurs" ${free.length ? "" : "disabled"}>
-          <option value="">+ Ajouter un label…</option>${free.map((l) => opt(l.label_id, l.name, "")).join("")}</select>`
-      : `<div class="mut">Labels de Home Assistant illisibles.</div>`;
+      ? `<select class="add-select" data-svc-label-add title="${esc(this._t("panel.service.label_add_title"))}" ${free.length ? "" : "disabled"}>
+          <option value="">${esc(this._t("panel.service.label_add"))}</option>${free.map((l) => opt(l.label_id, l.name, "")).join("")}</select>`
+      : `<div class="mut">${esc(this._t("panel.service.labels_unreadable"))}</div>`;
+    const none = `<div class="mut sempty">${esc(this._t("panel.service.none"))}</div>`;
     return `<div class="card svc-edit">
-      <h2>${this._btn("svc-edit", "", { icon: "mdi:arrow-left", cls: "icon-btn", title: "Retour à la liste" })}
+      <h2>${this._btn("svc-edit", "", { icon: "mdi:arrow-left", cls: "icon-btn", title: this._t("panel.service.back") })}
         <ha-icon data-svc-icon-of="${id}" icon="${esc(s.icon || DEFAULT_SVC_ICON)}"></ha-icon><span data-svc-title>${esc(s.name)}</span></h2>
       <div class="svc-id">
-        <label class="field"><span>Nom</span><input data-svc-name="${id}" value="${esc(s.name)}"></label>
-        <div class="field"><span>Icône</span>${iconField}</div>
+        <label class="field"><span>${esc(this._t("panel.service.name"))}</span><input data-svc-name="${id}" value="${esc(s.name)}"></label>
+        <div class="field"><span>${esc(this._t("panel.service.icon"))}</span>${iconField}</div>
       </div>
-      <div class="sec"><ha-icon icon="mdi:shield-outline"></ha-icon>Services AdGuard Home</div>
-      ${agItems || `<div class="mut sempty">Aucun.</div>`}
+      <div class="sec"><ha-icon icon="mdi:shield-outline"></ha-icon>${esc(this._t("panel.service.adguard"))}</div>
+      ${agItems || none}
       <div class="sadd">${agAdd}</div>
-      <div class="sec"><ha-icon icon="mdi:label-outline"></ha-icon>Interrupteurs par label</div>
-      ${lbItems || `<div class="mut sempty">Aucun.</div>`}
+      <div class="sec"><ha-icon icon="mdi:label-outline"></ha-icon>${esc(this._t("panel.service.labels"))}</div>
+      ${lbItems || none}
       <div class="sadd">${lbAdd}</div>
-      <div class="mut help">Un interrupteur portant ce label et le label de cible d'un enfant ou d'un appareil est piloté pour lui. Par défaut allumé = bloqué.</div>
+      <div class="mut help">${esc(this._t("panel.service.help"))}</div>
       <div class="row svc-btns">
-        ${this._btn("del-svc", "Supprimer", { arg: s.id, cls: "btn danger", confirmKey: `del-svc:${s.id}` })}
-        ${this._btn("svc-edit", "OK", { cls: "btn primary" })}
+        ${this._btn("del-svc", this._t("panel.action.delete"), { arg: s.id, cls: "btn danger", confirmKey: `del-svc:${s.id}` })}
+        ${this._btn("svc-edit", this._t("panel.action.ok"), { cls: "btn primary" })}
       </div></div>`;
   }
 
@@ -973,11 +978,18 @@ class ParentalControlPanel extends HTMLElement {
   // « 1 interrupteur : Console du salon » d'après la configuration enregistrée.
   _labelSwitchesText(serviceId, labelId) {
     if (!this._labelSwitches) return "";
-    if (!this._savedLabel(serviceId, labelId)) return "Enregistrez pour voir les interrupteurs trouvés.";
+    if (!this._savedLabel(serviceId, labelId)) return this._t("panel.service.save_to_see");
     const found = L.serviceSwitches(this._labelSwitches, this._hass?.entities, serviceId, labelId);
-    if (!found.length) return "Aucun interrupteur trouvé.";
-    const n = found.length;
-    return `${n} interrupteur${n > 1 ? "s" : ""} : ${found.map((sw) => sw.name || sw.entity_id).join(", ")}`;
+    if (!found.length) return this._t("panel.service.no_switch_found");
+    return this._t("panel.service.switches_list", {
+      count: this._switchCount(found.length), names: found.map((sw) => sw.name || sw.entity_id).join(", "),
+    });
+  }
+
+  // « 2 interrupteurs » (accord selon la langue).
+  _switchCount(count) {
+    const form = new Intl.PluralRules(lang(this._hass)).select(count) === "one" ? "one" : "other";
+    return this._t(`panel.service.switches_${form}`, { count });
   }
 
   // Résultats de la recherche AdGuard : services du catalogue pas encore rattachés (au plus 30), ou
@@ -988,7 +1000,7 @@ class ParentalControlPanel extends HTMLElement {
     const query = norm(this._agQuery);
     if (!Object.keys(this._adguard ?? {}).length) {
       const value = this._agQuery.trim().toLowerCase();
-      return value && !(svc.adguard ?? []).includes(value) ? [{ value, label: `Ajouter « ${value} »` }] : [];
+      return value && !(svc.adguard ?? []).includes(value) ? [{ value, label: this._t("panel.service.adguard_free", { value }) }] : [];
     }
     return L.serviceOptions(this._adguard, svc.adguard ?? [])
       .filter((o) => !query || norm(o.label).includes(query) || o.value.includes(query))
@@ -997,7 +1009,7 @@ class ParentalControlPanel extends HTMLElement {
 
   _agResults() {
     const choices = this._agChoices();
-    if (!choices.length) return `<div class="mut sempty">${this._agQuery.trim() ? "Aucun résultat." : ""}</div>`;
+    if (!choices.length) return `<div class="mut sempty">${this._agQuery.trim() ? esc(this._t("panel.service.no_result")) : ""}</div>`;
     return choices.map((o) => `<button type="button" class="sitem pick" data-act="svc-ag-add" data-arg="${esc(o.value)}">
       <span>${esc(o.label)}</span><ha-icon icon="mdi:plus"></ha-icon></button>`).join("");
   }
@@ -1006,19 +1018,20 @@ class ParentalControlPanel extends HTMLElement {
   _labelSwitchesView() {
     const data = this._labelSwitches;
     if (!data) return "";
-    const PROBLEMS = { no_target: "sans cible", unknown_label: "label introuvable" };
+    const PROBLEMS = ["no_target", "unknown_label"];
     const names = L.serviceNames(this._draft);
     const svcName = (x) => names[x.service] ?? x.service_name ?? x.service;
     const rows = (data.switches ?? []).map((sw) => `<div class="lsw">
       <span class="nm">${esc(sw.name || sw.entity_id)}</span>
       <span class="mut">${esc(svcName(sw))} · ${(sw.targets ?? []).map((t) => esc(this._targetName(t))).join(", ")}</span>
-      <span class="st">${esc(L.labelSwitchStatus(sw))}</span></div>`).join("");
+      <span class="st">${esc(L.labelSwitchStatus(sw, this._hass))}</span></div>`).join("");
     const issues = (data.issues ?? []).map((it) => `<div class="lsw bad">
       <span class="nm">${esc(it.entity_id || svcName(it))}</span>
-      <span class="mut">${it.entity_id ? esc(svcName(it)) : "label rattaché au service"}</span>
-      <span class="st missing">${esc(PROBLEMS[it.problem] ?? it.problem)}</span></div>`).join("");
-    if (!rows && !issues) return `<div class="group"><h3>Interrupteurs pilotés</h3><div class="mut">Aucun interrupteur piloté par label.</div></div>`;
-    return `<div class="group"><h3>Interrupteurs pilotés <span class="mut">(configuration enregistrée)</span></h3>${rows}${issues}</div>`;
+      <span class="mut">${esc(it.entity_id ? svcName(it) : this._t("panel.label_switches.attached"))}</span>
+      <span class="st missing">${esc(PROBLEMS.includes(it.problem) ? this._t(`panel.label_switches.${it.problem}`) : it.problem)}</span></div>`).join("");
+    const title = esc(this._t("panel.label_switches.title"));
+    if (!rows && !issues) return `<div class="group"><h3>${title}</h3><div class="mut">${esc(this._t("panel.label_switches.empty"))}</div></div>`;
+    return `<div class="group"><h3>${title} <span class="mut">${esc(this._t("panel.label_switches.saved"))}</span></h3>${rows}${issues}</div>`;
   }
 
   // Destinataires (`notify` ou `request_notify`) : pastilles au nom de l'appareil, puis menu des
@@ -1028,11 +1041,11 @@ class ParentalControlPanel extends HTMLElement {
     const taken = this._draft[key] ?? [];
     const devices = this._devices;
     const chips = taken.map((s) => (key === "request_notify" ? this._phoneChip(s)
-      : `<button type="button" class="pill own" data-act="del-${act}" data-arg="${esc(s)}" title="Retirer ${esc(s)}">${esc(L.notifyLabel(s, devices))}<span class="x">✕</span></button>`)).join("");
+      : `<button type="button" class="pill own" data-act="del-${act}" data-arg="${esc(s)}" title="${esc(this._t("panel.action.remove_name", { name: s }))}">${esc(L.notifyLabel(s, devices))}<span class="x">✕</span></button>`)).join("");
     const services = Object.keys(this._hass?.services?.notify ?? {});
     const options = L.notifyOptions(services, devices, taken, key === "request_notify");
-    return `${chips}<select class="pill-in" data-input="${key}" data-enter="add-${act}" title="Ajouter un destinataire" ${options.length ? "" : "disabled"}>
-      <option value="">+ Ajouter…</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
+    return `${chips}<select class="pill-in" data-input="${key}" data-enter="add-${act}" title="${esc(this._t("panel.general.notify_add"))}" ${options.length ? "" : "disabled"}>
+      <option value="">${esc(this._t("panel.action.add_menu"))}</option>${options.map((o) => opt(o.value, o.label, "")).join("")}</select>`;
   }
 
   // Téléphone de demandes : nom, propriétaire mémorisé (qui est parent grâce à lui), statut, et
@@ -1041,58 +1054,60 @@ class ParentalControlPanel extends HTMLElement {
   _phoneChip(target) {
     const phone = this._phones[target];
     const queued = (this._draft.rebind ?? []).includes(target);
-    const badge = phone && L.phoneBadge(phone.status);
-    const re = L.phoneRebind(phone);
+    const badge = phone && L.phoneBadge(phone.status, this._hass);
+    const re = L.phoneRebind(phone, this._hass);
     const owner = phone?.owner_name ? ` · ${esc(phone.owner_name)}` : "";
-    const current = re?.current ? ` · appareil de ${esc(re.current)}` : "";
-    const title = [target, phone?.owner_name && `téléphone de ${phone.owner_name}`,
-      re?.current && `appareil actuellement au compte ${re.current}`].filter(Boolean).join(" — ");
+    const current = re?.current ? ` · ${esc(this._t("panel.phone.device_of", { name: re.current }))}` : "";
+    const title = [target, phone?.owner_name && this._t("panel.phone.phone_of", { name: phone.owner_name }),
+      re?.current && this._t("panel.phone.current_account", { name: re.current })].filter(Boolean).join(" — ");
+    const queuedLabel = re?.current ? this._t("panel.phone.rebind_queued_to", { name: re.current }) : this._t("panel.phone.rebind_queued");
     const rebind = re
-      ? `<button type="button" data-act="rebind" data-arg="${esc(target)}" title="${queued
-        ? "Annuler la réassociation" : "Associer au compte actuel de l'appareil (à l'enregistrement)"}">${esc(queued ? (re.current ? `Réassociation à ${re.current} prévue` : "Réassociation prévue") : re.label)}</button>`
+      ? `<button type="button" data-act="rebind" data-arg="${esc(target)}" title="${esc(this._t(queued
+        ? "panel.phone.rebind_cancel" : "panel.phone.rebind_title"))}">${esc(queued ? queuedLabel : re.label)}</button>`
       : "";
     return `<span class="pill split own" title="${esc(title)}">${esc(L.notifyLabel(target, this._devices))}${owner}${current}
       ${badge ? `<span class="badge tone-${badge.tone}">${esc(badge.label)}</span>` : ""}${rebind}
-      <button type="button" data-act="del-request-notify" data-arg="${esc(target)}" title="Retirer ${esc(target)}">✕</button></span>`;
+      <button type="button" data-act="del-request-notify" data-arg="${esc(target)}" title="${esc(this._t("panel.action.remove_name", { name: target }))}">✕</button></span>`;
   }
 
   _general() {
     const d = this._draft;
     const cal = Object.entries(d.calendar_map ?? {});
+    const days = L.dayTypes(this._hass);
     return `<div class="general">
       <div>${this._parentServicesCard()}<div style="height:16px"></div>${this._commonList("leisure")}
         <div style="height:16px"></div>${this._commonList("on_demand")}</div>
       <div>
-        <div class="card"><h2>Correspondance calendrier</h2>
-          <div class="mut">Un événement du calendrier dont le titre contient ce mot donne ce type de jour.</div>
+        <div class="card"><h2>${esc(this._t("panel.general.calendar"))}</h2>
+          <div class="mut">${esc(this._t("panel.general.calendar_help"))}</div>
           ${cal.length ? `<div class="cal">${cal.map(([word, day]) => `<span>${esc(word)}</span>
-            <select data-calday="${esc(word)}">${L.DAY_TYPES.map((t) => opt(t.value, t.label, day)).join("")}</select>
-            ${this._btn("del-cal", "", { arg: word, icon: "mdi:close", cls: "icon-btn", title: "Retirer" })}`).join("")}</div>` : ""}
+            <select data-calday="${esc(word)}">${days.map((dt) => opt(dt.value, dt.label, day)).join("")}</select>
+            ${this._btn("del-cal", "", { arg: word, icon: "mdi:close", cls: "icon-btn", title: this._t("panel.action.remove") })}`).join("")}</div>` : ""}
           <div class="row" style="margin-top:10px">
-            <input data-input="cal-word" data-enter="add-cal" placeholder="mot (ex. pédagogique)" style="flex:1 1 160px">
-            <select data-input="cal-day">${L.DAY_TYPES.map((t) => opt(t.value, t.label, "conge_peda")).join("")}</select>
-            ${this._btn("add-cal", "Ajouter", { cls: "btn" })}
+            <input data-input="cal-word" data-enter="add-cal" placeholder="${esc(this._t("panel.general.calendar_word"))}" style="flex:1 1 160px">
+            <select data-input="cal-day">${days.map((dt) => opt(dt.value, dt.label, "day_off")).join("")}</select>
+            ${this._btn("add-cal", this._t("panel.action.add"), { cls: "btn" })}
           </div>
         </div>
         <div style="height:16px"></div>
-        <div class="card"><h2>Notifications</h2>
+        <div class="card"><h2>${esc(this._t("panel.general.notify"))}</h2>
           <div class="lz" data-chips="notify">${this._notifyChips()}</div>
-          <div class="mut help">Services prévenus des avertissements (fin de plage, etc.), par exemple les appareils des enfants.</div>
+          <div class="mut help">${esc(this._t("panel.general.notify_help"))}</div>
         </div>
         <div style="height:16px"></div>
-        <div class="card"><h2>Demandes de temps (parents)</h2>
+        <div class="card"><h2>${esc(this._t("panel.general.request_notify"))}</h2>
           <div class="lz" data-chips="request_notify">${this._notifyChips("request_notify")}</div>
-          <div class="mut help">Téléphones des parents (application Home Assistant) qui reçoivent les demandes et y répondent.</div>
+          <div class="mut help">${esc(this._t("panel.general.request_notify_help"))}</div>
         </div>
       </div>
     </div>`;
   }
 
   _json() {
-    return `<div class="card"><h2>Configuration brute</h2>
-      <div class="mut">Pour copier, coller ou corriger à la main. « Appliquer » met à jour le brouillon ; « Enregistrer » l'envoie au moteur, qui la valide.</div>
+    return `<div class="card"><h2>${esc(this._t("panel.json.title"))}</h2>
+      <div class="mut">${esc(this._t("panel.json.help"))}</div>
       <textarea spellcheck="false">${esc(JSON.stringify(this._draft, null, 2))}</textarea>
-      <div class="row">${this._btn("apply-json", "Appliquer au brouillon", { cls: "btn", icon: "mdi:check" })}</div>
+      <div class="row">${this._btn("apply-json", this._t("panel.json.apply"), { cls: "btn", icon: "mdi:check" })}</div>
     </div>`;
   }
 }

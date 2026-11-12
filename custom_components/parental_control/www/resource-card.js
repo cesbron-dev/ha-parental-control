@@ -5,6 +5,7 @@ import {
   reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge, serviceToggles,
   canRequest, findRequest, ownerChoices,
 } from "./lib.js";
+import { t, lang, formatDuration } from "./i18n.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
 import { BASE_CSS, pill, ConfirmState, ErrorNotice, bonusPills, requestLines } from "./style.js";
@@ -18,13 +19,9 @@ const KIND_ICONS = {
   nintendo: "mdi:nintendo-switch",
 };
 
-const DURATIONS = [
-  { value: 15, label: "15 min" },
-  { value: 30, label: "30 min" },
-  { value: 60, label: "1 h" },
-  { value: 120, label: "2 h" },
-  { value: null, label: "Jusqu'au prochain changement" },
-];
+// Durées d'une autorisation : « 15 min » … « 2 h », puis « Jusqu'au prochain changement » (null).
+const DURATION_VALUES = [15, 30, 60, 120, null];
+const durations = (hass) => DURATION_VALUES.map((value) => ({ value, label: formatDuration(hass, value) }));
 
 const CSS = `
   ${BASE_CSS}
@@ -53,13 +50,13 @@ class ParentalResourceCard extends StateCard {
   constructor() {
     super();
     this._error = new ErrorNotice(() => this._render());
-    this._admin = undefined;
+    this._hassKey = undefined;
     this._confirm = new ConfirmState(() => this._render());
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
   }
 
   setConfig(config) {
-    if (!config?.resource) throw new Error("« resource » est obligatoire (id de la ressource du moteur)");
+    if (!config?.resource) throw new Error(t(this._hass, "card.resource.required"));
     this._config = { ...config };
     this._render();
   }
@@ -81,10 +78,10 @@ class ParentalResourceCard extends StateCard {
   }
 
   _hassChanged(hass) {
-    // `hass` change souvent : on ne redessine que si le droit admin (cadenas) change.
-    const admin = !!hass?.user?.is_admin;
-    if (admin !== this._admin) {
-      this._admin = admin;
+    // `hass` change souvent : on ne redessine que si le droit admin (cadenas) ou la langue change.
+    const key = `${!!hass?.user?.is_admin}|${lang(hass)}`;
+    if (key !== this._hassKey) {
+      this._hassKey = key;
       this._render();
     }
   }
@@ -112,46 +109,47 @@ class ParentalResourceCard extends StateCard {
 
   _body() {
     const id = this._config.resource;
-    if (this._state === undefined) return '<div class="muted">Chargement…</div>';
+    const hass = this._hass;
+    if (this._state === undefined) return `<div class="muted">${esc(t(hass, "common.loading"))}</div>`;
     const v = this._view();
-    if (v.status === "unavailable") return '<div class="muted">Contrôle parental indisponible</div>';
-    if (v.status === "unknown") return `<div class="muted">Ressource inconnue : ${esc(id)}</div>`;
+    if (v.status === "unavailable") return `<div class="muted">${esc(t(hass, "common.unavailable"))}</div>`;
+    if (v.status === "unknown") return `<div class="muted">${esc(t(hass, "card.resource.unknown", { id }))}</div>`;
 
     const kids = this._state.kids ?? {};
     const owners = v.owners.map((k) => kids[k]?.name ?? k).join(" · ");
-    const badge = stateBadge(v);
+    const badge = stateBadge(v, hass);
     const icon = this._config.icon || v.icon || KIND_ICONS[v.kind] || "mdi:shield-account";
     const name = this._config.name || v.name || id;
-    const reason = reasonLine(v);
-    const quota = quotaBar(v);
+    const reason = reasonLine(v, hass);
+    const quota = quotaBar(v, hass);
     const armed = this._confirm.armed;
     const now = new Date();
 
-    const pills = exceptionsForResource(this._state, id).map((e) => {
+    const pills = exceptionsForResource(this._state, id, hass).map((e) => {
       // ✕ en fin de pilule : toute la pilule annule l'exception (après confirmation).
       const action = `cancel:${e.id}`;
-      return pill({ action, icon: "mdi:check", label: formatPill(e, now), cls: "vert", confirm: true, armed: armed === action, trailing: "mdi:close" });
+      return pill({ action, icon: "mdi:check", label: formatPill(e, now, hass), cls: "vert", confirm: true, armed: armed === action, trailing: "mdi:close", hass });
     });
 
     if (v.kind === "nintendo") {
-      pills.push(...bonusPills(this._hass, bonusMinutes(this._config), armed, this._parent));
+      pills.push(...bonusPills(hass, bonusMinutes(this._config), armed, this._parent));
     } else {
-      pills.push(pill({ action: "allow", icon: "mdi:plus", label: "Autoriser…", cls: "bleu", lock: needsCode(this._hass, "open", this._parent) }));
-      pills.push(pill({ action: "stop", icon: "mdi:power", label: "Arrêter", cls: "rouge", confirm: true, armed: armed === "stop" }));
+      pills.push(pill({ action: "allow", icon: "mdi:plus", label: t(hass, "card.allow_more"), cls: "bleu", lock: needsCode(hass, "open", this._parent), hass }));
+      pills.push(pill({ action: "stop", icon: "mdi:power", label: t(hass, "card.stop"), cls: "rouge", confirm: true, armed: armed === "stop", hass }));
     }
 
     return `
       <div class="row">
         <div class="ico"><ha-icon icon="${esc(icon)}"></ha-icon></div>
-        <div class="grow"><div class="titlebar"><div class="title">${esc(name)}</div>${simulationBadge(this._state)}</div><div class="muted">${esc(owners)}</div></div>
-        <span class="badge ${badge.cls}">${badge.label}</span>
+        <div class="grow"><div class="titlebar"><div class="title">${esc(name)}</div>${simulationBadge(this._state, hass)}</div><div class="muted">${esc(owners)}</div></div>
+        <span class="badge ${badge.cls}">${esc(badge.label)}</span>
       </div>
       ${reason ? `<div class="muted reason">${esc(reason)}</div>` : ""}
       ${quota ? `<div class="quota"><div class="bar"><div class="${quota.over ? "over" : ""}" style="width:${quota.pct}%"></div></div>
-        <div class="muted">Utilisé ${quota.text}</div></div>` : ""}
+        <div class="muted">${esc(t(hass, "card.resource.used", { text: quota.text }))}</div></div>` : ""}
       <div class="pills">${pills.join("")}</div>
       ${this._servicesBlock()}
-      ${requestLines(this._state, { resource_id: id })}
+      ${requestLines(this._state, { resource_id: id }, hass)}
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
@@ -160,15 +158,16 @@ class ParentalResourceCard extends StateCard {
     if (this._config.show_services === false) return "";
     const toggles = serviceToggles(this._state, this._config.resource, this._config.services);
     if (!toggles.length) return "";
-    const lock = needsCode(this._hass, "open", this._parent);
-    const pills = toggles.map((t) => {
-      const action = `svc:${t.service}`;
-      return `<div class="pill ${t.open ? "vert" : "svc-off"}" data-action="${esc(action)}" role="switch" aria-checked="${t.open}"
-        title="${esc(t.open ? `${t.label} débloqué : toucher pour bloquer` : `${t.label} bloqué : toucher pour autoriser`)}">`
-        + `<ha-icon icon="${t.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(t.label)}`
-        + `${!t.open && lock ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`;
+    const hass = this._hass;
+    const lock = needsCode(hass, "open", this._parent);
+    const pills = toggles.map((tg) => {
+      const action = `svc:${tg.service}`;
+      return `<div class="pill ${tg.open ? "vert" : "svc-off"}" data-action="${esc(action)}" role="switch" aria-checked="${tg.open}"
+        title="${esc(t(hass, tg.open ? "card.toggle_open" : "card.toggle_blocked", { label: tg.label }))}">`
+        + `<ha-icon icon="${tg.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(tg.label)}`
+        + `${!tg.open && lock ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`;
     });
-    return `<div class="svcs"><div class="label muted">Services sur demande</div><div class="pills">${pills.join("")}</div></div>`;
+    return `<div class="svcs"><div class="label muted">${esc(t(hass, "card.services_on_demand"))}</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
   _onClick(ev) {
@@ -188,7 +187,7 @@ class ParentalResourceCard extends StateCard {
     if (action === "allow") return this._openAllow();
     if (action === "stop") return this._call("exception", { resource_id, open: false });
     if (action.startsWith("svc:")) return this._toggleService(action.slice(4));
-    if (action.startsWith("cancel:")) return this._call("annuler_exception", { exception_id: action.slice(7) });
+    if (action.startsWith("cancel:")) return this._call("cancel_exception", { exception_id: action.slice(7) });
     if (action.startsWith("bonus:")) {
       const title = this._config.name || this._view().name || resource_id;
       const minutes = Number(action.slice(6));
@@ -203,16 +202,18 @@ class ParentalResourceCard extends StateCard {
   _openAllow() {
     const v = this._view();
     const resource_id = this._config.resource;
-    const choices = allowChoices(this._state, resource_id);
+    const hass = this._hass;
+    const choices = allowChoices(this._state, resource_id, hass);
     openActionDialog(this.shadowRoot, {
-      title: `Autoriser · ${this._config.name || v.name || resource_id}`,
+      hass,
+      title: t(hass, "card.resource.allow_title", { name: this._config.name || v.name || resource_id }),
       choices,
-      durations: DURATIONS,
-      needCode: needsCode(this._hass, "open", this._parent),
-      submitLabel: "Autoriser",
+      durations: durations(hass),
+      needCode: needsCode(hass, "open", this._parent),
+      submitLabel: t(hass, "card.allow"),
       // Choix libre : pas d'état « en attente » ; le moteur refuse un doublon et la fenêtre l'affiche.
       request: this._request(v.owners, (kid, { choice, duration }) => {
-        const data = { kind: "open", kid_id: kid, resource_id, options: DURATIONS.map((d) => d.value) };
+        const data = { kind: "open", kid_id: kid, resource_id, options: DURATION_VALUES };
         if (choice) data.service = choice;
         if (duration) data.minutes = duration;
         return data;
@@ -231,33 +232,34 @@ class ParentalResourceCard extends StateCard {
   // sont d'abord annulées, pour ne pas s'empiler.
   async _toggleService(service) {
     const resource_id = this._config.resource;
-    const t = serviceToggles(this._state, resource_id).find((x) => x.service === service);
-    if (!t) return;
+    const tg = serviceToggles(this._state, resource_id).find((x) => x.service === service);
+    if (!tg) return;
     const replace = async (code, open, minutes) => {
-      for (const exception_id of t.exceptions) {
-        const res = await callAction(this._hass, "annuler_exception", { exception_id }, code);
+      for (const exception_id of tg.exceptions) {
+        const res = await callAction(this._hass, "cancel_exception", { exception_id }, code);
         if (!res.ok) return res;
       }
-      if (!open && !t.openedElsewhere) return { ok: true };
+      if (!open && !tg.openedElsewhere) return { ok: true };
       const data = { resource_id, service, open };
       if (minutes) data.minutes = minutes;
       return callAction(this._hass, "exception", data, code);
     };
-    if (t.open) {
+    if (tg.open) {
       const res = await replace(undefined, false);
-      this._error.set(res.ok ? "" : res.error || "Action refusée");
+      this._error.set(res.ok ? "" : res.error || t(this._hass, "common.action_refused"));
       return this._render();
     }
     const owners = this._view().owners;
     openActionDialog(this.shadowRoot, {
-      title: `Autoriser · ${t.label}`,
-      durations: DURATIONS,
+      hass: this._hass,
+      title: t(this._hass, "card.resource.allow_title", { name: tg.label }),
+      durations: durations(this._hass),
       needCode: needsCode(this._hass, "open", this._parent),
-      submitLabel: "Autoriser",
+      submitLabel: t(this._hass, "card.allow"),
       request: this._request(owners, (kid, { duration }) => {
         const data = {
           kind: "open", kid_id: kid, resource_id, service,
-          options: DURATIONS.map((d) => d.value), replace: t.exceptions,
+          options: DURATION_VALUES, replace: tg.exceptions,
         };
         if (duration) data.minutes = duration;
         return data;
@@ -267,20 +269,20 @@ class ParentalResourceCard extends StateCard {
   }
 
   // Option « Demander » d'une fenêtre (compte non admin) : au nom d'un propriétaire de l'appareil.
-  // `build(kid, {choice, duration})` donne les données du service `demander`.
+  // `build(kid, {choice, duration})` donne les données du service `request`.
   _request(owners, build, pending = false) {
     if (!canRequest(this._hass, this._state, this._parent)) return null;
     return {
       kids: ownerChoices(this._state, owners),
       pending,
-      onRequest: (picked) => callAction(this._hass, "demander", build(picked.kid, picked)),
+      onRequest: (picked) => callAction(this._hass, "request", build(picked.kid, picked)),
     };
   }
 
   // Actions sans fenêtre (Arrêter, ✕, bonus admin) : l'erreur s'affiche sous les pilules.
   async _call(service, data) {
     const res = await callAction(this._hass, service, data);
-    this._error.set(res.ok ? "" : res.error || "Action refusée");
+    this._error.set(res.ok ? "" : res.error || t(this._hass, "common.action_refused"));
     this._render();
   }
 }

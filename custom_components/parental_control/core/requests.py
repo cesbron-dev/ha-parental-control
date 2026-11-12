@@ -10,15 +10,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 
+from .i18n import DEFAULT_LANGUAGE, duration_text, msg
+
 REQUEST_TIMEOUT = timedelta(minutes=15)
 RESULT_DISPLAY = timedelta(minutes=5)
 MAX_OPTIONS = 6
 MIN_MINUTES = 1
 MAX_MINUTES = 240
 MAX_PENDING_PER_KID = 3  # contre l'envoi en rafale vers les téléphones des parents
-
-UNTIL_NEXT_CHANGE = "Jusqu'au prochain changement"
-
 
 class RequestKind(StrEnum):
     OPEN = "open"
@@ -58,9 +57,13 @@ class TimeRequest:
     expires: datetime
     status: RequestStatus = RequestStatus.PENDING
     granted: int | None = None
-    reason: str | None = None
+    reason: str | None = None  # texte rendu dans la langue système de HA
     resolved_at: datetime | None = None
     answered_by: str | None = None
+    # Raison d'échec indépendante de la langue : `impossible`, `unknown_choice` ou la clé
+    # d'erreur de l'action parentale (`not_in_quota`…), avec ses paramètres (textes).
+    reason_code: str | None = None
+    reason_params: dict[str, str] = field(default_factory=dict)
 
     @property
     def key(self) -> tuple[str, str, str | None, str | None]:
@@ -169,11 +172,15 @@ class RequestBook:
         *,
         granted: int | None = None,
         reason: str | None = None,
+        reason_code: str | None = None,
+        reason_params: dict[str, str] | None = None,
         answered_by: str | None = None,
     ) -> None:
         req.status = status
         req.granted = granted
         req.reason = reason
+        req.reason_code = reason_code
+        req.reason_params = dict(reason_params or {})
         req.answered_by = answered_by
         req.resolved_at = now
 
@@ -196,28 +203,35 @@ class RequestBook:
         return list(self._requests.values())
 
 
-def duration_label(minutes: int | None) -> str:
-    if minutes is None:
-        return UNTIL_NEXT_CHANGE
-    hours, mins = divmod(minutes, 60)
-    if hours == 0:
-        return f"{mins} min"
-    if mins == 0:
-        return f"{hours} h"
-    return f"{hours} h {mins:02d}"
+def duration_label(minutes: int | None, lang: str = DEFAULT_LANGUAGE) -> str:
+    return duration_text(lang, minutes)
 
 
-def action_choices(req: TimeRequest) -> list[tuple[str, str]]:
-    """Paires (choix, titre) des boutons de la notification."""
+def choice_specs(req: TimeRequest) -> list[dict[str, str | int | None]]:
+    """Boutons de la demande sans texte : `choice` (réponse), `label` (gabarit `request.<label>`,
+    ou `duration` pour la durée seule) et `minutes` (None : jusqu'au prochain changement)."""
+    refuse = {"choice": "refuse", "label": "refuse", "minutes": None}
     if req.kind == RequestKind.HOMEWORK:
-        return [("accept", "Accepter"), ("refuse", "Refuser")]
-    choices: list[tuple[str, str]] = []
+        return [{"choice": "accept", "label": "accept", "minutes": None}, refuse]
+    specs: list[dict[str, str | int | None]] = []
     for i, minutes in enumerate(req.options):
-        title = duration_label(minutes)
+        label = "duration"
         if i == 0 and (req.proposed is not None or minutes is None):
-            title = "Accepter " + (
-                "jusqu'au prochain changement" if minutes is None else title
-            )
-        choices.append((str(i), title))
-    choices.append(("refuse", "Refuser"))
-    return choices
+            label = "accept_until" if minutes is None else "accept_duration"
+        specs.append({"choice": str(i), "label": label, "minutes": minutes})
+    specs.append(refuse)
+    return specs
+
+
+def choice_title(spec: dict[str, str | int | None], lang: str = DEFAULT_LANGUAGE) -> str:
+    """Titre d'un bouton de `choice_specs` dans la langue `lang`."""
+    minutes = spec["minutes"]
+    duration = duration_label(minutes if isinstance(minutes, int) else None, lang)
+    if spec["label"] == "duration":
+        return duration
+    return msg(lang, f"request.{spec['label']}", duration=duration)
+
+
+def action_choices(req: TimeRequest, lang: str = DEFAULT_LANGUAGE) -> list[tuple[str, str]]:
+    """Paires (choix, titre) des boutons de la notification, dans la langue `lang`."""
+    return [(str(spec["choice"]), choice_title(spec, lang)) for spec in choice_specs(req)]

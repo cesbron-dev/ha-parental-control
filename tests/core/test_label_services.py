@@ -12,7 +12,7 @@ from custom_components.parental_control.core.model import DayType
 from tests.core.conftest import TZ, family_config_dict, mixed_tv
 
 TUESDAY = date(2026, 10, 27)
-ECOLE = {"hugo": DayType.ECOLE, "zoe": DayType.ECOLE, "alice": DayType.ECOLE}
+SCHOOL = {"hugo": DayType.SCHOOL, "zoe": DayType.SCHOOL, "alice": DayType.SCHOOL}
 SVC = "internet"
 DEMANDE = "console"
 
@@ -40,7 +40,7 @@ def _labels(d: dict) -> None:
 def _blocked(make_cfg, now, targets, *, dec=None, service=SVC):
     cfg = make_cfg(_labels)
     dec = dec or Decisions()
-    snap = evaluate(now, cfg, dec, ECOLE)
+    snap = evaluate(now, cfg, dec, SCHOOL)
     return switch_blocked(now, cfg, dec, snap, service, targets)
 
 
@@ -107,7 +107,7 @@ def test_expired_exception_ignored(make_cfg):
     # Ignorée aussi quand le snapshot la déclare échue (« jusqu'à la prochaine décision »).
     cfg = make_cfg(_labels)
     dec = Decisions(exceptions=[exc(Target(kid_id="hugo", service=SVC), True)])
-    snap = evaluate(at(20), cfg, dec, ECOLE)
+    snap = evaluate(at(20), cfg, dec, SCHOOL)
     snap = type(snap)(snap.kids, snap.resources, frozenset({"e1"}))
     assert switch_blocked(at(20), cfg, dec, snap, SVC, [("kid", "hugo")]) is True
 
@@ -120,7 +120,7 @@ def test_label_exception_does_not_keep_mixed_device_on():
     mixed_tv(d)
     cfg = parse_config(d)
     dec = Decisions(exceptions=[exc(Target(kid_id="hugo", service=SVC), True)])
-    state = evaluate(at(20), cfg, dec, ECOLE).resources["tv"]
+    state = evaluate(at(20), cfg, dec, SCHOOL).resources["tv"]
     assert state.open is False
     assert state.opened_services == frozenset()
     assert SVC not in state.blocked_services
@@ -150,5 +150,5 @@ def test_no_closure_warning_key_for_label_services(make_cfg):
     cfg = make_cfg(_labels)
     dec = Decisions(exceptions=[exc(Target(resource_id="iphone_hugo", service=SVC), True,
                                     until=at(20, 30))])
-    closures = upcoming_closures(at(20), cfg, dec, ECOLE, {})
+    closures = upcoming_closures(at(20), cfg, dec, SCHOOL, {})
     assert not any(k.startswith("service:") and SVC in k for k in closures)

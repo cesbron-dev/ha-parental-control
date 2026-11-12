@@ -12,7 +12,7 @@ from .nintendo import NintendoAdapter
 
 _LOGGER = logging.getLogger(__name__)
 
-_WARN = "l'avertissement"
+_WARN = "warning"
 
 
 class CompositeAdapter:
@@ -68,16 +68,16 @@ class CompositeAdapter:
             except Exception as err:  # noqa: BLE001 - un membre n'arrête pas les autres
                 # un avertissement manqué n'est pas une panne (comme avant le composite)
                 level = logging.WARNING if action == _WARN else logging.ERROR
-                _LOGGER.log(level, "%s : échec de %s : %s", member.label, action, err)
+                _LOGGER.log(level, "%s: %s failed: %s", member.label, action, err)
 
     async def apply(self, desired: ResourceState) -> None:
-        await self._each("l'application", lambda m: m.apply(desired))
+        await self._each("apply", lambda m: m.apply(desired))
 
     async def warn(self, message: str) -> None:
         await self._each(_WARN, lambda m: m.warn(message))
 
     async def force_close(self) -> None:
-        await self._each("la pause", lambda m: m.force_close())
+        await self._each("pause", lambda m: m.force_close())
 
     async def grant(self, minutes: int) -> None:
         nintendo = self.nintendo

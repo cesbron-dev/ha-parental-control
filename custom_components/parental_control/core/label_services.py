@@ -23,7 +23,7 @@ def _kid_blocked(now: datetime, cfg: Config, dec: Decisions, snap: Snapshot,
     on_demand = service in cfg.on_demand_for(kid_id)
     if not (leisure or on_demand):
         return None
-    blocked = on_demand or snap.kids[kid_id].status is not KidStatus.AUTORISE
+    blocked = on_demand or snap.kids[kid_id].status is not KidStatus.ALLOWED
     devices = {r.id for r in cfg.resources if kid_id in r.owners}
     for e in _active_exceptions(now, dec, snap.expired_exception_ids):
         t = e.target

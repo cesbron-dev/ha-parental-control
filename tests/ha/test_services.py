@@ -16,15 +16,15 @@ from tests.ha.conftest import CODE, PARENT_PHONE, add_phone
 from tests.ha.test_engine import SATURDAY, TUESDAY, TV, at
 
 SERVICES = [
-    "devoirs_termines",
-    "ajouter_bonus",
+    "homework_done",
+    "add_bonus",
     "exception",
-    "annuler_exception",
-    "demarrer_minuteur",
-    "arreter_minuteur",
+    "cancel_exception",
+    "start_timer",
+    "stop_timer",
     "pause",
-    "importer_configuration",
-    "demander",
+    "import_config",
+    "request",
 ]
 
 
@@ -41,6 +41,9 @@ async def test_services_registered_and_removed(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     for service in SERVICES:
         assert env.hass.services.has_service(DOMAIN, service)
+    for old in ("devoirs_termines", "ajouter_bonus", "annuler_exception", "demarrer_minuteur",
+                "arreter_minuteur", "importer_configuration", "demander"):
+        assert not env.hass.services.has_service(DOMAIN, old)
     assert await env.hass.config_entries.async_unload(env.entry.entry_id)
     for service in SERVICES:
         assert not env.hass.services.has_service(DOMAIN, service)
@@ -52,20 +55,20 @@ async def test_services_registered_and_removed(make_env) -> None:
 async def test_homework_requires_code_for_non_admin(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     await _raises_key(
-        env.call("devoirs_termines", {"kid_id": "hugo"}, env.kid_ctx), "code_required"
+        env.call("homework_done", {"kid_id": "hugo"}, env.kid_ctx), "code_required"
     )
     await _raises_key(
-        env.call("devoirs_termines", {"kid_id": "hugo", "code": "9999"}, env.kid_ctx),
+        env.call("homework_done", {"kid_id": "hugo", "code": "9999"}, env.kid_ctx),
         "code_invalid",
     )
     assert not env.engine.decisions.homework_done_on("hugo", TUESDAY)
-    await env.call("devoirs_termines", {"kid_id": "hugo", "code": CODE}, env.kid_ctx)
+    await env.call("homework_done", {"kid_id": "hugo", "code": CODE}, env.kid_ctx)
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
 
 
 async def test_homework_admin_without_code(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
-    await env.call("devoirs_termines", {"kid_id": "hugo"}, env.admin_ctx)
+    await env.call("homework_done", {"kid_id": "hugo"}, env.admin_ctx)
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
 
 
@@ -74,13 +77,13 @@ async def test_parent_non_admin_unlocks_without_code(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     await env.bind_parent()
     ctx = env.parent_ctx
-    await env.call("devoirs_termines", {"kid_id": "hugo"}, ctx)
+    await env.call("homework_done", {"kid_id": "hugo"}, ctx)
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
     await env.call("exception", {"open": True, "resource_id": "tv"}, ctx)
     closed = await env.call(
         "exception", {"open": False, "resource_id": "tv"}, ctx, return_response=True
     )
-    await env.call("annuler_exception", {"exception_id": closed["id"]}, ctx)
+    await env.call("cancel_exception", {"exception_id": closed["id"]}, ctx)
     await env.call("pause", {"active": True}, ctx)
     await env.call("pause", {"active": False}, ctx)
     assert not env.engine.decisions.paused
@@ -89,19 +92,19 @@ async def test_parent_non_admin_unlocks_without_code(make_env) -> None:
 async def test_parent_non_admin_bonus_and_timer_without_code(make_env) -> None:
     env = await make_env(at(SATURDAY, 10, 0))
     await env.bind_parent()
-    await env.call("ajouter_bonus", {"kid_id": "hugo", "minutes": 15}, env.parent_ctx)
+    await env.call("add_bonus", {"kid_id": "hugo", "minutes": 15}, env.parent_ctx)
     assert [b.minutes for b in env.engine.decisions.bonuses] == [15]
-    await env.call("demarrer_minuteur", {"kid_id": "hugo", "minutes": 20}, env.parent_ctx)
+    await env.call("start_timer", {"kid_id": "hugo", "minutes": 20}, env.parent_ctx)
     assert len(env.engine.decisions.timers) == 1
 
 
 async def test_parent_loses_right_when_phone_removed(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     await env.bind_parent()
-    await env.call("devoirs_termines", {"kid_id": "hugo"}, env.parent_ctx)
+    await env.call("homework_done", {"kid_id": "hugo"}, env.parent_ctx)
     await env.engine.set_config(parse_config(EX))
     await _raises_key(
-        env.call("devoirs_termines", {"kid_id": "hugo"}, env.parent_ctx), "code_required"
+        env.call("homework_done", {"kid_id": "hugo"}, env.parent_ctx), "code_required"
     )
 
 
@@ -109,13 +112,13 @@ async def test_non_parent_still_requires_code_when_parent_exists(make_env) -> No
     env = await make_env(at(TUESDAY, 16, 30))
     await env.bind_parent()
     await _raises_key(
-        env.call("devoirs_termines", {"kid_id": "hugo"}, env.kid_ctx), "code_required"
+        env.call("homework_done", {"kid_id": "hugo"}, env.kid_ctx), "code_required"
     )
 
 
 async def test_automation_without_code(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
-    await env.call("devoirs_termines", {"kid_id": "hugo"}, Context())
+    await env.call("homework_done", {"kid_id": "hugo"}, Context())
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
 
 
@@ -149,7 +152,7 @@ async def test_exception_returns_id_and_can_be_cancelled(make_env) -> None:
     exc_id = response["id"]
     assert [e.id for e in env.engine.decisions.exceptions] == [exc_id]
     # Annuler une ouverture referme : pas de code.
-    await env.call("annuler_exception", {"exception_id": exc_id}, env.kid_ctx)
+    await env.call("cancel_exception", {"exception_id": exc_id}, env.kid_ctx)
     assert env.engine.decisions.exceptions == []
     # Sans réponse demandée, le service s'exécute quand même.
     await env.call("exception", {"open": False, "resource_id": "tv"}, env.kid_ctx)
@@ -164,35 +167,35 @@ async def test_cancel_close_exception_requires_code(make_env) -> None:
     )
     exc_id = response["id"]
     await _raises_key(
-        env.call("annuler_exception", {"exception_id": exc_id}, env.kid_ctx),
+        env.call("cancel_exception", {"exception_id": exc_id}, env.kid_ctx),
         "code_required",
     )
     assert len(env.engine.decisions.exceptions) == 1
-    await env.call("annuler_exception", {"exception_id": exc_id, "code": CODE}, env.kid_ctx)
+    await env.call("cancel_exception", {"exception_id": exc_id, "code": CODE}, env.kid_ctx)
     assert env.engine.decisions.exceptions == []
     # Id inconnu : ni erreur ni code.
-    await env.call("annuler_exception", {"exception_id": "inconnu"}, env.kid_ctx)
+    await env.call("cancel_exception", {"exception_id": "inconnu"}, env.kid_ctx)
 
 
 async def test_bonus_and_timers(make_env) -> None:
     env = await make_env(at(SATURDAY, 10, 0))
     await _raises_key(
-        env.call("ajouter_bonus", {"kid_id": "hugo", "minutes": 15}, env.kid_ctx),
+        env.call("add_bonus", {"kid_id": "hugo", "minutes": 15}, env.kid_ctx),
         "code_required",
     )
-    await env.call("ajouter_bonus", {"kid_id": "hugo", "minutes": 15, "code": CODE},
+    await env.call("add_bonus", {"kid_id": "hugo", "minutes": 15, "code": CODE},
                    env.kid_ctx)
     assert [b.minutes for b in env.engine.decisions.bonuses] == [15]
 
     await _raises_key(
-        env.call("demarrer_minuteur", {"kid_id": "hugo", "minutes": 20}, env.kid_ctx),
+        env.call("start_timer", {"kid_id": "hugo", "minutes": 20}, env.kid_ctx),
         "code_required",
     )
-    await env.call("demarrer_minuteur", {"kid_id": "hugo", "minutes": 20, "code": CODE},
+    await env.call("start_timer", {"kid_id": "hugo", "minutes": 20, "code": CODE},
                    env.kid_ctx)
     assert len(env.engine.decisions.timers) == 1
     # Arrêter un minuteur ne débloque rien : pas de code.
-    await env.call("arreter_minuteur", {"kid_id": "hugo"}, env.kid_ctx)
+    await env.call("stop_timer", {"kid_id": "hugo"}, env.kid_ctx)
     assert env.engine.decisions.active_timer("hugo", dt_util.now()) is None
 
 
@@ -202,15 +205,15 @@ async def test_bonus_and_timers(make_env) -> None:
 @pytest.mark.parametrize(
     ("service", "data"),
     [
-        ("ajouter_bonus", {"minutes": 15}),
-        ("ajouter_bonus", {"minutes": 15, "kid_id": "hugo", "resource_id": "tv"}),
-        ("ajouter_bonus", {"minutes": 0, "kid_id": "hugo"}),
-        ("ajouter_bonus", {"minutes": 241, "kid_id": "hugo"}),
-        ("demarrer_minuteur", {"kid_id": "hugo", "minutes": 0}),
-        ("demarrer_minuteur", {"kid_id": "hugo"}),
+        ("add_bonus", {"minutes": 15}),
+        ("add_bonus", {"minutes": 15, "kid_id": "hugo", "resource_id": "tv"}),
+        ("add_bonus", {"minutes": 0, "kid_id": "hugo"}),
+        ("add_bonus", {"minutes": 241, "kid_id": "hugo"}),
+        ("start_timer", {"kid_id": "hugo", "minutes": 0}),
+        ("start_timer", {"kid_id": "hugo"}),
         ("exception", {"resource_id": "tv"}),
         ("pause", {}),
-        ("importer_configuration", {}),
+        ("import_config", {}),
     ],
 )
 async def test_schema_errors(make_env, service, data) -> None:
@@ -221,17 +224,17 @@ async def test_schema_errors(make_env, service, data) -> None:
 
 async def test_code_keeps_leading_zero(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
-    await env.call("devoirs_termines", {"kid_id": "hugo", "code": "0123"}, env.kid_ctx)
+    await env.call("homework_done", {"kid_id": "hugo", "code": "0123"}, env.kid_ctx)
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
 
 
 async def test_unknown_kid_rejected(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     await _raises_key(
-        env.call("devoirs_termines", {"kid_id": "inconnu"}, env.admin_ctx), "unknown_kid"
+        env.call("homework_done", {"kid_id": "inconnu"}, env.admin_ctx), "unknown_kid"
     )
     await _raises_key(
-        env.call("ajouter_bonus", {"resource_id": "inconnue", "minutes": 5}, env.admin_ctx),
+        env.call("add_bonus", {"resource_id": "inconnue", "minutes": 5}, env.admin_ctx),
         "unknown_resource",
     )
 
@@ -243,26 +246,26 @@ async def test_import_configuration_admin_only(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     new = dict(EX, kids=[dict(EX["kids"][0], name="Hugo B.")])
     with pytest.raises(Unauthorized):
-        await env.call("importer_configuration", {"config": new, "code": CODE}, env.kid_ctx)
+        await env.call("import_config", {"config": new, "code": CODE}, env.kid_ctx)
     assert env.engine.config.kid("hugo").name == "Hugo"
     with pytest.raises(Unauthorized):
-        await env.call("importer_configuration", {"config": new},
+        await env.call("import_config", {"config": new},
                        Context(user_id="inconnu"))
-    await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    await env.call("import_config", {"config": new}, env.admin_ctx)
     assert env.engine.config.kid("hugo").name == "Hugo B."
     newer = dict(EX, kids=[dict(EX["kids"][0], name="Hugo C.")])
-    await env.call("importer_configuration", {"config": newer}, Context())
+    await env.call("import_config", {"config": newer}, Context())
     assert env.engine.config.kid("hugo").name == "Hugo C."
 
 
 async def test_import_configuration_parent_non_admin(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     with pytest.raises(Unauthorized):  # pas encore parent : téléphone absent de la liste
-        await env.call("importer_configuration", {"config": EX}, env.parent_ctx)
+        await env.call("import_config", {"config": EX}, env.parent_ctx)
     await env.bind_parent()
     new = dump_config(env.engine.config)
     new["kids"][0]["name"] = "Hugo B."
-    await env.call("importer_configuration", {"config": new}, env.parent_ctx)
+    await env.call("import_config", {"config": new}, env.parent_ctx)
     assert env.engine.config.kid("hugo").name == "Hugo B."
     assert env.engine.config.request_notify_owners == {PARENT_PHONE: env.parent.id}
 
@@ -277,7 +280,7 @@ async def test_import_ignores_forged_owners(make_env) -> None:
     new["request_notify"].append(forged)
     # Le client prétend que le téléphone de Julie et la tablette sont à l'administrateur.
     new["request_notify_owners"] = {PARENT_PHONE: env.admin.id, forged: env.admin.id}
-    await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    await env.call("import_config", {"config": new}, env.admin_ctx)
     assert env.engine.config.request_notify_owners == {
         PARENT_PHONE: env.parent.id,
         forged: env.kid.id,
@@ -292,13 +295,13 @@ async def test_import_remove_bound_phone_keeps_orphan_owner_ignored(make_env) ->
     new = dump_config(env.engine.config)
     new["request_notify"].remove(PARENT_PHONE)
     assert new["request_notify_owners"] == {PARENT_PHONE: env.parent.id}
-    await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    await env.call("import_config", {"config": new}, env.admin_ctx)
     assert env.engine.config.request_notify == ()
     assert env.engine.config.request_notify_owners == {}
     [phone] = env.hass.config_entries.async_entries("mobile_app")
     env.hass.config_entries.async_update_entry(phone, data={**phone.data, "user_id": env.kid.id})
     new["request_notify"].append(PARENT_PHONE)
-    await env.call("importer_configuration", {"config": new}, env.admin_ctx)
+    await env.call("import_config", {"config": new}, env.admin_ctx)
     assert env.engine.config.request_notify_owners == {PARENT_PHONE: env.kid.id}
 
 
@@ -307,19 +310,20 @@ async def test_import_missing_device_rejected_config_unchanged(make_env) -> None
     before = env.engine.config
     new = dict(EX, request_notify=["notify.mobile_app_inconnu"])
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("importer_configuration", {"config": new}, env.admin_ctx)
-    assert err.value.translation_key == "invalid_config"
-    assert "notify.mobile_app_inconnu" in err.value.translation_placeholders["error"]
+        await env.call("import_config", {"config": new}, env.admin_ctx)
+    assert err.value.translation_key == "config_phone_not_found"
+    assert err.value.translation_placeholders == {
+        "path": "request_notify", "target": "notify.mobile_app_inconnu"}
     assert env.engine.config == before
 
 
 async def test_import_invalid_config_raises_validation_error(make_env) -> None:
     env = await make_env(at(TUESDAY, 16, 30))
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("importer_configuration", {"config": dict(EX, version=99)},
+        await env.call("import_config", {"config": dict(EX, version=99)},
                        env.admin_ctx)
-    assert err.value.translation_key == "invalid_config"
-    assert "version" in err.value.translation_placeholders["error"]
+    assert err.value.translation_key == "config_unsupported_version"
+    assert err.value.translation_placeholders == {"path": "version", "version": "99"}
     assert env.engine.config == parse_config(EX)
 
 
@@ -346,7 +350,7 @@ async def test_code_lockout_after_5_failures(make_env, clock, monkeypatch) -> No
     homework = {"kid_id": "hugo"}
     for _ in range(5):
         await _raises_key(
-            env.call("devoirs_termines", dict(homework, code="9999"), env.kid_ctx),
+            env.call("homework_done", dict(homework, code="9999"), env.kid_ctx),
             "code_invalid",
         )
 
@@ -361,29 +365,29 @@ async def test_code_lockout_after_5_failures(make_env, clock, monkeypatch) -> No
 
     # Verrouillé : même le bon code est refusé, sans calcul pbkdf2.
     await _raises_key(
-        env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx), "code_locked"
+        env.call("homework_done", dict(homework, code=CODE), env.kid_ctx), "code_locked"
     )
     assert verified == []
     assert not env.engine.decisions.homework_done_on("hugo", TUESDAY)
     with pytest.raises(ServiceValidationError) as err:
-        await env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx)
+        await env.call("homework_done", dict(homework, code=CODE), env.kid_ctx)
     assert str(err.value) == "Too many wrong parent codes. Try again in 60 s"
     # Un admin n'est pas concerné, et le verrou est propre à l'utilisateur.
     await env.call("pause", {"active": False}, env.admin_ctx)
 
     clock.now += 59
     await _raises_key(
-        env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx), "code_locked"
+        env.call("homework_done", dict(homework, code=CODE), env.kid_ctx), "code_locked"
     )
     # Après 60 s : un nouvel échec double le verrou (120 s).
     clock.now += 2
     await _raises_key(
-        env.call("devoirs_termines", dict(homework, code="9999"), env.kid_ctx),
+        env.call("homework_done", dict(homework, code="9999"), env.kid_ctx),
         "code_invalid",
     )
     clock.now += 119
     await _raises_key(
-        env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx), "code_locked"
+        env.call("homework_done", dict(homework, code=CODE), env.kid_ctx), "code_locked"
     )
     clock.now += 2
     assert verified == ["9999"]
@@ -391,17 +395,17 @@ async def test_code_lockout_after_5_failures(make_env, clock, monkeypatch) -> No
     # Le doublement est plafonné à 15 minutes.
     for expected in (240, 480, 900, 900):
         await _raises_key(
-            env.call("devoirs_termines", dict(homework, code="9999"), env.kid_ctx),
+            env.call("homework_done", dict(homework, code="9999"), env.kid_ctx),
             "code_invalid",
         )
         clock.now += expected - 1
         await _raises_key(
-            env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx),
+            env.call("homework_done", dict(homework, code=CODE), env.kid_ctx),
             "code_locked",
         )
         clock.now += 2
 
-    await env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx)
+    await env.call("homework_done", dict(homework, code=CODE), env.kid_ctx)
     assert env.engine.decisions.homework_done_on("hugo", TUESDAY)
 
 
@@ -410,26 +414,26 @@ async def test_code_lockout_resets_on_success(make_env, clock) -> None:
     homework = {"kid_id": "hugo"}
     for _ in range(4):
         await _raises_key(
-            env.call("devoirs_termines", dict(homework, code="9999"), env.kid_ctx),
+            env.call("homework_done", dict(homework, code="9999"), env.kid_ctx),
             "code_invalid",
         )
-    await env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx)
+    await env.call("homework_done", dict(homework, code=CODE), env.kid_ctx)
     # Compteur remis à zéro : 4 nouveaux échecs ne verrouillent pas.
     for _ in range(4):
         await _raises_key(
-            env.call("devoirs_termines", dict(homework, code="9999"), env.kid_ctx),
+            env.call("homework_done", dict(homework, code="9999"), env.kid_ctx),
             "code_invalid",
         )
     await env.call("pause", {"active": False, "code": CODE}, env.kid_ctx)
     # Après un verrou échu, un bon code remet aussi le compteur à zéro.
     for _ in range(5):
         await _raises_key(
-            env.call("devoirs_termines", dict(homework, code="9999"), env.kid_ctx),
+            env.call("homework_done", dict(homework, code="9999"), env.kid_ctx),
             "code_invalid",
         )
     clock.now += 61
-    await env.call("devoirs_termines", dict(homework, code=CODE), env.kid_ctx)
+    await env.call("homework_done", dict(homework, code=CODE), env.kid_ctx)
     await _raises_key(
-        env.call("devoirs_termines", dict(homework, code="9999"), env.kid_ctx),
+        env.call("homework_done", dict(homework, code="9999"), env.kid_ctx),
         "code_invalid",
     )

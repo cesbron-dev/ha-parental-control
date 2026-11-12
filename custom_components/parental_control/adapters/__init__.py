@@ -51,4 +51,4 @@ def _member(
         return AdGuardAdapter(hass, device.name, options, leisure, adguard_ids)
     if integration.kind is ResourceKind.NINTENDO:
         return NintendoAdapter(hass, device.name, options)
-    raise NotImplementedError(f"Type d'intégration non pris en charge : {integration.kind}")
+    raise NotImplementedError(f"Unsupported integration kind: {integration.kind}")

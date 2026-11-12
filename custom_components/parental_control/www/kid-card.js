@@ -3,23 +3,20 @@
 import {
   esc, needsCode, kidView, kidServiceToggles, kidExceptions, formatPill, timelineGeometry, exceptionsForKid,
   exceptionSpans, segmentClass, statusClass, nextStepLabel, dayTypeLabel, simulationBadge, fmtDuration,
-  bonusLabel, bonusMinutes, canRequest, findRequest,
+  bonusLabel, bonusMinutes, canRequest, findRequest, reasonText,
 } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
 import { BASE_CSS, TIMELINE_CSS, pill, ConfirmState, ErrorNotice, requestLines } from "./style.js";
 import { openActionDialog } from "./dialogs.js";
 import { createEditor } from "./editor.js";
+import { t, lang, formatDuration, formatHour } from "./i18n.js";
 
 const TIMER_MINUTES = [15, 30, 60];
 
-const DURATIONS = [
-  { value: 15, label: "15 min" },
-  { value: 30, label: "30 min" },
-  { value: 60, label: "1 h" },
-  { value: 120, label: "2 h" },
-  { value: null, label: "Jusqu'au prochain changement" },
-];
+// Durées d'une autorisation : « 15 min » … « 2 h », puis « Jusqu'au prochain changement » (null).
+const DURATION_VALUES = [15, 30, 60, 120, null];
+const durations = (hass) => DURATION_VALUES.map((value) => ({ value, label: formatDuration(hass, value) }));
 
 const CSS = `
   ${BASE_CSS}
@@ -45,13 +42,13 @@ class ParentalKidCard extends StateCard {
   constructor() {
     super();
     this._error = new ErrorNotice(() => this._render());
-    this._admin = undefined;
+    this._hassKey = undefined;
     this._confirm = new ConfirmState(() => this._render());
     this.shadowRoot.addEventListener("click", (ev) => this._onClick(ev));
   }
 
   setConfig(config) {
-    if (!config?.kid) throw new Error("« kid » est obligatoire (id de l'enfant dans les règles)");
+    if (!config?.kid) throw new Error(t(this._hass, "card.kid.required"));
     this._config = { ...config };
     this._render();
   }
@@ -73,10 +70,10 @@ class ParentalKidCard extends StateCard {
   }
 
   _hassChanged(hass) {
-    // `hass` change souvent : on ne redessine que si le droit admin (cadenas) change.
-    const admin = !!hass?.user?.is_admin;
-    if (admin !== this._admin) {
-      this._admin = admin;
+    // `hass` change souvent : on ne redessine que si le droit admin (cadenas) ou la langue change.
+    const key = `${!!hass?.user?.is_admin}|${lang(hass)}`;
+    if (key !== this._hassKey) {
+      this._hassKey = key;
       this._render();
     }
   }
@@ -100,23 +97,24 @@ class ParentalKidCard extends StateCard {
 
   _body() {
     const id = this._config.kid;
-    if (this._state === undefined) return '<div class="muted">Chargement…</div>';
+    const hass = this._hass;
+    if (this._state === undefined) return `<div class="muted">${esc(t(hass, "common.loading"))}</div>`;
     const v = kidView(this._state, id);
-    if (v.status === "unavailable") return '<div class="muted">Contrôle parental indisponible</div>';
-    if (v.status === "unknown") return `<div class="muted">Enfant inconnu : ${esc(id)}</div>`;
+    if (v.status === "unavailable") return `<div class="muted">${esc(t(hass, "common.unavailable"))}</div>`;
+    if (v.status === "unknown") return `<div class="muted">${esc(t(hass, "card.kid.unknown", { id }))}</div>`;
 
     const kid = v.kid;
     const now = new Date();
-    const step = nextStepLabel(kid);
-    const sub = [dayTypeLabel(kid.day_type), step].filter(Boolean).join(" · ");
+    const step = nextStepLabel(kid, hass);
+    const sub = [dayTypeLabel(kid.day_type, hass), step].filter(Boolean).join(" · ");
     const color = /^#[0-9a-f]{3,8}$/i.test(kid.color ?? "") ? ` style="--kid-color:${kid.color}"` : "";
 
     return `
       <div class="row">
         <div class="avatar"${color}>${kid.emoji ? esc(kid.emoji) : esc(v.name.charAt(0))}</div>
-        <div class="grow"><div class="titlebar"><div class="title">${esc(this._config.name || v.name)}</div>${simulationBadge(this._state)}</div>
+        <div class="grow"><div class="titlebar"><div class="title">${esc(this._config.name || v.name)}</div>${simulationBadge(this._state, hass)}</div>
           <div class="muted">${esc(sub)}</div></div>
-        <span class="badge ${statusClass(kid.status)}">${esc(kid.reason)}</span>
+        <span class="badge ${statusClass(kid.status)}">${esc(reasonText(kid, hass))}</span>
       </div>
       ${this._config.show_timeline === false ? "" : this._timeline(kid, now)}
       ${this._homework(v)}
@@ -124,7 +122,7 @@ class ParentalKidCard extends StateCard {
       ${this._services()}
       ${this._exceptions(now)}
       ${this._bonus(v)}
-      ${requestLines(this._state, { kid_id: id })}
+      ${requestLines(this._state, { kid_id: id }, hass)}
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
@@ -133,43 +131,47 @@ class ParentalKidCard extends StateCard {
     const spans = exceptionSpans(exceptionsForKid(this._state, this._config.kid), now);
     const segs = bars.map((b) => `<div class="${segmentClass(b.type)}" style="left:${b.left}%;width:${b.width}%"></div>`).join("");
     const excs = spans.map((s) => `<div class="exc" style="left:${s.left}%;width:${s.width}%"></div>`).join("");
-    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${h}h</span>`).join("");
+    const hours = [0, 6, 12, 18, 24].map((h) => `<span style="left:${(h / 24) * 100}%">${esc(formatHour(this._hass, h))}</span>`).join("");
     return `<div class="tl">${segs}${excs}<div class="now" style="left:${nowPct}%"></div></div><div class="hours">${hours}</div>`;
   }
 
   // Devoirs : seulement pendant une plage « après devoirs ».
   _homework(v) {
     if (!v.homework) return "";
+    const hass = this._hass;
+    const label = `<div class="label muted">${esc(t(hass, "card.kid.homework"))}</div>`;
     if (v.homework === "done") {
-      return `<div class="section"><div class="label muted">Devoirs</div><div class="ok big">✓ Devoirs validés</div></div>`;
+      return `<div class="section">${label}<div class="ok big">${esc(t(hass, "card.kid.homework_validated"))}</div></div>`;
     }
     const action = "homework";
-    const lock = needsCode(this._hass, "homework", this._parent);
-    return `<div class="section"><div class="label muted">Devoirs</div><div class="pills">
-      ${pill({ action, icon: "mdi:book-check", label: "Devoirs terminés", cls: "vert hero", confirm: !lock, armed: this._confirm.armed === action, lock })}
+    const lock = needsCode(hass, "homework", this._parent);
+    return `<div class="section">${label}<div class="pills">
+      ${pill({ action, icon: "mdi:book-check", label: t(hass, "card.kid.homework_done"), cls: "vert hero", confirm: !lock, armed: this._confirm.armed === action, lock, hass })}
       </div></div>`;
   }
 
   // Minuteur : seulement pendant une plage « quota » ; le temps restant du quota l'accompagne.
   _timer(v, now) {
-    const remaining = v.remaining != null ? `<span class="muted">Temps d'écran restant : ${fmtDuration(v.remaining)}</span>` : "";
+    const hass = this._hass;
+    const remaining = v.remaining != null
+      ? `<span class="muted">${esc(t(hass, "card.kid.screen_time_left", { duration: fmtDuration(v.remaining, hass) }))}</span>` : "";
     if (!v.timer) return remaining ? `<div class="section">${remaining}</div>` : "";
     const armed = this._confirm.armed;
     let body;
     if (v.timer.running) {
       const left = Math.max(0, Math.ceil((new Date(v.timer.end) - now) / 60000));
-      body = `<div class="line"><span class="big">Minuteur · ${left} min restantes</span>
-        ${pill({ action: "timer-stop", icon: "mdi:stop", label: "Arrêter", cls: "rouge", confirm: true, armed: armed === "timer-stop" })}</div>`;
+      body = `<div class="line"><span class="big">${esc(t(hass, "card.kid.timer_running", { minutes: left }))}</span>
+        ${pill({ action: "timer-stop", icon: "mdi:stop", label: t(hass, "card.stop"), cls: "rouge", confirm: true, armed: armed === "timer-stop", hass })}</div>`;
     } else if (v.timer.canStart) {
-      const lock = needsCode(this._hass, "timer", this._parent);
+      const lock = needsCode(hass, "timer", this._parent);
       body = `<div class="pills">${TIMER_MINUTES.map((m) => {
         const action = `timer:${m}`;
-        return pill({ action, icon: "mdi:timer-play", label: `${m} min`, cls: "bleu", confirm: !lock, armed: armed === action, lock });
+        return pill({ action, icon: "mdi:timer-play", label: t(hass, "duration.minutes", { minutes: m }), cls: "bleu", confirm: !lock, armed: armed === action, lock, hass });
       }).join("")}</div>`;
     } else {
-      body = '<div class="muted">Plus de temps d\'écran aujourd\'hui</div>';
+      body = `<div class="muted">${esc(t(hass, "card.kid.no_screen_time"))}</div>`;
     }
-    return `<div class="section"><div class="label muted">Minuteur</div>${body}${remaining ? `<div style="margin-top:8px">${remaining}</div>` : ""}</div>`;
+    return `<div class="section"><div class="label muted">${esc(t(hass, "card.kid.timer"))}</div>${body}${remaining ? `<div style="margin-top:8px">${remaining}</div>` : ""}</div>`;
   }
 
   // Services sur demande de l'enfant, sur tous ses appareils AdGuard : vert débloqué, gris bloqué.
@@ -177,24 +179,26 @@ class ParentalKidCard extends StateCard {
     if (this._config.show_services === false) return "";
     const toggles = kidServiceToggles(this._state, this._config.kid, this._config.services);
     if (!toggles.length) return "";
-    const lock = needsCode(this._hass, "open", this._parent);
-    const pills = toggles.map((t) => `<div class="pill ${t.open ? "vert" : "svc-off"}" data-action="${esc(`svc:${t.service}`)}" role="switch" aria-checked="${t.open}"
-        title="${esc(t.open ? `${t.label} débloqué : toucher pour bloquer` : `${t.label} bloqué : toucher pour autoriser`)}">`
-      + `<ha-icon icon="${t.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(t.label)}`
-      + `${!t.open && lock ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`);
-    return `<div class="section"><div class="label muted">Services sur demande</div><div class="pills">${pills.join("")}</div></div>`;
+    const hass = this._hass;
+    const lock = needsCode(hass, "open", this._parent);
+    const pills = toggles.map((tg) => `<div class="pill ${tg.open ? "vert" : "svc-off"}" data-action="${esc(`svc:${tg.service}`)}" role="switch" aria-checked="${tg.open}"
+        title="${esc(t(hass, tg.open ? "card.toggle_open" : "card.toggle_blocked", { label: tg.label }))}">`
+      + `<ha-icon icon="${tg.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(tg.label)}`
+      + `${!tg.open && lock ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`);
+    return `<div class="section"><div class="label muted">${esc(t(hass, "card.services_on_demand"))}</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
   // Autorisations en cours (✕ : annuler, après confirmation).
   _exceptions(now) {
-    const list = kidExceptions(this._state, this._config.kid);
+    const hass = this._hass;
+    const list = kidExceptions(this._state, this._config.kid, hass);
     if (!list.length) return "";
     const armed = this._confirm.armed;
     const pills = list.map((e) => {
       const action = `cancel:${e.id}`;
-      return pill({ action, icon: "mdi:check", label: formatPill(e, now), cls: "vert", confirm: true, armed: armed === action, trailing: "mdi:close" });
+      return pill({ action, icon: "mdi:check", label: formatPill(e, now, hass), cls: "vert", confirm: true, armed: armed === action, trailing: "mdi:close", hass });
     });
-    return `<div class="section"><div class="label muted">Autorisations en cours</div><div class="pills">${pills.join("")}</div></div>`;
+    return `<div class="section"><div class="label muted">${esc(t(hass, "card.exceptions"))}</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
   // Bonus de temps d'écran : seulement pour un enfant qui a un quota aujourd'hui.
@@ -204,9 +208,9 @@ class ParentalKidCard extends StateCard {
     const armed = this._confirm.armed;
     const pills = bonusMinutes(this._config).map((m) => {
       const action = `bonus:${m}`;
-      return pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: armed === action, lock });
+      return pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: armed === action, lock, hass: this._hass });
     });
-    return `<div class="section"><div class="label muted">Bonus de temps d'écran</div><div class="pills">${pills.join("")}</div></div>`;
+    return `<div class="section"><div class="label muted">${esc(t(this._hass, "card.kid.bonus"))}</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
   _onClick(ev) {
@@ -222,22 +226,23 @@ class ParentalKidCard extends StateCard {
   }
 
   _run(action) {
+    const hass = this._hass;
     const kid_id = this._config.kid;
     const name = this._config.name || kidView(this._state, kid_id).name || kid_id;
     if (action === "homework") {
-      return this._withCode("homework", `Devoirs terminés · ${name}`, "Valider", "devoirs_termines", { kid_id });
+      return this._withCode("homework", t(hass, "card.kid.homework_title", { name }), t(hass, "dialog.ok"), "homework_done", { kid_id });
     }
-    if (action === "timer-stop") return this._call("arreter_minuteur", { kid_id });
+    if (action === "timer-stop") return this._call("stop_timer", { kid_id });
     if (action.startsWith("timer:")) {
       const minutes = Number(action.slice(6));
-      return this._withCode("timer", `Minuteur ${minutes} min · ${name}`, "Démarrer", "demarrer_minuteur", { kid_id, minutes });
+      return this._withCode("timer", t(hass, "card.kid.timer_title", { minutes, name }), t(hass, "card.kid.start"), "start_timer", { kid_id, minutes });
     }
     if (action.startsWith("bonus:")) {
       const minutes = Number(action.slice(6));
-      return this._withCode("bonus", `${bonusLabel(minutes)} · ${name}`, "Ajouter", "ajouter_bonus", { kid_id, minutes });
+      return this._withCode("bonus", `${bonusLabel(minutes)} · ${name}`, t(hass, "dialog.add"), "add_bonus", { kid_id, minutes });
     }
     if (action.startsWith("svc:")) return this._toggleService(action.slice(4), name);
-    if (action.startsWith("cancel:")) return this._call("annuler_exception", { exception_id: action.slice(7) });
+    if (action.startsWith("cancel:")) return this._call("cancel_exception", { exception_id: action.slice(7) });
   }
 
   // Action protégée : directe pour un admin (déjà confirmée par deux appuis), sinon fenêtre du code.
@@ -252,11 +257,11 @@ class ParentalKidCard extends StateCard {
       request = {
         kids: null,
         pending: findRequest(this._state, { kind, kid_id })?.status === "pending",
-        onRequest: () => callAction(this._hass, "demander", { kind, kid_id, ...extra }),
+        onRequest: () => callAction(this._hass, "request", { kind, kid_id, ...extra }),
       };
     }
     openActionDialog(this.shadowRoot, {
-      title, needCode: true, submitLabel, request,
+      hass: this._hass, title, needCode: true, submitLabel, request,
       onSubmit: ({ code }) => callAction(this._hass, service, data, code),
     });
   }
@@ -265,21 +270,21 @@ class ParentalKidCard extends StateCard {
   // bloquer. Les exceptions de ce service visant l'enfant ou ses appareils sont d'abord annulées.
   async _toggleService(service, name) {
     const kid_id = this._config.kid;
-    const t = kidServiceToggles(this._state, kid_id).find((x) => x.service === service);
-    if (!t) return;
+    const tg = kidServiceToggles(this._state, kid_id).find((x) => x.service === service);
+    if (!tg) return;
     const replace = async (code, open, minutes) => {
-      for (const exception_id of t.exceptions) {
-        const res = await callAction(this._hass, "annuler_exception", { exception_id }, code);
+      for (const exception_id of tg.exceptions) {
+        const res = await callAction(this._hass, "cancel_exception", { exception_id }, code);
         if (!res.ok) return res;
       }
-      if (!open && !t.openedElsewhere) return { ok: true };
+      if (!open && !tg.openedElsewhere) return { ok: true };
       const data = { kid_id, service, open };
       if (minutes) data.minutes = minutes;
       return callAction(this._hass, "exception", data, code);
     };
-    if (t.open) {
+    if (tg.open) {
       const res = await replace(undefined, false);
-      this._error.set(res.ok ? "" : res.error || "Action refusée");
+      this._error.set(res.ok ? "" : res.error || t(this._hass, "common.action_refused"));
       return this._render();
     }
     let request = null;
@@ -288,17 +293,18 @@ class ParentalKidCard extends StateCard {
         kids: null,
         pending: findRequest(this._state, { kind: "open", kid_id, service })?.status === "pending",
         onRequest: ({ duration }) => {
-          const data = { kind: "open", kid_id, service, options: DURATIONS.map((d) => d.value), replace: t.exceptions };
+          const data = { kind: "open", kid_id, service, options: DURATION_VALUES, replace: tg.exceptions };
           if (duration) data.minutes = duration;
-          return callAction(this._hass, "demander", data);
+          return callAction(this._hass, "request", data);
         },
       };
     }
     openActionDialog(this.shadowRoot, {
-      title: `Autoriser ${t.label} · ${name}`,
-      durations: DURATIONS,
+      hass: this._hass,
+      title: t(this._hass, "card.kid.allow_title", { service: tg.label, name }),
+      durations: durations(this._hass),
       needCode: needsCode(this._hass, "open", this._parent),
-      submitLabel: "Autoriser",
+      submitLabel: t(this._hass, "card.allow"),
       request,
       onSubmit: ({ duration, code }) => replace(code, true, duration),
     });
@@ -307,7 +313,7 @@ class ParentalKidCard extends StateCard {
   // Actions sans fenêtre : l'erreur s'affiche en bas de la carte.
   async _call(service, data) {
     const res = await callAction(this._hass, service, data);
-    this._error.set(res.ok ? "" : res.error || "Action refusée");
+    this._error.set(res.ok ? "" : res.error || t(this._hass, "common.action_refused"));
     this._render();
   }
 }

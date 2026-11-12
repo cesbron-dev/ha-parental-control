@@ -43,7 +43,7 @@ class ParentalCardEditor extends HTMLElement {
       if (this._subConn === hass.connection) this._unsub = unsub;
       else unsub();
     } catch (err) {
-      console.warn("Contrôle parental : état indisponible pour l'éditeur", err);
+      console.warn("Parental control: state unavailable for the card editor", err);
       this._state = null;
       this._render();
     }
@@ -67,7 +67,7 @@ class ParentalCardEditor extends HTMLElement {
     }
     form.hass = this._hass;
     form.data = editorData(this._config, this._card);
-    form.schema = editorSchema(this._card, this._state, this._config);
+    form.schema = editorSchema(this._card, this._state, this._config, this._hass);
   }
 }
 

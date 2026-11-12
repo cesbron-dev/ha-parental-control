@@ -6,6 +6,7 @@ import { StateCard } from "./card-base.js";
 import { BASE_CSS, ConfirmState, ErrorNotice, bonusPills, requestLines } from "./style.js";
 import { runBonus, bonusRequest } from "./dialogs.js";
 import { createEditor } from "./editor.js";
+import { t, lang, formatPercent } from "./i18n.js";
 
 const CSS = `
   ${BASE_CSS}
@@ -41,7 +42,7 @@ class ParentalSwitchCard extends StateCard {
   }
 
   setConfig(config) {
-    if (!config?.resource) throw new Error("« resource » est obligatoire (id de la ressource Nintendo du moteur)");
+    if (!config?.resource) throw new Error(t(this._hass, "card.switch.required"));
     this._config = { ...config };
     this._key = "";
     this._render();
@@ -64,10 +65,11 @@ class ParentalSwitchCard extends StateCard {
   }
 
   _hassChanged(hass) {
-    // `hass` change souvent : on ne redessine que si le temps lu ou le droit admin (cadenas) change.
+    // `hass` change souvent : on ne redessine que si le temps lu, le droit admin (cadenas) ou la
+    // langue change.
     if (!this._config) return;
     const g = switchGauge(hass, this._view());
-    const key = `${g.used}|${g.remaining}|${!!hass?.user?.is_admin}`;
+    const key = `${g.used}|${g.remaining}|${!!hass?.user?.is_admin}|${lang(hass)}`;
     if (key !== this._key) {
       this._key = key;
       this._render();
@@ -97,25 +99,28 @@ class ParentalSwitchCard extends StateCard {
 
   _body() {
     const id = this._config.resource;
-    if (this._state === undefined) return '<div class="muted">Chargement…</div>';
+    const hass = this._hass;
+    if (this._state === undefined) return `<div class="muted">${esc(t(hass, "common.loading"))}</div>`;
     const v = this._view();
-    if (v.status === "unavailable") return '<div class="muted">Contrôle parental indisponible</div>';
-    if (v.status === "unknown") return `<div class="muted">Ressource inconnue : ${esc(id)}</div>`;
-    if (v.kind !== "nintendo") return `<div class="muted">Cette carte attend une ressource Nintendo : ${esc(id)}</div>`;
+    if (v.status === "unavailable") return `<div class="muted">${esc(t(hass, "common.unavailable"))}</div>`;
+    if (v.status === "unknown") return `<div class="muted">${esc(t(hass, "card.resource.unknown", { id }))}</div>`;
+    if (v.kind !== "nintendo") return `<div class="muted">${esc(t(hass, "card.switch.not_nintendo", { id }))}</div>`;
 
-    const g = switchGauge(this._hass, v);
+    const g = switchGauge(hass, v);
     const pct = Math.round(g.pct);
-    const badge = stateBadge(v);
-    const reason = reasonLine(v);
+    const badge = stateBadge(v, hass);
+    const reason = reasonLine(v, hass);
     const title = this._config.title || "Nintendo Switch";
+    const dur = (m) => fmtDuration(m, hass);
     const play = g.granted > 0
-      ? `<div class="big">${fmtDuration(g.remaining)} restants</div><div class="muted">${fmtDuration(g.granted)} accordés aujourd’hui</div>`
-      : `<div class="big">Aucun temps accordé</div><div class="muted">Temps sur demande</div>`;
+      ? `<div class="big">${esc(t(hass, "card.switch.left", { duration: dur(g.remaining) }))}</div>`
+        + `<div class="muted">${esc(t(hass, "card.switch.granted_today", { duration: dur(g.granted) }))}</div>`
+      : `<div class="big">${esc(t(hass, "card.switch.none_granted"))}</div><div class="muted">${esc(t(hass, "card.switch.on_request"))}</div>`;
 
     return `
       <div class="logo"><ha-icon icon="mdi:nintendo-switch"></ha-icon></div>
-      <div class="titlebar"><div class="title">${esc(title)}</div>${simulationBadge(this._state)}</div>
-      <div class="rule muted"><span class="badge ${badge.cls}">${badge.label}</span>${reason ? ` · ${esc(reason)}` : ""}</div>
+      <div class="titlebar"><div class="title">${esc(title)}</div>${simulationBadge(this._state, hass)}</div>
+      <div class="rule muted"><span class="badge ${badge.cls}">${esc(badge.label)}</span>${reason ? ` · ${esc(reason)}` : ""}</div>
       <div class="main">
         <div class="gauge">
           <div class="arc">
@@ -127,17 +132,17 @@ class ParentalSwitchCard extends StateCard {
               <path d="M12 62 A48 48 0 0 1 108 62" pathLength="100" fill="none" style="stroke: var(--g-track)" stroke-width="12" stroke-linecap="round"/>
               ${pct > 0 ? `<path d="M12 62 A48 48 0 0 1 108 62" pathLength="100" fill="none" stroke="url(#g)" stroke-width="12" stroke-linecap="round" stroke-dasharray="${pct} 100"/>` : ""}
             </svg>
-            <div class="pct">${pct} %</div>
+            <div class="pct">${esc(formatPercent(hass, pct))}</div>
           </div>
-          <div class="sub muted">${fmtDuration(g.remaining)} / ${fmtDuration(g.granted)}</div>
+          <div class="sub muted">${esc(dur(g.remaining))} / ${esc(dur(g.granted))}</div>
         </div>
-        <div class="play"><h4>Temps de jeu</h4>${play}</div>
+        <div class="play"><h4>${esc(t(hass, "card.switch.play_time"))}</h4>${play}</div>
         <div class="side">
-          <div class="muted">Temps utilisé : ${fmtDuration(g.used)}</div>
-          <div class="pills">${bonusPills(this._hass, bonusMinutes(this._config), this._confirm.armed, this._parent).join("")}</div>
+          <div class="muted">${esc(t(hass, "card.switch.used", { duration: dur(g.used) }))}</div>
+          <div class="pills">${bonusPills(hass, bonusMinutes(this._config), this._confirm.armed, this._parent).join("")}</div>
         </div>
       </div>
-      ${requestLines(this._state, { resource_id: id })}
+      ${requestLines(this._state, { resource_id: id }, hass)}
       ${this._error.text ? `<div class="error">${esc(this._error.text)}</div>` : ""}`;
   }
 
@@ -166,7 +171,7 @@ class ParentalSwitchCard extends StateCard {
   // Bonus d'un admin (sans fenêtre) : l'erreur s'affiche sous la carte.
   async _call(service, data) {
     const res = await callAction(this._hass, service, data);
-    this._error.set(res.ok ? "" : res.error || "Action refusée");
+    this._error.set(res.ok ? "" : res.error || t(this._hass, "common.action_refused"));
     this._render();
   }
 }

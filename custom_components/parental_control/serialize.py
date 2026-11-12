@@ -11,9 +11,10 @@ from homeassistant.util import dt as dt_util
 
 from .core.decisions import ManualException
 from .core.display import exception_end, kid_timeline
+from .core.i18n import msg
 from .core.label_services import switch_blocked
 from .core.model import ResourceKind
-from .core.requests import RequestStatus, action_choices
+from .core.requests import RequestStatus, choice_specs
 
 if TYPE_CHECKING:
     from .engine import ParentalEngine
@@ -31,6 +32,15 @@ def _value(value: Any) -> Any:
 
 def _dataclass(obj: Any) -> dict[str, Any]:
     return {f.name: _value(getattr(obj, f.name)) for f in fields(obj)}
+
+
+def _state(obj: Any, lang: str) -> dict[str, Any]:
+    """État d'enfant ou de ressource : `reason_code`, `reason_params` (copie) et `reason`, le
+    texte rendu dans la langue système de HA (attributs d'entité)."""
+    data = _dataclass(obj)
+    data["reason_params"] = dict(obj.reason_params)
+    data["reason"] = msg(lang, f"reason.{obj.reason_code}", **obj.reason_params)
+    return data
 
 
 def serialize_exception(exc: ManualException) -> dict[str, Any]:
@@ -59,10 +69,11 @@ def serialize_snapshot(engine: ParentalEngine, display: bool = False) -> dict[st
     kids: dict[str, dict[str, Any]] = {}
     resources: dict[str, dict[str, Any]] = {}
     if snap is not None:
+        lang = engine.language
         for kid_id, kid in snap.kids.items():
-            kids[kid_id] = _dataclass(kid) | {"closes_at": _value(closures.get(f"kid:{kid_id}"))}
+            kids[kid_id] = _state(kid, lang) | {"closes_at": _value(closures.get(f"kid:{kid_id}"))}
         for resource_id, resource in snap.resources.items():
-            resources[resource_id] = _dataclass(resource)
+            resources[resource_id] = _state(resource, lang)
     exceptions = [serialize_exception(e) for e in engine.decisions.exceptions]
     state = {
         "kids": kids,
@@ -102,6 +113,7 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "timeline": kid_timeline(cfg, snap, kid_id, now),
             "on_demand": sorted(cfg.on_demand_for(kid_id)),
             "label_services": _kid_label_services(engine, switches, kid_id, now),
+            "status_entity": engine.status_entity_id(kid_id),
         }
     for resource_id, data in state["resources"].items():
         resource = cfg.resource(resource_id)
@@ -138,6 +150,8 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             "status": r.status.value,
             "granted": r.granted,
             "reason": r.reason,
+            "reason_code": r.reason_code,
+            "reason_params": dict(r.reason_params),
             "expires": _value(r.expires),
         }
         for r in engine.requests.visible(now)
@@ -160,25 +174,39 @@ def _kid_label_services(engine: ParentalEngine, switches: list[dict[str, Any]],
 
 
 def serialize_requests(engine: ParentalEngine, *, can_answer: bool) -> dict[str, Any]:
-    """Demandes pour l'écran « Demandes » : texte, choix des boutons, jamais le jeton."""
+    """Demandes pour l'écran « Demandes », jamais le jeton.
+
+    L'écran suit la langue de l'utilisateur : il rend le texte et les boutons d'après des champs
+    sans langue (noms, `proposed`, `choices`). `message`, dans la langue système de HA (celle de
+    la notification), ne sert que de repli.
+    """
     now = dt_util.now()
     requests = []
     for r in engine.requests.visible(now) if engine.config is not None else ():
         pending = r.status == RequestStatus.PENDING
+        names = engine.request_names(r)
         requests.append(
             {
                 "id": r.id,
                 "kind": r.kind.value,
                 "kid_id": r.kid_id,
+                "kid_name": names["kid"],
+                "resource_id": r.resource_id,
+                "resource_name": names["resource"],
+                "service": r.service,
+                "service_name": names["service"],
+                "proposed": r.proposed,
                 "message": engine.request_message(r),
                 "status": r.status.value,
                 "created": _value(r.created),
                 "expires": _value(r.expires),
                 "granted": r.granted,
                 "reason": r.reason,
+                "reason_code": r.reason_code,
+                "reason_params": dict(r.reason_params),
                 "answered_by": r.answered_by,
-                # Mêmes boutons que la notification ; seul l'identifiant du choix est exposé.
-                "choices": [list(c) for c in action_choices(r)] if pending else [],
+                # Mêmes boutons que la notification, sans texte : {choice, label, minutes}.
+                "choices": choice_specs(r) if pending else [],
             }
         )
     return {"can_answer": can_answer, "requests": requests, "now": now.isoformat()}
