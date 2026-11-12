@@ -34,12 +34,6 @@ class LabelSwitchIssue:
     problem: str
 
 
-def label_name(hass: HomeAssistant, label_id: str) -> str:
-    """Nom du label dans le registre des labels (jamais stocké), à défaut son identifiant."""
-    label = lr.async_get(hass).async_get_label(label_id)
-    return label.name if label is not None else label_id
-
-
 def discover(
     hass: HomeAssistant, cfg: Config
 ) -> tuple[list[LabelSwitch], list[LabelSwitchIssue]]:
@@ -54,10 +48,10 @@ def discover(
         return switches, issues
     labels = lr.async_get(hass)
     # HA retire un label supprimé de toutes les entités : le problème ne tient pas à un interrupteur.
+    # Un seul problème par service, même si plusieurs de ses labels manquent.
     for service in cfg.services:
-        for link in service.labels:
-            if labels.async_get_label(link.label_id) is None:
-                issues.append(LabelSwitchIssue("", service.id, PROBLEM_UNKNOWN_LABEL))
+        if any(labels.async_get_label(link.label_id) is None for link in service.labels):
+            issues.append(LabelSwitchIssue("", service.id, PROBLEM_UNKNOWN_LABEL))
     order = {s.id: i for i, s in enumerate(cfg.services)}
     entries = sorted(
         (e for e in er.async_get(hass).entities.values()
@@ -69,7 +63,7 @@ def discover(
             pair for label_id in entry.labels
             if (pair := cfg.service_for_label(label_id)) is not None
         ]
-        found.sort(key=lambda p: (order[p[0].id], [l.label_id for l in p[0].labels].index(p[1].label_id)))
+        found.sort(key=lambda p: (order[p[0].id], p[0].labels.index(p[1])))
         attached = {link.label_id for _, link in found}
         targets = tuple(sorted(
             t for label_id in entry.labels - attached

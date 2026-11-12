@@ -1,9 +1,11 @@
 """Données de test partagées : config d'exemple de la tâche 1."""
 
+NAMES = {"youtube": "YouTube", "tiktok": "TikTok", "disneyplus": "Disney+"}
+
 EX = {
     "version": 2,
     "services": [
-        {"id": s, "name": s.capitalize(), "adguard": [s], "labels": []}
+        {"id": s, "name": NAMES.get(s, s.capitalize()), "adguard": [s], "labels": []}
         for s in ("youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch", "minecraft")
     ],
     "default_leisure": ["youtube", "roblox", "tiktok", "netflix", "disneyplus", "twitch"],

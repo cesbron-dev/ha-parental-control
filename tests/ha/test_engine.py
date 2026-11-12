@@ -592,7 +592,7 @@ async def test_add_exception_rejects_invalid_target(
 
 async def test_service_name_falls_back_to_id(hass, freezer, services) -> None:
     _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
-    assert engine.service_name("youtube") == "Youtube"  # nom de la config d'exemple
+    assert engine.service_name("youtube") == "YouTube"  # nom de la config d'exemple
     assert engine.service_name("inconnu") == "inconnu"
 
 

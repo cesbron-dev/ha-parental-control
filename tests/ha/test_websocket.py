@@ -128,7 +128,7 @@ async def test_state_and_not_loaded(hass, entry, hass_ws_client) -> None:
     await client.send_json_auto_id({"type": "parental_control/state"})
     result = (await client.receive_json())["result"]
     assert set(result) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
-        "requests", "requests_enabled", "service_names"}
+        "requests", "requests_enabled", "services"}
     assert "hugo" in result["kids"]
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -151,7 +151,7 @@ async def test_state_subscribe_pushes_on_update(hass, entry, hass_ws_client) -> 
     pushed = await client.receive_json()
     assert pushed["type"] == "event"
     assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
-        "requests", "requests_enabled", "service_names"}
+        "requests", "requests_enabled", "services"}
 
 
 async def test_state_subscribe_survives_entry_reload(hass, entry, hass_ws_client) -> None:
@@ -275,7 +275,7 @@ async def test_services_catalog_merges_adguard_entries(hass, entry, hass_ws_clie
 async def test_services_catalog_empty_and_admin_only(hass, entry, hass_ws_client) -> None:
     admin = await _client(hass, hass_ws_client, admin=True)
     await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
-    assert (await admin.receive_json())["result"] == {"services": {}, "label_services": []}
+    assert (await admin.receive_json())["result"] == {"services": {}}
     user = await _client(hass, hass_ws_client, admin=False)
     await user.send_json_auto_id({"type": "parental_control/services/catalog"})
     assert not (await user.receive_json())["success"]
@@ -285,9 +285,14 @@ async def _entry_with_label_services(hass: HomeAssistant, freezer) -> MockConfig
     await hass.config.async_set_time_zone("America/Toronto")
     freezer.move_to(at(TUESDAY, 16, 30))
     config = copy.deepcopy(EX)
-    config["label_services"] = [{"label_id": "ecran"}, {"label_id": "disparu"}]
+    config["services"] += [
+        {"id": "ecran", "name": "Écran", "adguard": [], "labels": [{"label_id": "ecran"}]},
+        # Label « console » absent du registre : problème `unknown_label` signalé.
+        {"id": "jeux", "name": "Jeux vidéo", "icon": "mdi:gamepad-variant", "adguard": ["roblox"],
+         "labels": [{"label_id": "console", "on_means_allowed": True}]},
+    ]
     config["kids"][0]["target_label"] = "hugo"
-    config["kids"][0]["leisure_add"] = [*config["kids"][0].get("leisure_add", []), "label:ecran"]
+    config["kids"][0]["leisure_add"] = [*config["kids"][0].get("leisure_add", []), "ecran"]
     await ParentalStore(hass).save_config(parse_config(config))
     entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code("0123")})
     entry.add_to_hass(hass)
@@ -296,17 +301,34 @@ async def _entry_with_label_services(hass: HomeAssistant, freezer) -> MockConfig
     return entry
 
 
-async def test_catalog_includes_label_services(hass, freezer, hass_ws_client) -> None:
-    registry = lr.async_get(hass)
-    label = registry.async_create("Écran")  # id « ecran » ; « disparu » n'existe plus
+async def test_catalog_is_adguard_only(hass, freezer, hass_ws_client) -> None:
+    """Le catalogue ne liste que les services AdGuard : ni label, ni service du parent."""
+    lr.async_get(hass).async_create("Écran")
     await _entry_with_label_services(hass, freezer)
+    adguard = MockConfigEntry(domain="adguard_clients")
+    adguard.add_to_hass(hass)
+    adguard.runtime_data = SimpleNamespace(catalog={"roblox": "Roblox"})
     admin = await _client(hass, hass_ws_client, admin=True)
     await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
     result = (await admin.receive_json())["result"]
-    assert result == {"services": {"label:ecran": "Écran"}, "label_services": ["label:ecran"]}
-    registry.async_update(label.label_id, name="Internet")  # nom lu à chaque fois
-    await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
-    assert (await admin.receive_json())["result"]["services"] == {"label:ecran": "Internet"}
+    assert result == {"services": {"roblox": "Roblox"}}
+    assert "label_services" not in result
+
+
+async def test_state_publishes_services(hass, freezer, hass_ws_client) -> None:
+    await _entry_with_label_services(hass, freezer)
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    result = (await client.receive_json())["result"]
+    assert "service_names" not in result
+    assert result["services"]["jeux"] == {
+        "name": "Jeux vidéo", "icon": "mdi:gamepad-variant", "adguard": True, "labels": True
+    }
+    assert result["services"]["ecran"] == {
+        "name": "Écran", "icon": None, "adguard": False, "labels": True
+    }
+    assert result["services"]["youtube"]["name"] == "YouTube"
+    assert list(result["services"])[-2:] == ["ecran", "jeux"]  # ordre de la config
 
 
 async def test_catalog_without_config(hass, hass_ws_client) -> None:
@@ -318,7 +340,7 @@ async def test_catalog_without_config(hass, hass_ws_client) -> None:
     admin = await _client(hass, hass_ws_client, admin=True)
     await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
     res = await admin.receive_json()
-    assert res["success"] and res["result"] == {"services": {}, "label_services": []}
+    assert res["success"] and res["result"] == {"services": {}}
 
 
 async def test_labels_list_parent_only(hass, entry, hass_ws_client) -> None:
@@ -352,10 +374,10 @@ async def test_label_switches_list(hass, freezer, hass_ws_client) -> None:
     assert result == {"switches": engine.label_switches, "issues": engine.label_issues}
     (switch,) = result["switches"]
     assert switch["entity_id"] == "switch.prise_tele"
-    assert switch["service"] == "label:ecran"
+    assert switch["service"] == "ecran"
     assert switch["targets"] == [{"kind": "kid", "id": "hugo"}]
     assert result["issues"] == [
-        {"entity_id": "", "service": "label:disparu", "service_name": "disparu",
+        {"entity_id": "", "service": "jeux", "service_name": "Jeux vidéo",
          "problem": "unknown_label"}
     ]
     user = await _client(hass, hass_ws_client, admin=False)
@@ -388,7 +410,7 @@ async def test_config_get_set_and_catalog_parent_non_admin(
     resp = await _send(client, {"type": "parental_control/config/set", "config": got})
     assert resp["success"]
     assert entry.runtime_data.config.kid("hugo").name == "Renommé"
-    assert (await _send(client, CATALOG))["result"] == {"services": {}, "label_services": []}
+    assert (await _send(client, CATALOG))["result"] == {"services": {}}
 
 
 async def test_config_get_non_parent_gets_no_config(
