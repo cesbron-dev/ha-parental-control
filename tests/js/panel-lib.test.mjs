@@ -835,3 +835,16 @@ test("libellés des listes du panneau en anglais et en français", () => {
   assert.equal(lib.kinds(EN).find((k) => k.value === "adguard_services").short, "AdGuard client");
   assert.deepEqual(lib.kinds(EN).find((k) => k.value === "nintendo").options, ["device_id", "limit_entity", "remaining_entity", "used_entity"]);
 });
+
+// Sélecteur d'icône de HA : seul son propre `value-changed` (non propagé, d'où l'écoute en capture)
+// compte ; les événements internes retransmis (même cible après reciblage) sont ignorés.
+test("svcIconChange retient l'événement propre au sélecteur d'icône", async () => {
+  const { svcIconChange } = await import("../../custom_components/parental_control/www/panel-lib.js");
+  const picker = { dataset: { svcIcon: "youtube" } };
+  const inner = { tagName: "HA-PICKER-COMBO-BOX" };
+  const ev = (first, value, target = picker) => ({ target, detail: { value }, composedPath: () => [first, target] });
+  assert.deepEqual(svcIconChange(ev(picker, "mdi:star")), { id: "youtube", icon: "mdi:star" });
+  assert.deepEqual(svcIconChange(ev(picker, undefined)), { id: "youtube", icon: "" });
+  assert.equal(svcIconChange(ev(inner, "mdi:star")), null);
+  assert.equal(svcIconChange(ev({ dataset: {} }, "x", { dataset: {} })), null);
+});

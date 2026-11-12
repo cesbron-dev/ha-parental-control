@@ -523,6 +523,15 @@ export function setServiceIcon(cfg, id, icon) {
   else delete service.icon;
 }
 
+// `value-changed` du sélecteur d'icône de HA ({ id, icon }), ou null. Le sélecteur émet le sien sans
+// propagation (écouté en capture) et retransmet des événements internes reciblés sur lui : seul
+// celui dont il est la vraie origine compte.
+export function svcIconChange(ev) {
+  const id = ev.target?.dataset?.svcIcon;
+  if (!id || ev.composedPath()[0] !== ev.target) return null;
+  return { id, icon: ev.detail?.value ?? "" };
+}
+
 export function toggleServiceAdguard(cfg, id, adguardId) {
   const service = findService(cfg, id);
   if (service && adguardId) toggleListValue(listOf(service, "adguard"), adguardId);

@@ -80,11 +80,12 @@ class ParentalControlPanel extends HTMLElement {
         if (box) box.innerHTML = this._agResults();
       }
     });
-    // Sélecteur d'icône de Home Assistant (édition d'un service).
+    // Sélecteur d'icône de Home Assistant (édition d'un service). Son `value-changed` ne se propage
+    // pas : écouté en phase de capture.
     this.shadowRoot.addEventListener("value-changed", (ev) => {
-      const id = ev.target?.dataset?.svcIcon;
-      if (id && this._draft) this._setSvcIcon(id, ev.detail?.value ?? "");
-    });
+      const change = L.svcIconChange(ev);
+      if (change && this._draft) this._setSvcIcon(change.id, change.icon);
+    }, true);
     this._beforeUnload = (ev) => {
       if (this._dirty()) ev.preventDefault();
     };
