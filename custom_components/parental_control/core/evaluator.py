@@ -38,6 +38,7 @@ from .model import (
     SegmentType,
 )
 
+
 class KidStatus(StrEnum):
     AUTORISE = "autorise"
     BLOQUE = "bloque"
