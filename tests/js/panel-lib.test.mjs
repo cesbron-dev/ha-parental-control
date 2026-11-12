@@ -371,7 +371,7 @@ test("toggleKidService : retire/rétablit un service commun, retire un ajout pro
 test("addKidService : ajout propre, ou rétablit un service commun retiré", () => {
   const cfg = svcDraft();
   const kid = cfg.kids[0];
-  assert.equal(lib.addKidService(cfg, kid, "on_demand", "  Twitch "), "twitch");
+  assert.equal(lib.addKidService(cfg, kid, "on_demand", "  twitch "), "twitch");
   assert.deepEqual(kid.on_demand_add, ["twitch"]);
   lib.addKidService(cfg, kid, "on_demand", "twitch"); // déjà là
   assert.deepEqual(kid.on_demand_add, ["twitch"]);
@@ -381,11 +381,14 @@ test("addKidService : ajout propre, ou rétablit un service commun retiré", () 
   lib.addKidService(cfg, kid, "leisure", "youtube"); // déjà commun
   assert.deepEqual(kid.leisure_add, ["fortnite"]);
   assert.equal(lib.addKidService(cfg, kid, "leisure", "   "), null);
+  // Identifiant en majuscules (JSON collé) : gardé tel quel, sinon le moteur le dirait inconnu.
+  assert.equal(lib.addKidService(cfg, kid, "on_demand", "Jeux_PC"), "Jeux_PC");
+  assert.deepEqual(kid.on_demand_add, ["twitch", "Jeux_PC"]);
 });
 
 test("addCommonService / removeCommonService : un service n'est que dans une liste commune", () => {
   const cfg = svcDraft();
-  assert.equal(lib.addCommonService(cfg, "on_demand", "YouTube"), "youtube");
+  assert.equal(lib.addCommonService(cfg, "on_demand", "youtube"), "youtube");
   assert.deepEqual(cfg.default_on_demand, ["netflix", "youtube"]);
   assert.deepEqual(cfg.default_leisure, ["roblox"]);
   lib.addCommonService(cfg, "on_demand", "youtube"); // pas de doublon
@@ -396,6 +399,8 @@ test("addCommonService / removeCommonService : un service n'est que dans une lis
   delete old.default_on_demand;
   lib.addCommonService(old, "on_demand", "tiktok");
   assert.deepEqual(old.default_on_demand, ["tiktok"]);
+  assert.equal(lib.addCommonService(old, "on_demand", " Jeux_PC "), "Jeux_PC", "majuscules gardées");
+  assert.deepEqual(old.default_on_demand, ["tiktok", "Jeux_PC"]);
 });
 
 test("moveCommonService : passe d'une liste commune à l'autre avec les exceptions des enfants", () => {
@@ -467,7 +472,7 @@ test("addCommonService qui fait passer un service d'une liste à l'autre suit mo
   const cfg = svcDraft();
   const kid = cfg.kids[0];
   kid.on_demand_add = ["roblox"];
-  assert.equal(lib.addCommonService(cfg, "on_demand", "Roblox"), "roblox");
+  assert.equal(lib.addCommonService(cfg, "on_demand", "roblox"), "roblox");
   assert.deepEqual(cfg.default_leisure, ["youtube"]);
   assert.deepEqual(cfg.default_on_demand, ["netflix", "roblox"]);
   assert.deepEqual(kid.leisure_remove, []); // plus d'exemption périmée côté loisirs
