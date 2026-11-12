@@ -120,6 +120,11 @@ test("erreurs des actions identiques aux traductions du serveur", async () => {
       .filter(([key]) => !key.startsWith("config_"))
       .map(([key, { message }]) => [key, message]));
     assert.deepEqual(catalogue.error, server, code);
+    const config = Object.fromEntries(Object.entries(exceptions)
+      .filter(([key]) => key.startsWith("config_"))
+      .map(([key, { message }]) => [key.slice("config_".length), message]));
+    assert.equal(Object.keys(config).length, 25);
+    assert.deepEqual(catalogue.config_error, config, code);
   }
 });
 
@@ -152,4 +157,95 @@ test("repères d'heure de la frise", async () => {
   assert.deepEqual([0, 6, 12, 18, 24].map((h) => formatHour(FR, h)), ["0h", "6h", "12h", "18h", "24h"]);
   assert.deepEqual([0, 6, 12, 18, 24].map((h) => formatHour(EN, h).replace(/\s/, " ")), ["12 AM", "6 AM", "12 PM", "6 PM", "12 AM"]);
   assert.equal(formatHour({ locale: { language: "en", time_format: "24" } }, 18), "18h");
+});
+
+// Littéraux de chaîne d'un source JS, commentaires exclus. Petit lexeur : chaînes "…" et '…',
+// gabarits `…` (avec ${…} imbriqués), expressions régulières reconnues par le jeton précédent.
+function stringLiterals(src) {
+  const out = [];
+  let i = 0;
+  let prev = ""; // dernier caractère significatif hors chaîne
+  const regexAllowed = () => prev === "" || /[(,=:[!&|?{};+\-*%<>~^]/.test(prev) || /\b(return|typeof|case)$/.test(src.slice(0, i).trimEnd());
+  function readQuoted(q) {
+    let s = "";
+    i++;
+    while (i < src.length && src[i] !== q) {
+      if (src[i] === "\\") { s += src[i + 1]; i += 2; continue; }
+      s += src[i++];
+    }
+    i++;
+    return s;
+  }
+  function readTemplate() {
+    let s = "";
+    i++;
+    while (i < src.length && src[i] !== "`") {
+      if (src[i] === "\\") { s += src[i + 1]; i += 2; continue; }
+      if (src[i] === "$" && src[i + 1] === "{") {
+        i += 2;
+        let depth = 1;
+        while (i < src.length && depth > 0) {
+          const c = src[i];
+          if (c === "{") depth++;
+          else if (c === "}") depth--;
+          else if (c === "\"" || c === "'") { out.push(readQuoted(c)); continue; }
+          else if (c === "`") { out.push(readTemplate()); continue; }
+          if (depth > 0) i++;
+        }
+        i++; // }
+        continue;
+      }
+      s += src[i++];
+    }
+    i++;
+    return s;
+  }
+  while (i < src.length) {
+    const c = src[i];
+    if (c === "/" && src[i + 1] === "/") { while (i < src.length && src[i] !== "\n") i++; continue; }
+    if (c === "/" && src[i + 1] === "*") { i = src.indexOf("*/", i + 2) + 2; if (i === 1) break; continue; }
+    if (c === "\"" || c === "'") { out.push(readQuoted(c)); prev = "a"; continue; }
+    if (c === "`") { out.push(readTemplate()); prev = "a"; continue; }
+    if (c === "/" && regexAllowed()) {
+      i++;
+      let inClass = false;
+      while (i < src.length && (src[i] !== "/" || inClass)) {
+        if (src[i] === "\\") i++;
+        else if (src[i] === "[") inClass = true;
+        else if (src[i] === "]") inClass = false;
+        i++;
+      }
+      i++;
+      while (/[a-z]/.test(src[i] || "")) i++;
+      prev = "a";
+      continue;
+    }
+    if (!/\s/.test(c)) prev = c;
+    i++;
+  }
+  return out;
+}
+
+test("le lexeur ignore commentaires et expressions régulières", () => {
+  const src = "// « Ajouter »\nconst a = 'x'; /* Annuler é */ const r = /'é/g; const b = `t ${\"é\"} u`;";
+  assert.deepEqual(stringLiterals(src), ["x", "é", "t  u"]);
+});
+
+test("aucun texte français codé en dur dans www (hors i18n/fr.js)", async () => {
+  const { readFile, readdir } = await import("node:fs/promises");
+  const { join, relative } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const root = fileURLToPath(new URL("../../custom_components/parental_control/www/", import.meta.url));
+  const files = (await readdir(root, { recursive: true }))
+    .filter((f) => f.endsWith(".js") && relative(root, join(root, f)) !== join("i18n", "fr.js"));
+  const bad = /[éèêëàâçùûôîœ«»]|\b(Ajouter|Enregistrer|Annuler|Supprimer|enfant|appareil|Autoriser)/;
+  const found = [];
+  for (const f of files) {
+    for (const raw of stringLiterals(await readFile(join(root, f), "utf8"))) {
+      const lit = raw.replace(/\/\*[\s\S]*?\*\//g, ""); // commentaires CSS des gabarits
+      if (bad.test(lit)) found.push(`${f}: ${lit.trim().slice(0, 80)}`);
+    }
+  }
+  assert.ok(files.length > 10, "fichiers trouvés");
+  assert.deepEqual(found, []);
 });

@@ -1,4 +1,4 @@
-// Traduction des cartes et de l'écran « Demandes » : langue de l'utilisateur HA, catalogues en / fr,
+// Traduction des cartes, de l'écran « Demandes » et du panneau « Règles » : langue de l'utilisateur HA, catalogues en / fr,
 // heures, durées et pourcentages. Sans DOM : importable depuis Node.
 import en from "./i18n/en.js";
 import fr from "./i18n/fr.js";

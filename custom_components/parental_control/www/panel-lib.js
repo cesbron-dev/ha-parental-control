@@ -1,38 +1,70 @@
 // Logique pure du panneau « Règles » : édition en place du brouillon de configuration (même forme
 // que `parental_control/config/get`), sans DOM. Le moteur reste seul juge de la validité (config/set).
+// Les fonctions qui produisent un texte prennent `hass` (langue de l'utilisateur, anglais sans lui).
+import { t, lang } from "./i18n.js";
+
+const ucfirst = (text) => text.charAt(0).toUpperCase() + text.slice(1);
+// « 1 intégration », « 2 intégrations » : clés `<key>_one` et `<key>_other`, règle de la langue.
+const plural = (hass, key, count) => {
+  const form = new Intl.PluralRules(lang(hass)).select(count) === "one" ? "one" : "other";
+  return t(hass, `${key}_${form}`, { count });
+};
 
 export const DAY_TYPES = [
-  { value: "school", label: "École", short: "École", required: true },
-  { value: "weekend", label: "Fin de semaine", short: "Fin de semaine", required: true },
-  { value: "day_off", label: "Congé pédagogique", short: "Congé péd.", required: false },
-  { value: "holidays", label: "Vacances", short: "Vacances", required: false },
+  { value: "school", required: true },
+  { value: "weekend", required: true },
+  { value: "day_off", required: false },
+  { value: "holidays", required: false },
 ];
 export const SEGMENT_TYPES = [
-  { value: "blocked", label: "Bloqué" },
-  { value: "free", label: "Libre" },
-  { value: "after_homework", label: "Après devoirs" },
-  { value: "quota", label: "Quota" },
-  { value: "on_demand", label: "Sur demande" },
+  { value: "blocked" }, { value: "free" }, { value: "after_homework" }, { value: "quota" }, { value: "on_demand" },
 ];
-export const MODES = [
-  { value: "schedule", label: "Suit la frise" },
-  { value: "on_demand", label: "Sur demande" },
-  { value: "blocked", label: "Bloqué" },
-  { value: "free", label: "Libre" },
-];
+export const MODES = [{ value: "schedule" }, { value: "on_demand" }, { value: "blocked" }, { value: "free" }];
 export const KINDS = [
-  { value: "media_player", label: "Lecteur multimédia (télé, Google TV, Chromecast…)", options: ["entity_id"] },
-  { value: "switch", label: "Interrupteur (prise, écran de PC…)", options: ["entity_id"] },
-  { value: "adguard_services", label: "Client AdGuard", options: ["device_id"] },
-  { value: "nintendo", label: "Console Nintendo", options: ["device_id", "limit_entity", "remaining_entity", "used_entity"] },
+  { value: "media_player", options: ["entity_id"] },
+  { value: "switch", options: ["entity_id"] },
+  { value: "adguard_services", options: ["device_id"] },
+  { value: "nintendo", options: ["device_id", "limit_entity", "remaining_entity", "used_entity"] },
 ];
+
+// Listes ci-dessus avec leurs libellés dans la langue de l'utilisateur.
+export function dayTypes(hass) {
+  return DAY_TYPES.map((d) => ({ ...d, label: t(hass, `daytype.${d.value}`), short: t(hass, `panel.daytype_short.${d.value}`) }));
+}
+export function segmentTypes(hass) {
+  return SEGMENT_TYPES.map((s) => ({ ...s, label: ucfirst(t(hass, `segment.${s.value}`)) }));
+}
+export function modes(hass) {
+  return MODES.map((m) => ({ ...m, label: t(hass, `panel.mode.${m.value}`), short: t(hass, `panel.mode_short.${m.value}`) }));
+}
+export function kinds(hass) {
+  return KINDS.map((k) => ({ ...k, label: t(hass, `panel.kind.${k.value}`), short: t(hass, `panel.kind_short.${k.value}`) }));
+}
+
+// Erreur de `config/set` : `invalid_config` traduite d'après `translation_key` (`config_<code>` ->
+// `config_error.<code>`) et `translation_placeholders` (dont `path`) ; sinon le message du serveur.
+export function configErrorText(hass, err) {
+  if (err === null || err === undefined) return "";
+  if (typeof err !== "object") return String(err);
+  const key = String(err.translation_key ?? "");
+  const catalogueKey = `config_error.${key.slice("config_".length)}`;
+  if (key.startsWith("config_") && t(hass, catalogueKey) !== catalogueKey) {
+    return t(hass, catalogueKey, err.translation_placeholders ?? {});
+  }
+  return String(err.message ?? err.code ?? "");
+}
 
 // Noms lisibles des intégrations HA les plus courantes ; les autres gardent leur identifiant.
 const PLATFORM_LABELS = {
   androidtv_remote: "Android TV Remote", androidtv: "Android TV", cast: "Google Cast",
   samsungtv: "Samsung TV", smartthings: "SmartThings", webostv: "LG webOS", braviatv: "Sony Bravia",
   apple_tv: "Apple TV", roku: "Roku", shelly: "Shelly", tplink: "TP-Link", tuya: "Tuya",
-  zha: "Zigbee (ZHA)", mqtt: "MQTT", esphome: "ESPHome", hue: "Philips Hue", template: "Modèle",
+  zha: "Zigbee (ZHA)", mqtt: "MQTT", esphome: "ESPHome", hue: "Philips Hue",
+};
+const platformLabel = (hass, platform) => {
+  if (!platform) return null;
+  if (platform === "template") return t(hass, "panel.platform_template");
+  return PLATFORM_LABELS[platform] ?? platform;
 };
 
 // Entités d'un domaine (« media_player », « switch ») pour une liste de choix : libellé
@@ -51,10 +83,10 @@ export function entityChoices(hass, domain) {
       const device = entry?.device_id ? hass.devices?.[entry.device_id] : null;
       const name = hass.states[id].attributes?.friendly_name
         || device?.name_by_user || device?.name || id;
-      const platform = entry?.platform ? PLATFORM_LABELS[entry.platform] ?? entry.platform : null;
+      const platform = platformLabel(hass, entry?.platform);
       return { value: id, label: platform ? `${name} — ${platform}` : name };
     })
-    .sort((a, b) => a.label.localeCompare(b.label, "fr"));
+    .sort((a, b) => a.label.localeCompare(b.label, lang(hass)));
 }
 
 const BLOCKED_DAY = () => ({ segments: [{ start: "00:00", type: "blocked" }] });
@@ -427,8 +459,9 @@ export function serviceOptions(catalog, taken) {
 
 // État d'un interrupteur piloté dans le récapitulatif (texte brut, à échapper) : son état HA puis
 // l'état voulu ; `blocked` nul : service ni en loisir ni sur demande d'une cible (laissé tel quel).
-export function labelSwitchStatus(sw) {
-  const wanted = sw.blocked === true ? "bloqué" : sw.blocked === false ? "autorisé" : "non géré";
+export function labelSwitchStatus(sw, hass) {
+  const state = sw.blocked === true ? "blocked" : sw.blocked === false ? "allowed" : "unmanaged";
+  const wanted = t(hass, `panel.switch_state.${state}`);
   return sw.state ? `${sw.state} · ${wanted}` : wanted;
 }
 
@@ -581,21 +614,19 @@ export function commonServices(cfg) {
 }
 
 // « École · Fin de semaine » : journées ayant un profil propre.
-export function dayLabels(kid) {
-  const days = DAY_TYPES.filter((d) => kid?.profiles && d.value in kid.profiles).map((d) => d.short);
-  return days.length ? days.join(" · ") : "Aucune journée";
+export function dayLabels(kid, hass) {
+  const days = dayTypes(hass).filter((d) => kid?.profiles && d.value in kid.profiles).map((d) => d.short);
+  return days.length ? days.join(" · ") : t(hass, "panel.summary.no_day");
 }
 
-const plural = (n, word) => `${n} ${word}${n > 1 ? "s" : ""}`;
-
 // Sous-titre d'un appareil dans la liste : « 2 appareils · 5 intégrations ».
-export function resourceSummary(resource) {
-  if (!hasDevices(resource)) return "Format ancien";
-  const kinds = kindsOf(resource);
-  if (kinds.includes("nintendo")) return "Console Nintendo";
-  if (!kinds.length) return "Aucune intégration";
-  const count = plural(kinds.length, "intégration");
-  return resource.devices.length > 1 ? `${plural(resource.devices.length, "appareil")} · ${count}` : count;
+export function resourceSummary(resource, hass) {
+  if (!hasDevices(resource)) return t(hass, "panel.summary.legacy");
+  const used = kindsOf(resource);
+  if (used.includes("nintendo")) return t(hass, "panel.summary.nintendo");
+  if (!used.length) return t(hass, "panel.summary.no_integration");
+  const count = plural(hass, "panel.summary.integrations", used.length);
+  return resource.devices.length > 1 ? `${plural(hass, "panel.summary.devices", resource.devices.length)} · ${count}` : count;
 }
 
 const ENTITY_KINDS = ["media_player", "switch"];
@@ -608,8 +639,8 @@ export function integrationSummary(hass, registry, integ) {
     const id = integ.entity_id || "";
     const state = id ? hass?.states?.[id] : null;
     const entry = id ? hass?.entities?.[id] : null;
-    const platform = entry?.platform ? PLATFORM_LABELS[entry.platform] ?? entry.platform : null;
-    const detail = [platform, id || null, integ.kind === "switch" && integ.turn_on_when_allowed ? "rallumée à l'autorisation" : null]
+    const platform = platformLabel(hass, entry?.platform);
+    const detail = [platform, id || null, integ.kind === "switch" && integ.turn_on_when_allowed ? t(hass, "panel.summary.turned_on_when_allowed") : null]
       .filter(Boolean).join(" · ");
     return { title: id ? state?.attributes?.friendly_name || id : null, detail, found: !!state };
   }
@@ -637,25 +668,20 @@ export function isDirty(original, draft) {
 }
 
 // Statut d'un téléphone de demandes (`config/get` → `phones`) : pastille du panneau.
-const PHONE_BADGES = {
-  ok: { label: "Associé", tone: "ok" },
-  unbound: { label: "À associer", tone: "warn" },
-  missing: { label: "Appareil introuvable", tone: "warn" },
-  changed: { label: "Changé de compte", tone: "warn" },
-  ambiguous: { label: "Nom en double", tone: "warn" },
-};
+const PHONE_STATUSES = ["ok", "unbound", "missing", "changed", "ambiguous"];
 
-export function phoneBadge(status) {
-  return PHONE_BADGES[status] ?? { label: String(status ?? ""), tone: "warn" };
+export function phoneBadge(status, hass) {
+  if (!PHONE_STATUSES.includes(status)) return { label: String(status ?? ""), tone: "warn" };
+  return { label: t(hass, `panel.phone.${status}`), tone: status === "ok" ? "ok" : "warn" };
 }
 
 // « Réassocier » d'un téléphone de demandes : proposé seulement pour `unbound` et `changed` (pour
 // `missing` et `ambiguous`, le serveur refuserait). `current` : propriétaire actuel de l'appareil,
 // celui qui deviendra parent (à montrer, il diffère du mémorisé) ; `null` s'il est inconnu.
-export function phoneRebind(phone) {
+export function phoneRebind(phone, hass) {
   if (phone?.status !== "unbound" && phone?.status !== "changed") return null;
   const current = phone.current_name ?? null;
-  return { current, label: current ? `Réassocier à ${current}` : "Réassocier" };
+  return { current, label: current ? t(hass, "panel.phone.rebind_to", { name: current }) : t(hass, "panel.phone.rebind") };
 }
 
 // Vrai si l'utilisateur, non administrateur, n'aura plus aucun téléphone `ok` à son nom dans les
