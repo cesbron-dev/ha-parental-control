@@ -247,7 +247,7 @@ def _with_owners(config: dict, env, julie_user) -> dict:
 
 
 async def _parents_env(make_env, julie_user, moment=None, config=CONFIG, *, marc=True):
-    """Téléphones de Julie (et de Marc) enregistrés et mémorisés comme les leurs."""
+    """Téléphones de Julie (et d'Marc) enregistrés et mémorisés comme les leurs."""
     env = await make_env(moment or at(TUESDAY, 16, 30), config)
     await env.engine.set_config(parse_config(_with_owners(config, env, julie_user)))
     add_phone(env.hass, "iPhone de Julie", julie_user.id)

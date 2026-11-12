@@ -206,7 +206,7 @@ def _device_budget(resource: Resource, kid: Kid, day_type: DayType, dec: Decisio
                    today: date) -> float | None:
     """Budget d'un propriétaire sur un appareil avec lecteur.
 
-    Sans quota d'appareil pour le type de jour (décision de Marc) : quota de temps d'écran
+    Sans quota d'appareil pour le type de jour (décision d'Marc) : quota de temps d'écran
     de l'enfant (bonus de l'enfant compris) plus le bonus de l'appareil ; None si l'enfant
     n'a pas de quota. L'usage reste le compteur commun de l'appareil.
     """

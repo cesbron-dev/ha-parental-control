@@ -109,7 +109,7 @@ accepte pas).
               "entity_id": "media_player.tv_salon",
               "notify_service": null  // optionnel : "notify.xxx" pour avertir sur l'appareil
             },
-            { "kind": "adguard_services", "device_id": "1ef9511faa6db9c5969524170a8fe8e3" }
+            { "kind": "adguard_services", "device_id": "3a7f21c84be94d05a1c6e8f2b9d04c71" }
           ]
         }
       ]
@@ -122,7 +122,7 @@ accepte pas).
         {
           "name": "iPhone Hugo",
           "integrations": [
-            { "kind": "adguard_services", "device_id": "7c2a9e0b4d1f4e6a8b3c5d7e9f102132" }
+            { "kind": "adguard_services", "device_id": "8d1e5b3a7c924f06b2a4d6e8f0c13a57" }
           ]
         }
       ]
@@ -249,15 +249,15 @@ clients AdGuard, un en local et un par le VPN).
       "name": "Samsung",
       "integrations": [
         { "kind": "media_player", "entity_id": "media_player.tv_salon" },
-        { "kind": "adguard_services", "device_id": "1ef9511faa6db9c5969524170a8fe8e3" }
+        { "kind": "adguard_services", "device_id": "3a7f21c84be94d05a1c6e8f2b9d04c71" }
       ]
     },
     {
       "name": "Google TV",
       "integrations": [
         { "kind": "media_player", "entity_id": "media_player.google_tv" },
-        { "kind": "adguard_services", "device_id": "5e3b8c1d9f7a4b2e6c0d8a1f3b5e7c92" },
-        { "kind": "adguard_services", "device_id": "a4d8f6e2c0b14a39857e6d5c4b3a2918" }
+        { "kind": "adguard_services", "device_id": "9b4c2e6a8d0f4137a5c7e9b1d3f50a86" },
+        { "kind": "adguard_services", "device_id": "e07b3d9a5c1f482e86a0b4d2f6c8e135" }
       ]
     }
   ]

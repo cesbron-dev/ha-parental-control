@@ -77,7 +77,7 @@ def _tv_without_device_quota(d, others_quota: int | None = 60) -> None:
 
 
 def test_tv_without_device_quota_uses_most_generous_kid_quota(make_cfg):
-    # Décision de Marc : sans quota d'appareil pour le jour, chaque enfant apporte son
+    # Décision d'Marc : sans quota d'appareil pour le jour, chaque enfant apporte son
     # quota de temps d'écran ; la TV partagée retient le plus généreux (Hugo, 120 min).
     cfg = make_cfg(_tv_without_device_quota)
     tv = evaluate(at(10), cfg, with_usage(100), WEEKEND).resources["tv"]
