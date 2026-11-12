@@ -1,20 +1,5 @@
 // Bibliothèque partagée des cartes Contrôle parental : fonctions pures, sans DOM.
 
-const SERVICES = {
-  youtube: "YouTube",
-  tiktok: "TikTok",
-  disneyplus: "Disney+",
-  netflix: "Netflix",
-  roblox: "Roblox",
-  twitch: "Twitch",
-  snapchat: "Snapchat",
-  instagram: "Instagram",
-  discord: "Discord",
-  fortnite: "Fortnite",
-  reddit: "Reddit",
-  facebook: "Facebook",
-};
-
 const pad = (n) => String(n).padStart(2, "0");
 
 // Heure locale « HH:MM » d'une date ISO.
@@ -36,15 +21,26 @@ export function fmtDuration(minutes) {
   return `${Math.floor(total / 60)}h ${pad(total % 60)}m`;
 }
 
-// Préfixe des services par label (`label:<label_id>`), comme `LABEL_PREFIX` côté moteur.
-const LABEL_PREFIX = "label:";
-
-// `names` : noms des services par label (`state.service_names`), absents de SERVICES.
-export function serviceLabel(id, names = null) {
-  if (names?.[id]) return names[id];
-  if (SERVICES[id]) return SERVICES[id];
+// `services` : services du parent (`state.services`, `{id: {name, icon, adguard, labels}}`).
+// Id inconnu : l'identifiant capitalisé.
+export function serviceLabel(id, services = null) {
+  const name = services?.[id]?.name;
+  if (name) return name;
   const s = String(id ?? "");
   return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Icône MDI d'un service du parent, ou null.
+export function serviceIcon(id, services = null) {
+  return services?.[id]?.icon ?? null;
+}
+
+// Un service est-il montré sur un appareil ? Oui s'il concerne AdGuard et que l'appareil est un
+// appareil AdGuard, ou si l'appareil est la cible d'un interrupteur de ses labels (`label_services`).
+export function serviceShownOnResource(state, resource, service) {
+  const adguard = (resource?.kinds ?? [resource?.kind]).includes("adguard_services");
+  return (adguard && !!state?.services?.[service]?.adguard)
+    || (resource?.label_services ?? []).includes(service);
 }
 
 // Le compte non admin doit saisir le code parent pour ouvrir (open, bonus, devoirs, minuteur),
@@ -160,7 +156,7 @@ export function exceptionsForResource(state, resourceId) {
     const scope = scopeOf(t);
     out.push({
       id: e.id,
-      label: t.service ? serviceLabel(t.service, state.service_names) : "Tout l'appareil",
+      label: t.service ? serviceLabel(t.service, state.services) : "Tout l'appareil",
       service: t.service ?? null,
       scope,
       kid: scope === "kid" ? (state.kids?.[t.kid_id]?.name ?? t.kid_id) : null,
@@ -240,22 +236,20 @@ export function resourceView(state, resourceId) {
 }
 
 // Services sur demande affichés sur la carte d'un appareil, avec leur état actuel (débloqué ou
-// non, d'après `blocked_services` du moteur) ; un appareil sans AdGuard n'a que ses services par label
-// (`label_services`). `only` (liste
+// non, d'après `blocked_services` du moteur) ; un service n'est montré que s'il concerne AdGuard
+// (appareil AdGuard) ou vise l'appareil par ses labels (`label_services`). `only` (liste
 // d'ids, config de la carte) restreint et ordonne l'affichage. `exceptions` : ids des exceptions
 // de ce service posées sur cet appareil (à remplacer lors d'une bascule, pour ne pas les empiler).
 export function serviceToggles(state, resourceId, only = null) {
   const r = state?.resources?.[resourceId];
   if (!r) return [];
-  const adguard = (r.kinds ?? [r.kind]).includes("adguard_services");
-  const labelled = r.label_services ?? [];
-  const onDemand = (r.on_demand ?? []).filter((s) => adguard || labelled.includes(s));
+  const onDemand = (r.on_demand ?? []).filter((s) => serviceShownOnResource(state, r, s));
   if (!onDemand.length) return [];
   const ids = Array.isArray(only) && only.length ? only.filter((s) => onDemand.includes(s)) : onDemand;
   const blocked = new Set(r.blocked_services ?? []);
   return ids.map((service) => ({
     service,
-    label: serviceLabel(service, state.service_names),
+    label: serviceLabel(service, state.services),
     open: !blocked.has(service),
     exceptions: (state.exceptions ?? [])
       .filter((e) => e.target?.resource_id === resourceId && e.target?.service === service)
@@ -268,19 +262,17 @@ export function serviceToggles(state, resourceId, only = null) {
 
 // Choix du dialogue « Autoriser… » d'un appareil : l'appareil entier, puis ses services (sur
 // demande d'abord : ils ne s'ouvrent que par une autorisation, puis loisirs). Même filtre que
-// `serviceToggles` : un appareil AdGuard propose tous ses services, les services par label ne
-// sont proposés que s'ils visent l'appareil (`label_services`), avec ou sans AdGuard.
+// `serviceToggles` : un service concernant AdGuard est proposé sur un appareil AdGuard, un service
+// à labels seulement si l'appareil est la cible d'un de ses interrupteurs (`label_services`).
 export function allowChoices(state, resourceId) {
   const choices = [{ value: null, label: "Tout l'appareil" }];
   const r = state?.resources?.[resourceId];
   if (!r) return choices;
-  const adguard = (r.kinds ?? [r.kind]).includes("adguard_services");
-  const labelled = r.label_services ?? [];
-  const shown = (s) => adguard ? !String(s).startsWith(LABEL_PREFIX) || labelled.includes(s) : labelled.includes(s);
+  const shown = (s) => serviceShownOnResource(state, r, s);
   const onDemand = (r.on_demand ?? []).filter(shown);
-  for (const s of onDemand) choices.push({ value: s, label: `${serviceLabel(s, state.service_names)} (sur demande)` });
+  for (const s of onDemand) choices.push({ value: s, label: `${serviceLabel(s, state.services)} (sur demande)` });
   for (const s of (r.leisure ?? []).filter(shown)) {
-    if (!onDemand.includes(s)) choices.push({ value: s, label: serviceLabel(s, state.service_names) });
+    if (!onDemand.includes(s)) choices.push({ value: s, label: serviceLabel(s, state.services) });
   }
   return choices;
 }
@@ -307,6 +299,7 @@ export function kidServiceToggles(state, kidId, only = null) {
   const holders = new Map(); // service -> appareils qui le gèrent sur demande
   for (const id of resources) {
     for (const s of state.resources[id].on_demand ?? []) {
+      if (!state.services?.[s]?.adguard) continue;
       if (!holders.has(s)) holders.set(s, []);
       holders.get(s).push(id);
     }
@@ -322,10 +315,10 @@ export function kidServiceToggles(state, kidId, only = null) {
     const openOnDevices = (holders.get(service) ?? [])
       .every((id) => !(state.resources[id].blocked_services ?? []).includes(service));
     const blockedForKid = labelled.get(service) === true;
-    const devices = String(service).startsWith(LABEL_PREFIX) ? owned : resources;
+    const devices = state.services?.[service]?.labels ? owned : resources;
     return {
       service,
-      label: serviceLabel(service, state.service_names),
+      label: serviceLabel(service, state.services),
       open: openOnDevices && !blockedForKid,
       exceptions: (state.exceptions ?? [])
         .filter((e) => e.target?.service === service
@@ -350,7 +343,7 @@ export function kidExceptions(state, kidId) {
     // Où : l'appareil, tous ceux de l'enfant, ou tous (formatPill ajoute alors « tout le monde »).
     const where = resource ? (resource.name || t.resource_id) : t.kid_id ? "tous ses appareils" : "";
     const label = t.service
-      ? [serviceLabel(t.service, state.service_names), where].filter(Boolean).join(" · ")
+      ? [serviceLabel(t.service, state.services), where].filter(Boolean).join(" · ")
       : where ? where.charAt(0).toUpperCase() + where.slice(1) : "Tous les appareils";
     out.push({
       id: e.id, label, service: t.service ?? null,

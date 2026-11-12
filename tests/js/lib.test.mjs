@@ -14,6 +14,7 @@ const {
   timelineGeometry,
   needsCode,
   serviceLabel,
+  serviceIcon,
   esc,
   reasonLine,
   stateBadge,
@@ -41,7 +42,14 @@ const {
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
 
+// Services du parent (`state.services`) : AdGuard seuls, à labels seuls ou mixtes.
+const AG = (name) => ({ name, icon: null, adguard: true, labels: false });
+const SERVICES = {
+  youtube: AG("YouTube"), netflix: AG("Netflix"), tiktok: AG("TikTok"), roblox: AG("Roblox"),
+};
+
 const state = (exceptions = []) => ({
+  services: SERVICES,
   kids: { gabin: { name: "Gabin" }, lea: { name: "Léa" } },
   resources: {
     tv: { name: "TV", kind: "media_player", owners: ["gabin"], open: false, reason: "Bloqué", until: null,
@@ -69,9 +77,13 @@ test("fmtDuration", () => {
 });
 
 test("serviceLabel", () => {
-  assert.equal(serviceLabel("disneyplus"), "Disney+");
-  assert.equal(serviceLabel("youtube"), "YouTube");
+  const services = { jeux: { name: "Jeux vidéo", icon: "mdi:gamepad", adguard: true, labels: true } };
+  assert.equal(serviceLabel("jeux", services), "Jeux vidéo");
+  assert.equal(serviceLabel("minecraft", services), "Minecraft"); // inconnu : capitalisé
   assert.equal(serviceLabel("minecraft"), "Minecraft");
+  assert.equal(serviceIcon("jeux", services), "mdi:gamepad");
+  assert.equal(serviceIcon("minecraft", services), null);
+  assert.equal(serviceIcon("jeux"), null);
 });
 
 test("needsCode", () => {
@@ -390,6 +402,7 @@ test("resourceView exposes on-demand services", () => {
 test("serviceToggles: on-demand services only, state from blocked_services, own exceptions", async () => {
   const { serviceToggles } = await import("../../custom_components/parental_control/www/lib.js");
   const state = {
+    services: SERVICES,
     resources: {
       tv: { kinds: ["adguard_services", "media_player"], owners: ["leo"], on_demand: ["youtube", "netflix", "tiktok"], leisure: ["roblox"], blocked_services: ["youtube", "tiktok", "roblox"] },
       ps: { kinds: ["media_player"], leisure: ["netflix"] },
@@ -417,6 +430,7 @@ test("serviceToggles: on-demand services only, state from blocked_services, own 
 test("kid card: services over the kid's AdGuard devices, its exceptions, homework and timer", async () => {
   const { kidServiceToggles, kidExceptions, kidView, needsCode } = await import("../../custom_components/parental_control/www/lib.js");
   const state = {
+    services: SERVICES,
     kids: {
       mael: { name: "Maël", segment: "apres_devoirs", status: "attente_devoirs", remaining_minutes: null, timer_end: null },
       leo: { name: "Léo", segment: "quota", status: "attente_minuteur", remaining_minutes: 40, timer_end: null },
@@ -564,48 +578,71 @@ test("needsCode / canRequest : un parent non admin n'a ni code ni « Demander »
   assert.equal(canRequest(user, { requests_enabled: true }, false), true);
 });
 
+const MIXED = {
+  internet: { name: "Internet", icon: null, adguard: false, labels: true },
+  jeux: { name: "Jeux vidéo", icon: "mdi:gamepad", adguard: true, labels: true },
+  youtube: AG("YouTube"), netflix: AG("Netflix"), tiktok: AG("TikTok"),
+};
+
 test("serviceToggles shows label service on non-AdGuard device", async () => {
   const { serviceToggles } = await import("../../custom_components/parental_control/www/lib.js");
   const state = {
-    service_names: { "label:internet": "Internet" },
+    services: MIXED,
     resources: {
-      tablette: { kinds: ["media_player"], owners: ["mael"], on_demand: ["label:internet", "netflix"], label_services: ["label:internet"], blocked_services: ["label:internet"] },
+      tablette: { kinds: ["media_player"], owners: ["mael"], on_demand: ["internet", "netflix"], label_services: ["internet"], blocked_services: ["internet"] },
     },
     exceptions: [],
   };
   const t = serviceToggles(state, "tablette");
-  assert.deepEqual(t.map((x) => [x.service, x.label, x.open]), [["label:internet", "Internet", false]]);
+  assert.deepEqual(t.map((x) => [x.service, x.label, x.open]), [["internet", "Internet", false]]);
+});
+
+test("serviceToggles: service mixte sur appareil AdGuard, service à labels seuls non ciblé masqué", async () => {
+  const { serviceToggles } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    services: MIXED,
+    resources: {
+      ipad: { kinds: ["adguard_services"], owners: ["mael"], on_demand: ["jeux", "internet", "youtube"], label_services: [], blocked_services: [] },
+    },
+    exceptions: [],
+  };
+  assert.deepEqual(serviceToggles(state, "ipad").map((x) => x.service), ["jeux", "youtube"]);
+  // Service mixte ciblé par un interrupteur de l'appareil, sans AdGuard : montré aussi.
+  state.resources.ipad.kinds = ["media_player"];
+  state.resources.ipad.label_services = ["jeux"];
+  assert.deepEqual(serviceToggles(state, "ipad").map((x) => x.service), ["jeux"]);
 });
 
 test("kidServiceToggles includes kid-targeted label service", async () => {
   const { kidServiceToggles } = await import("../../custom_components/parental_control/www/lib.js");
   const state = {
-    service_names: { "label:tablette": "Tablette de Maël" },
-    kids: { mael: { on_demand: ["label:tablette", "label:autre"], label_services: [{ service: "label:tablette", blocked: true }] } },
+    services: { ...MIXED, tablette: { name: "Tablette de Maël", icon: null, adguard: false, labels: true } },
+    kids: { mael: { on_demand: ["tablette", "autre"], label_services: [{ service: "tablette", blocked: true }] } },
     resources: { tv: { owners: ["mael"], kinds: ["adguard_services"], on_demand: ["youtube"], blocked_services: [] } },
     exceptions: [],
   };
   assert.deepEqual(kidServiceToggles(state, "mael").map((x) => [x.service, x.label, x.open]), [
     ["youtube", "YouTube", true],
-    ["label:tablette", "Tablette de Maël", false],
+    ["tablette", "Tablette de Maël", false],
   ]);
   state.kids.mael.label_services[0].blocked = false;
-  assert.equal(kidServiceToggles(state, "mael").find((x) => x.service === "label:tablette").open, true);
-  assert.deepEqual(kidServiceToggles(state, "mael", ["label:tablette"]).map((x) => x.service), ["label:tablette"]);
+  assert.equal(kidServiceToggles(state, "mael").find((x) => x.service === "tablette").open, true);
+  assert.deepEqual(kidServiceToggles(state, "mael", ["tablette"]).map((x) => x.service), ["tablette"]);
 });
 
-test("kidServiceToggles: label service exceptions include non-AdGuard devices of the kid", async () => {
+test("kidServiceToggles: service à labels -> exceptions de tous les appareils de l'enfant", async () => {
   const { kidServiceToggles } = await import("../../custom_components/parental_control/www/lib.js");
   const state = {
-    kids: { mael: { on_demand: ["label:tablette"], label_services: [{ service: "label:tablette", blocked: false }] } },
+    services: { tablette: { name: "Tablette", icon: null, adguard: false, labels: true } },
+    kids: { mael: { on_demand: ["tablette"], label_services: [{ service: "tablette", blocked: false }] } },
     resources: {
-      tablette: { owners: ["mael"], kinds: ["media_player"], on_demand: ["label:tablette"], label_services: ["label:tablette"], blocked_services: [] },
+      tablette: { owners: ["mael"], kinds: ["media_player"], on_demand: ["tablette"], label_services: ["tablette"], blocked_services: [] },
       tv_leo: { owners: ["leo"], kinds: ["media_player"], on_demand: [], blocked_services: [] },
     },
     exceptions: [
-      { id: "a", open: true, target: { resource_id: "tablette", service: "label:tablette" } },
-      { id: "b", open: true, target: { kid_id: "mael", service: "label:tablette" } },
-      { id: "c", open: true, target: { resource_id: "tv_leo", service: "label:tablette" } },
+      { id: "a", open: true, target: { resource_id: "tablette", service: "tablette" } },
+      { id: "b", open: true, target: { kid_id: "mael", service: "tablette" } },
+      { id: "c", open: true, target: { resource_id: "tv_leo", service: "tablette" } },
     ],
   };
   const [t] = kidServiceToggles(state, "mael");
@@ -613,19 +650,33 @@ test("kidServiceToggles: label service exceptions include non-AdGuard devices of
   assert.deepEqual(t.exceptions, ["a", "b"]);
 });
 
-test("allowChoices: AdGuard services, label services of the device, names from state", async () => {
+test("kidServiceToggles: service mixte -> exceptions de tous les appareils de l'enfant", async () => {
+  const { kidServiceToggles } = await import("../../custom_components/parental_control/www/lib.js");
+  const state = {
+    services: MIXED,
+    kids: { mael: { on_demand: ["jeux"], label_services: [{ service: "jeux", blocked: false }] } },
+    resources: {
+      ipad: { owners: ["mael"], kinds: ["adguard_services"], on_demand: ["jeux"], blocked_services: [] },
+      console: { owners: ["mael"], kinds: ["media_player"], on_demand: ["jeux"], label_services: ["jeux"], blocked_services: [] },
+    },
+    exceptions: [{ id: "x", open: true, target: { resource_id: "console", service: "jeux" } }],
+  };
+  assert.deepEqual(kidServiceToggles(state, "mael")[0].exceptions, ["x"]);
+});
+
+test("allowChoices: services AdGuard, services à labels de l'appareil, noms de state.services", async () => {
   const { allowChoices } = await import("../../custom_components/parental_control/www/lib.js");
   const state = {
-    service_names: { "label:internet": "Internet" },
+    services: { ...MIXED, tiktok: AG("TikTok") },
     resources: {
-      tablette: { kinds: ["media_player"], on_demand: ["label:internet", "netflix"], leisure: ["youtube", "label:jeux"], label_services: ["label:internet"] },
-      ipad: { kinds: ["adguard_services"], on_demand: ["tiktok", "label:internet"], leisure: ["youtube", "tiktok"], label_services: [] },
+      tablette: { kinds: ["media_player"], on_demand: ["internet", "netflix"], leisure: ["youtube", "jeux"], label_services: ["internet"] },
+      ipad: { kinds: ["adguard_services"], on_demand: ["tiktok", "internet"], leisure: ["youtube", "tiktok"], label_services: [] },
       tv: { kinds: ["media_player"], on_demand: [], leisure: [] },
     },
   };
   assert.deepEqual(allowChoices(state, "tablette"), [
     { value: null, label: "Tout l'appareil" },
-    { value: "label:internet", label: "Internet (sur demande)" },
+    { value: "internet", label: "Internet (sur demande)" },
   ]);
   assert.deepEqual(allowChoices(state, "ipad").map((c) => c.value), [null, "tiktok", "youtube"]);
   assert.deepEqual(allowChoices(state, "tv"), [{ value: null, label: "Tout l'appareil" }]);
