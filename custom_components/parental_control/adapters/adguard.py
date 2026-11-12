@@ -7,7 +7,7 @@ Lecture : attribut `services` du capteur « Services bloqués » de l'appareil.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
@@ -16,10 +16,6 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import entity_registry as er
 
 from ..core.evaluator import ResourceState
-
-
-def is_label_service(service: str) -> bool:  # TEMP (tâche 1), retiré à la tâche 3
-    return service.startswith("label:")
 
 
 from .base import ha_started
@@ -34,7 +30,9 @@ _SENSOR_SUFFIX = "_blocked_services"
 class AdGuardAdapter:
     """Gère `loisirs ∪ services bloqués voulus ∪ services hors loisirs qu'il a bloqués`.
 
-    Les autres services du client ne sont jamais touchés.
+    Les services de l'état voulu sont ceux du parent ; `adguard_ids` les traduit en
+    identifiants AdGuard (union, un identifiant partagé est bloqué dès qu'un service géré
+    qui le contient l'est). Les autres services du client ne sont jamais touchés.
     """
 
     def __init__(
@@ -43,12 +41,16 @@ class AdGuardAdapter:
         label: str,
         options: Mapping[str, Any],
         leisure: frozenset[str],
+        adguard_ids: Callable[[Iterable[str]], frozenset[str]],
     ) -> None:
         self.hass = hass
         self.label = label  # nom de l'appareil physique
         self._device_id: str = options["device_id"]
-        # Les services par label (interrupteurs) ne concernent pas AdGuard.
-        self._leisure = frozenset(s for s in leisure if not is_label_service(s))
+        self._adguard_ids = adguard_ids
+        # Services du parent gérés (loisirs, sur demande) et leur traduction AdGuard ; un
+        # service sans identifiant AdGuard (interrupteurs seuls, vide) ne donne rien.
+        self._managed = leisure
+        self._leisure = adguard_ids(leisure)
         self._sensor: str | None = None
         self._missing_logged = False
         self._global_logged = False
@@ -111,9 +113,9 @@ class AdGuardAdapter:
         current = self._blocked_now()
         return current is not None and not self._wanted(desired) <= current
 
-    @staticmethod
-    def _wanted(desired: ResourceState) -> frozenset[str]:
-        return frozenset(s for s in desired.blocked_services if not is_label_service(s))
+    def _wanted(self, desired: ResourceState) -> frozenset[str]:
+        """Identifiants AdGuard à bloquer, traduits des services du parent."""
+        return self._adguard_ids(desired.blocked_services)
 
     def _plan(
         self, desired: ResourceState
@@ -182,14 +184,15 @@ class AdGuardAdapter:
         raise NotImplementedError
 
     def pause_state(self) -> ResourceState:
-        """État fermé de la pause (aussi décrit en simulation)."""
+        """État fermé de la pause (aussi décrit en simulation) ; services du parent, traduits par
+        `apply` comme tout état voulu."""
         return ResourceState(
             open=False,
             reason="pause",
             until=None,
             used_minutes=None,
             remaining_minutes=None,
-            blocked_services=self._leisure,
+            blocked_services=self._managed,
         )
 
     async def force_close(self) -> None:

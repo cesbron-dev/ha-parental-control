@@ -1,7 +1,7 @@
 """État voulu d'un interrupteur labellisé (pur).
 
-Un interrupteur HA porte un label de service (`label:...`) et un ou plusieurs labels de cible
-(enfant ou appareil logique). `switch_blocked` dit s'il doit être bloqué.
+Un interrupteur HA porte un label rattaché à un service du parent et un ou plusieurs
+labels de cible (enfant ou appareil logique). `switch_blocked` dit s'il doit être bloqué.
 """
 
 from __future__ import annotations

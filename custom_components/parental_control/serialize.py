@@ -88,9 +88,11 @@ def _add_display(engine: ParentalEngine, state: dict[str, Any]) -> None:
             del state[kind][stale]
     # Interrupteurs labellisés déjà découverts par le moteur : jamais redécouverts ici.
     switches = engine.label_switches
-    # Noms de tous les services par label déclarés, avec ou sans interrupteur.
-    state["service_names"] = {ls.service: engine.label_service_name(ls.service)
-                              for ls in cfg.label_services}
+    # Services du parent, dans l'ordre de la config : les cartes y lisent noms et icônes.
+    state["services"] = {
+        s.id: {"name": s.name, "icon": s.icon, "adguard": s.has_adguard, "labels": s.has_labels}
+        for s in cfg.services
+    }
     for kid_id, data in state["kids"].items():
         kid = cfg.kid(kid_id)
         data |= {
