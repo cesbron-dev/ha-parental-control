@@ -119,11 +119,11 @@ The JSON is a single document (remove the `//` comments below, JSON does not all
     },
     {
       "id": "iphone_hugo",
-      "name": "iPhone Hugo",
+      "name": "Hugo's iPhone",
       "owners": ["hugo"],
       "devices": [
         {
-          "name": "iPhone Hugo",
+          "name": "Hugo's iPhone",
           "integrations": [
             { "kind": "adguard_services", "device_id": "8d1e5b3a7c924f06b2a4d6e8f0c13a57" }
           ]
