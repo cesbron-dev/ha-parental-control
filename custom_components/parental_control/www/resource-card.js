@@ -165,7 +165,7 @@ class ParentalResourceCard extends StateCard {
       const action = `svc:${t.service}`;
       return `<div class="pill ${t.open ? "vert" : "svc-off"}" data-action="${esc(action)}" role="switch" aria-checked="${t.open}"
         title="${esc(t.open ? `${t.label} débloqué : toucher pour bloquer` : `${t.label} bloqué : toucher pour autoriser`)}">`
-        + `<ha-icon icon="${esc(t.icon ?? (t.open ? "mdi:check-circle" : "mdi:cancel"))}"></ha-icon>${esc(t.label)}`
+        + `<ha-icon icon="${t.open ? "mdi:check-circle" : "mdi:cancel"}"></ha-icon>${esc(t.label)}`
         + `${!t.open && lock ? '<ha-icon class="lock" icon="mdi:lock"></ha-icon>' : ""}</div>`;
     });
     return `<div class="svcs"><div class="label muted">Services sur demande</div><div class="pills">${pills.join("")}</div></div>`;
