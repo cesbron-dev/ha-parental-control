@@ -1,7 +1,7 @@
 // Carte appareil `parental-resource-card` : état d'une ressource du moteur, autorisations en cours,
 // « Autoriser… », « Arrêter » ou, pour une Switch, pilules bonus.
 import {
-  esc, needsCode, resourceView, exceptionsForResource, formatPill, serviceLabel,
+  esc, needsCode, resourceView, exceptionsForResource, formatPill, allowChoices,
   reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge, serviceToggles,
   canRequest, findRequest, ownerChoices,
 } from "./lib.js";
@@ -203,14 +203,7 @@ class ParentalResourceCard extends StateCard {
   _openAllow() {
     const v = this._view();
     const resource_id = this._config.resource;
-    const choices = [{ value: null, label: "Tout l'appareil" }];
-    if (v.kinds.includes("adguard_services")) {
-      // Services sur demande en premier : ils ne s'ouvrent que par une autorisation.
-      for (const s of v.onDemand) choices.push({ value: s, label: `${serviceLabel(s)} (sur demande)` });
-      for (const s of v.leisure) {
-        if (!v.onDemand.includes(s)) choices.push({ value: s, label: serviceLabel(s) });
-      }
-    }
+    const choices = allowChoices(this._state, resource_id);
     openActionDialog(this.shadowRoot, {
       title: `Autoriser · ${this._config.name || v.name || resource_id}`,
       choices,

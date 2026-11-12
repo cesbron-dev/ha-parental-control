@@ -575,6 +575,7 @@ async def test_exception_with_duration_and_cancel(hass, freezer, services) -> No
         (Target(kid_id="inconnu"), "unknown_kid"),
         (Target(resource_id="inconnue"), "unknown_resource"),
         (Target(resource_id="tv", service="youtube"), "invalid_target"),
+        (Target(resource_id="iphone_hugo", service="inconnu"), "invalid_target"),
         (Target(kid_id="hugo"), "invalid_target"),
         (Target(), "invalid_target"),
     ],
@@ -587,6 +588,12 @@ async def test_add_exception_rejects_invalid_target(
         await engine.add_exception(target, True, 10)
     assert err.value.translation_key == key
     assert engine.decisions.exceptions == []
+
+
+async def test_service_name_falls_back_to_id(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    assert engine.service_name("youtube") == "YouTube"  # nom de la config d'exemple
+    assert engine.service_name("inconnu") == "inconnu"
 
 
 async def test_set_config_rebuilds_adapters(hass, freezer, services, hass_storage) -> None:
@@ -682,12 +689,30 @@ async def test_warning_before_service_exception_ends(hass, freezer, services) ->
     assert [e for e in events if e.data["target"] == key] == []
     await tick(hass, freezer)  # 19:55
     warned = [e.data for e in events if e.data["target"] == key]
-    message = "youtube sur iPhone Hugo : coupure dans 5 min"
+    message = "YouTube sur iPhone Hugo : coupure dans 5 min"
     assert warned == [{"target": key, "closes_at": at(TUESDAY, 20, 0).isoformat(),
                        "message": message}]
     assert [c.data for c in services.of("notify", NOTIFY)] == [
         {"title": "Contrôle parental", "message": message}
     ]
+
+
+async def test_service_warning_uses_parent_service_name(hass, freezer, services) -> None:
+    config = config_for(services)
+    config["services"].append({"id": "jeux_video", "name": "Jeux vidéo", "adguard": ["roblox"]})
+    config["default_leisure"].append("jeux_video")
+    await ParentalStore(hass).save_config(parse_config(config))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": "x"})
+    entry.add_to_hass(hass)
+    events = async_capture_events(hass, EVENT_WARNING)
+    _, engine = await setup(hass, freezer, at(TUESDAY, 19, 30), entry)
+    await engine.add_exception(
+        Target(resource_id="iphone_hugo", service="jeux_video"), True, 30
+    )
+    await tick(hass, freezer, 25)  # 19:55
+    key = "service:iphone_hugo:jeux_video"
+    messages = [e.data["message"] for e in events if e.data["target"] == key]
+    assert messages == ["Jeux vidéo sur iPhone Hugo : coupure dans 5 min"]
 
 
 async def test_add_exception_rejects_nintendo(hass, freezer, services) -> None:

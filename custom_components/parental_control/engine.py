@@ -31,7 +31,10 @@ from homeassistant.core import (
     HomeAssistant,
     callback,
 )
+from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.exceptions import ServiceValidationError
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import (
     async_track_state_change_event,
@@ -44,12 +47,19 @@ from homeassistant.util import dt as dt_util
 from .adapters import build_adapter
 from .adapters.simulation import SimulatedAdapter
 from .calendar_source import fetch_all_day_events
-from .catalog import services_catalog
 from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TICK_SECONDS
 from .core.daytype import AllDayEvent, day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
-from .core.model import Config, DayType, Kid, Resource, ResourceKind, SegmentType
+from .core.label_services import switch_blocked
+from .core.model import (
+    Config,
+    DayType,
+    Kid,
+    Resource,
+    ResourceKind,
+    SegmentType,
+)
 from .core.requests import (
     RequestBook,
     RequestError,
@@ -59,6 +69,7 @@ from .core.requests import (
     action_choices,
     duration_label,
 )
+from .label_switches import LabelSwitch, LabelSwitchIssue, discover
 from .store import INVALID_CONFIG_NOTIFICATION, ParentalStore
 
 _LOGGER = logging.getLogger(__name__)
@@ -149,6 +160,15 @@ class ParentalEngine:
         self._events: dict[str, tuple[date, list[AllDayEvent]]] = {}
         # Dernier envoi de commande par ressource (anti-rafale des corrections de dérive).
         self._sent_at: dict[str, datetime] = {}
+        # Interrupteurs labellisés : découverte, état voulu appliqué (allumé ?), bloqué ou non
+        # au dernier passage, problèmes et avertissements déjà journalisés.
+        self._label_switches: list[LabelSwitch] = []
+        self._label_issues: list[LabelSwitchIssue] = []
+        self._label_applied: dict[str, bool] = {}
+        self._label_blocked: dict[str, bool | None] = {}
+        self._label_reported: set[tuple[str, str, str]] = set()
+        self._label_unavailable: set[str] = set()
+        self._label_state_unsub: CALLBACK_TYPE | None = None
         self._last_eval: datetime | None = None
         self._requests = RequestBook()
         self._lock = asyncio.Lock()
@@ -188,6 +208,48 @@ class ParentalEngine:
     def closures(self) -> dict[str, datetime]:
         return self._closures
 
+    @property
+    def label_switches(self) -> list[dict[str, Any]]:
+        """Interrupteurs labellisés pilotés, pour l'interface des parents."""
+        result = []
+        for ls in self._label_switches:
+            state = self._hass.states.get(ls.entity_id)
+            result.append({
+                "entity_id": ls.entity_id,
+                "name": self._switch_name(ls.entity_id),
+                "service": ls.service,
+                "service_name": self.service_name(ls.service),
+                "targets": [{"kind": kind, "id": ident} for kind, ident in ls.targets],
+                "blocked": self._label_blocked.get(ls.entity_id),
+                "state": None if state is None else state.state,
+            })
+        return result
+
+    @property
+    def label_issues(self) -> list[dict[str, str]]:
+        """Interrupteurs labellisés ignorés, avec la raison."""
+        return [
+            {
+                "entity_id": i.entity_id,
+                "service": i.service,
+                "service_name": self.service_name(i.service),
+                "problem": i.problem,
+            }
+            for i in self._label_issues
+        ]
+
+    def service_name(self, service_id: str) -> str:
+        """Nom d'un service du parent, à défaut son identifiant."""
+        service = self._config.service(service_id) if self._config is not None else None
+        return service.name if service is not None else service_id
+
+    def _switch_name(self, entity_id: str) -> str:
+        state = self._hass.states.get(entity_id)
+        if state is not None and state.name:
+            return state.name
+        entry = er.async_get(self._hass).async_get(entity_id)
+        return (entry.name or entry.original_name if entry is not None else None) or entity_id
+
     # ------------------------------------------------------------------ cycle de vie
 
     async def async_start(self) -> None:
@@ -217,6 +279,14 @@ class ParentalEngine:
                 self._hass, self._on_calendar_time, hour=0, minute=0, second=5
             ),
             async_track_time_interval(self._hass, self._on_calendar_time, CALENDAR_REFRESH),
+            self._hass.bus.async_listen(
+                er.EVENT_ENTITY_REGISTRY_UPDATED,
+                self._on_registry_change,
+                event_filter=self._entity_registry_filter,
+            ),
+            self._hass.bus.async_listen(
+                lr.EVENT_LABEL_REGISTRY_UPDATED, self._on_registry_change
+            ),
         ]
         if self._hass.state is not CoreState.running:
             # Au démarrage de HA, les calendriers ne sont pas toujours encore chargés.
@@ -233,6 +303,7 @@ class ParentalEngine:
             unsub()
         self._unsubs = []
         self._cancel_state_listener()
+        self._cancel_label_listener()
         async with self._lock:
             await self._store.flush_state(self._decisions)
 
@@ -251,6 +322,11 @@ class ParentalEngine:
             self._state_unsub()
             self._state_unsub = None
 
+    def _cancel_label_listener(self) -> None:
+        if self._label_state_unsub is not None:
+            self._label_state_unsub()
+            self._label_state_unsub = None
+
     def _build(self) -> None:
         """(Re)construit les adaptateurs et l'écoute des entités pilotées."""
         self._cancel_state_listener()
@@ -258,14 +334,19 @@ class ParentalEngine:
         self._applied = {}
         self._sent_at = {}
         self._entity_owners = {}
+        self._label_applied = {}
         cfg = self._config
+        self._discover_labels()
         if cfg is None:
             return
         for resource in cfg.resources:
             try:
                 self._adapters[resource.id] = SimulatedAdapter(
                     build_adapter(
-                        self._hass, resource, cfg.managed_services_for_resource(resource.id)
+                        self._hass,
+                        resource,
+                        cfg.managed_services_for_resource(resource.id),
+                        cfg.adguard_ids,
                     ),
                     lambda: self._decisions.simulation,
                     self._record_simulation,
@@ -280,6 +361,67 @@ class ParentalEngine:
             self._state_unsub = async_track_state_change_event(
                 self._hass, entity_ids, self._on_state_change
             )
+
+    def _discover_labels(self) -> None:
+        """Redécouvre les interrupteurs labellisés et leur écoute (adaptateurs intacts)."""
+        self._cancel_label_listener()
+        previous = {ls.entity_id for ls in self._label_switches}
+        cfg = self._config
+        if cfg is None:
+            self._label_switches, self._label_issues = [], []
+        else:
+            self._label_switches, self._label_issues = discover(self._hass, cfg)
+        entity_ids = {ls.entity_id for ls in self._label_switches}
+        self._label_applied = {k: v for k, v in self._label_applied.items() if k in entity_ids}
+        self._label_blocked = {k: v for k, v in self._label_blocked.items() if k in entity_ids}
+        self._label_unavailable &= entity_ids
+        for gone in previous - entity_ids:
+            self._sent_at.pop(gone, None)
+        # Une seule journalisation par problème, tant qu'il persiste.
+        current = {(i.entity_id, i.service, i.problem) for i in self._label_issues}
+        self._label_reported &= current
+        for issue in self._label_issues:
+            key = (issue.entity_id, issue.service, issue.problem)
+            if key in self._label_reported:
+                continue
+            self._label_reported.add(key)
+            _LOGGER.warning(
+                "%s ignoré (%s)",
+                " : ".join(filter(None, (issue.entity_id, self.service_name(issue.service)))),
+                self._issue_text(issue.problem),
+            )
+        if entity_ids:
+            self._label_state_unsub = async_track_state_change_event(
+                self._hass, sorted(entity_ids), self._on_state_change
+            )
+
+    @staticmethod
+    def _issue_text(problem: str) -> str:
+        if problem == "no_target":
+            return "aucune cible : ajoutez le label d'un enfant ou d'un appareil"
+        return "label de service introuvable dans le registre des labels"
+
+    @callback
+    def _entity_registry_filter(self, data: er.EventEntityRegistryUpdatedData) -> bool:
+        """Seuls les interrupteurs (ou une entité déjà pilotée) concernent la découverte."""
+        piloted = {ls.entity_id for ls in self._label_switches}
+        return any(
+            e is not None and (e.startswith("switch.") or e in piloted)
+            for e in (data["entity_id"], data.get("old_entity_id"))
+        )
+
+    @callback
+    def _on_registry_change(self, _event: Event[Any]) -> None:
+        if self._config is None or not any(s.has_labels for s in self._config.services):
+            return  # sans label de service, rien n'a changé pour le moteur
+        self._schedule(self._rediscover_and_evaluate())
+
+    async def _rediscover_and_evaluate(self) -> None:
+        if self._stopped:
+            return
+        async with self._lock:
+            self._discover_labels()
+        await self.async_evaluate("labels")
 
     def _record_simulation(self, name: str, line: str) -> None:
         """Journal de bord et journal HA : ce que le moteur aurait fait."""
@@ -308,6 +450,7 @@ class ParentalEngine:
             # Entité apparue après l'application : l'état appliqué n'a pas pu l'atteindre.
             for resource_id in self._entity_owners.get(event.data["entity_id"], ()):
                 self._applied.pop(resource_id, None)
+            self._label_applied.pop(event.data["entity_id"], None)
         self._schedule(self.async_evaluate("state"))
 
     # ------------------------------------------------------------------ calendrier
@@ -407,10 +550,9 @@ class ParentalEngine:
             key = (desired.open, desired.blocked_services, desired.opened_services)
             try:
                 drifted = adapter.drifted(desired)
-                if self._applied.get(resource_id) == key:
-                    sent = self._sent_at.get(resource_id)
-                    if not drifted or (sent is not None and now - sent < DRIFT_COOLDOWN):
-                        continue
+                if self._skip_send(resource_id, self._applied.get(resource_id) == key,
+                                   drifted, now):
+                    continue
                 if drifted:  # l'adaptateur va envoyer une correction
                     self._sent_at[resource_id] = now
                 await adapter.apply(desired)
@@ -418,6 +560,65 @@ class ParentalEngine:
                 _LOGGER.error("%s : échec de l'application : %s", adapter.resource.name, err)
                 continue
             self._applied[resource_id] = key
+        if self._config is not None:
+            await self._apply_label_switches(self._config, snap, now)
+
+    def _skip_send(self, ident: str, unchanged: bool, drifted: bool, now: datetime) -> bool:
+        """Vrai si rien n'est à envoyer : état voulu inchangé et sans dérive, ou dérive déjà
+        corrigée il y a moins de `DRIFT_COOLDOWN`."""
+        if not unchanged:
+            return False
+        sent = self._sent_at.get(ident)
+        return not drifted or (sent is not None and now - sent < DRIFT_COOLDOWN)
+
+    async def _apply_label_switches(self, cfg: Config, snap: Snapshot, now: datetime) -> None:
+        """Allume ou éteint chaque interrupteur labellisé selon l'état voulu du service."""
+        for ls in self._label_switches:
+            blocked = switch_blocked(now, cfg, self._decisions, snap, ls.service, ls.targets)
+            self._label_blocked[ls.entity_id] = blocked
+            if blocked is None:
+                continue
+            state = self._hass.states.get(ls.entity_id)
+            if state is None or state.state not in (STATE_ON, STATE_OFF):
+                self._warn_label_unavailable(ls.entity_id)
+                continue
+            self._label_unavailable.discard(ls.entity_id)
+            want_on = blocked != ls.on_means_allowed
+            drifted = (state.state == STATE_ON) != want_on
+            unchanged = self._label_applied.get(ls.entity_id) == want_on
+            if self._skip_send(ls.entity_id, unchanged, drifted, now):
+                continue
+            if self._decisions.simulation:
+                # Rien n'est envoyé : la ligne n'est écrite qu'au changement d'état voulu.
+                if not unchanged:
+                    self._label_applied[ls.entity_id] = want_on
+                if not unchanged and drifted:  # déjà dans l'état voulu : rien à dire
+                    name = self._switch_name(ls.entity_id)
+                    verb = "allumer" if want_on else "éteindre"
+                    what = "bloquer" if blocked else "autoriser"
+                    self._record_simulation(
+                        name,
+                        f"{name} : {verb} ({what} {self.service_name(ls.service)})",
+                    )
+                continue
+            if drifted:
+                self._sent_at[ls.entity_id] = now
+                try:
+                    await self._hass.services.async_call(
+                        "switch", "turn_on" if want_on else "turn_off",
+                        {"entity_id": ls.entity_id}, blocking=True,
+                    )
+                except Exception as err:  # noqa: BLE001 - un interrupteur n'arrête pas les autres
+                    _LOGGER.error("%s : échec de l'application : %s", ls.entity_id, err)
+                    continue
+            self._label_applied[ls.entity_id] = want_on
+
+    def _warn_label_unavailable(self, entity_id: str) -> None:
+        """Une seule alerte par interrupteur absent ou indisponible, une fois HA démarré."""
+        if self._hass.state is not CoreState.running or entity_id in self._label_unavailable:
+            return
+        self._label_unavailable.add(entity_id)
+        _LOGGER.warning("%s indisponible : interrupteur labellisé non piloté", entity_id)
 
     # ------------------------------------------------------------------ avertissements
 
@@ -456,7 +657,7 @@ class ParentalEngine:
             if kind == "kid":
                 message = f"{cfg.kid(ident).name} : fin des écrans dans {minutes} min"
             elif kind == "service":
-                message = (f"{service} sur {cfg.resource(ident).name} : "
+                message = (f"{self.service_name(service)} sur {cfg.resource(ident).name} : "
                            f"coupure dans {minutes} min")
             else:
                 message = f"{cfg.resource(ident).name} : coupure dans {minutes} min"
@@ -507,9 +708,6 @@ class ParentalEngine:
 
     # ------------------------------------------------------------------ demandes
 
-    def _service_label(self, service: str) -> str:
-        return services_catalog(self._hass).get(service, service)
-
     def request_message(self, req: TimeRequest) -> str:
         """Texte de la notification envoyée aux parents."""
         cfg = self._require_config()
@@ -530,7 +728,7 @@ class ParentalEngine:
             return f"{kid} demande un minuteur de {duration_label(req.proposed)}"
         duration = "" if req.proposed is None else f" {duration_label(req.proposed)}"
         if req.service is not None:
-            service = self._service_label(req.service)
+            service = self.service_name(req.service)
             what = f"{duration} de {service}" if duration else f" {service}"
         else:
             what = duration
@@ -783,7 +981,12 @@ class ParentalEngine:
             scope = [r for r in cfg.resources if target.kid_id in r.owners]
         else:
             scope = list(cfg.resources)
-        if not any(r.has(ResourceKind.ADGUARD) for r in scope):
+        # Un service rattaché à des labels vaut pour tout appareil ; ses services AdGuard
+        # exigent un appareil AdGuard ; un service inconnu est refusé.
+        valid = (cfg.has_adguard(target.service) and any(
+            r.has(ResourceKind.ADGUARD) for r in scope
+        )) or (cfg.has_labels(target.service) and bool(scope))
+        if not valid:
             raise _invalid("invalid_target")
 
     def _bonus_by_grant(self, cfg: Config, resource_id: str) -> bool:
@@ -904,6 +1107,7 @@ class ParentalEngine:
         if not on:
             # Rien n'a été envoyé pendant la simulation : tout est à rappliquer.
             self._applied.clear()
+            self._label_applied.clear()
             self._sent_at.clear()
             for adapter in self._adapters.values():
                 adapter.reset()

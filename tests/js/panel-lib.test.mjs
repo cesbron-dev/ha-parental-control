@@ -371,7 +371,7 @@ test("toggleKidService : retire/rétablit un service commun, retire un ajout pro
 test("addKidService : ajout propre, ou rétablit un service commun retiré", () => {
   const cfg = svcDraft();
   const kid = cfg.kids[0];
-  assert.equal(lib.addKidService(cfg, kid, "on_demand", "  Twitch "), "twitch");
+  assert.equal(lib.addKidService(cfg, kid, "on_demand", "  twitch "), "twitch");
   assert.deepEqual(kid.on_demand_add, ["twitch"]);
   lib.addKidService(cfg, kid, "on_demand", "twitch"); // déjà là
   assert.deepEqual(kid.on_demand_add, ["twitch"]);
@@ -381,11 +381,14 @@ test("addKidService : ajout propre, ou rétablit un service commun retiré", () 
   lib.addKidService(cfg, kid, "leisure", "youtube"); // déjà commun
   assert.deepEqual(kid.leisure_add, ["fortnite"]);
   assert.equal(lib.addKidService(cfg, kid, "leisure", "   "), null);
+  // Identifiant en majuscules (JSON collé) : gardé tel quel, sinon le moteur le dirait inconnu.
+  assert.equal(lib.addKidService(cfg, kid, "on_demand", "Jeux_PC"), "Jeux_PC");
+  assert.deepEqual(kid.on_demand_add, ["twitch", "Jeux_PC"]);
 });
 
 test("addCommonService / removeCommonService : un service n'est que dans une liste commune", () => {
   const cfg = svcDraft();
-  assert.equal(lib.addCommonService(cfg, "on_demand", "YouTube"), "youtube");
+  assert.equal(lib.addCommonService(cfg, "on_demand", "youtube"), "youtube");
   assert.deepEqual(cfg.default_on_demand, ["netflix", "youtube"]);
   assert.deepEqual(cfg.default_leisure, ["roblox"]);
   lib.addCommonService(cfg, "on_demand", "youtube"); // pas de doublon
@@ -396,6 +399,8 @@ test("addCommonService / removeCommonService : un service n'est que dans une lis
   delete old.default_on_demand;
   lib.addCommonService(old, "on_demand", "tiktok");
   assert.deepEqual(old.default_on_demand, ["tiktok"]);
+  assert.equal(lib.addCommonService(old, "on_demand", " Jeux_PC "), "Jeux_PC", "majuscules gardées");
+  assert.deepEqual(old.default_on_demand, ["tiktok", "Jeux_PC"]);
 });
 
 test("moveCommonService : passe d'une liste commune à l'autre avec les exceptions des enfants", () => {
@@ -467,7 +472,7 @@ test("addCommonService qui fait passer un service d'une liste à l'autre suit mo
   const cfg = svcDraft();
   const kid = cfg.kids[0];
   kid.on_demand_add = ["roblox"];
-  assert.equal(lib.addCommonService(cfg, "on_demand", "Roblox"), "roblox");
+  assert.equal(lib.addCommonService(cfg, "on_demand", "roblox"), "roblox");
   assert.deepEqual(cfg.default_leisure, ["youtube"]);
   assert.deepEqual(cfg.default_on_demand, ["netflix", "roblox"]);
   assert.deepEqual(kid.leisure_remove, []); // plus d'exemption périmée côté loisirs
@@ -618,3 +623,150 @@ test("phoneRebind: offered only for unbound and changed, naming who will become 
   assert.equal(lib.phoneRebind(undefined), null);
 });
 
+
+// --- Services par label HA -------------------------------------------------------------------
+
+// --- Services du parent ----------------------------------------------------------------------
+
+const withServices = () => {
+  const d = draft();
+  d.services = [
+    { id: "youtube", name: "YouTube", adguard: ["youtube"], labels: [] },
+    { id: "roblox", name: "Roblox", adguard: ["roblox"], labels: [{ label_id: "console", on_means_allowed: false }] },
+  ];
+  return d;
+};
+
+test("serviceId: identifiant tiré du nom, sans accents, unique", () => {
+  assert.equal(lib.serviceId("Jeux vidéo", []), "jeux_video");
+  assert.equal(lib.serviceId("Jeux vidéo", ["jeux_video"]), "jeux_video_2");
+  assert.equal(lib.serviceId("Jeux vidéo", ["jeux_video", "jeux_video_2"]), "jeux_video_3");
+  assert.equal(lib.serviceId("!!", []), "service");
+  assert.equal(lib.serviceId("  Réseaux   sociaux! ", []), "reseaux_sociaux");
+});
+
+test("addService: service vide ajouté, id renvoyé ; serviceNames", () => {
+  const d = draft();
+  assert.equal(lib.addService(d, " Jeux vidéo "), "jeux_video");
+  assert.deepEqual(d.services, [{ id: "jeux_video", name: "Jeux vidéo", adguard: [], labels: [] }]);
+  assert.equal(lib.addService(d, "Jeux vidéo"), "jeux_video_2");
+  assert.deepEqual(lib.serviceNames(d), { jeux_video: "Jeux vidéo", jeux_video_2: "Jeux vidéo" });
+  assert.deepEqual(lib.serviceNames({}), {});
+});
+
+test("removeService: retiré du brouillon et de toutes les listes (défaut et enfants)", () => {
+  const d = withServices();
+  d.default_on_demand = ["youtube"];
+  d.default_leisure = ["roblox", "youtube"];
+  Object.assign(d.kids[0], { leisure_add: ["youtube"], leisure_remove: ["roblox", "youtube"],
+    on_demand_add: ["youtube"], on_demand_remove: ["youtube"] });
+  lib.removeService(d, "youtube");
+  assert.deepEqual(d.services.map((s) => s.id), ["roblox"]);
+  assert.deepEqual(d.default_leisure, ["roblox"]);
+  assert.deepEqual(d.default_on_demand, []);
+  const k = d.kids[0];
+  assert.deepEqual([k.leisure_add, k.leisure_remove, k.on_demand_add, k.on_demand_remove], [[], ["roblox"], [], []]);
+  lib.removeService(d, "absent"); // sans effet
+  assert.equal(d.services.length, 1);
+});
+
+test("renameService / setServiceIcon", () => {
+  const d = withServices();
+  assert.equal(lib.renameService(d, "youtube", "  Vidéos "), true);
+  assert.equal(d.services[0].name, "Vidéos");
+  assert.equal(d.services[0].id, "youtube", "l'id ne change pas");
+  assert.equal(lib.renameService(d, "youtube", "   "), false);
+  assert.equal(d.services[0].name, "Vidéos");
+  lib.setServiceIcon(d, "youtube", "mdi:youtube");
+  assert.equal(d.services[0].icon, "mdi:youtube");
+  lib.setServiceIcon(d, "youtube", "");
+  assert.equal("icon" in d.services[0], false, "sans icône, la clé disparaît");
+});
+
+test("toggleServiceAdguard: ajoute puis retire un service AdGuard", () => {
+  const d = withServices();
+  lib.toggleServiceAdguard(d, "roblox", "fortnite");
+  assert.deepEqual(d.services[1].adguard, ["roblox", "fortnite"]);
+  lib.toggleServiceAdguard(d, "roblox", "roblox");
+  assert.deepEqual(d.services[1].adguard, ["fortnite"]);
+});
+
+test("toggleServiceLabel puis setServiceLabelInverted ; re-toggle retire", () => {
+  const d = withServices();
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "tele_salon"), true);
+  lib.setServiceLabelInverted(d, "youtube", "tele_salon", true);
+  assert.deepEqual(d.services[0].labels, [{ label_id: "tele_salon", on_means_allowed: true }]);
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "tele_salon"), true);
+  assert.deepEqual(d.services[0].labels, []);
+});
+
+test("toggleServiceLabel: refuse un label d'un autre service ou de cible, sans rien changer", () => {
+  const d = withServices();
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "console"), false);
+  d.kids[0].target_label = "hugo";
+  assert.equal(lib.toggleServiceLabel(d, "youtube", "hugo"), false);
+  assert.deepEqual(d.services[0].labels, []);
+});
+
+test("freeLabels: exclut les labels d'un autre service et de cible, garde ceux du service édité", () => {
+  const d = withServices();
+  d.kids[0].target_label = "hugo";
+  const labels = ["console", "hugo", "internet"].map((label_id) => ({ label_id, name: label_id }));
+  assert.deepEqual(lib.freeLabels(d, labels, "youtube").map((l) => l.label_id), ["internet"]);
+  assert.deepEqual(lib.freeLabels(d, labels, "roblox").map((l) => l.label_id), ["console", "internet"]);
+  assert.deepEqual(lib.freeLabels(d, null, "roblox"), []);
+});
+
+test("serviceSwitches: interrupteurs pilotés d'un label d'un service", () => {
+  const data = { switches: [
+    { entity_id: "switch.a", service: "jeux" }, { entity_id: "switch.a", service: "jeux" },
+    { entity_id: "switch.b", service: "jeux" }, { entity_id: "switch.c", service: "autre" },
+  ] };
+  const entities = { "switch.a": { labels: ["console"] }, "switch.b": { labels: ["pc"] } };
+  assert.deepEqual(lib.serviceSwitches(data, entities, "jeux", "console").map((s) => s.entity_id), ["switch.a"]);
+  assert.deepEqual(lib.serviceSwitches(data, entities, "jeux").map((s) => s.entity_id), ["switch.a", "switch.b"]);
+  // Labels des entités inconnus : tous les interrupteurs du service.
+  assert.deepEqual(lib.serviceSwitches(data, {}, "jeux", "console").map((s) => s.entity_id), ["switch.a", "switch.b"]);
+  assert.deepEqual(lib.serviceSwitches(null, {}, "jeux"), []);
+});
+
+test("anciennes fonctions des services par label retirées", () => {
+  for (const name of ["toggleLabelService", "setLabelInverted", "isLabelService", "LABEL_PREFIX"]) {
+    assert.equal(name in lib, false, name);
+  }
+});
+
+test("setTargetLabel: pose, remplace et retire (null) la cible", () => {
+  const d = draft();
+  assert.equal(lib.setTargetLabel(d.kids[0], "hugo", d), true);
+  assert.equal(d.kids[0].target_label, "hugo");
+  assert.equal(lib.setTargetLabel(d.kids[0], "hugo", d), true, "même entité : ré-affecter est permis");
+  assert.equal(lib.setTargetLabel(d.kids[0], null, d), true);
+  assert.equal("target_label" in d.kids[0], false, "retirée : la clé disparaît (brouillon propre)");
+});
+
+test("setTargetLabel: refuse un label de service ou déjà pris par un autre", () => {
+  const d = draft();
+  d.services = [{ id: "jeux", name: "Jeux", adguard: [], labels: [{ label_id: "jeux", on_means_allowed: false }] }];
+  assert.equal(lib.setTargetLabel(d.kids[0], "jeux", d), false);
+  assert.notEqual(d.kids[0].target_label, "jeux");
+  assert.equal(lib.setTargetLabel(d.kids[0], "hugo", d), true);
+  assert.equal(lib.setTargetLabel(d.resources[0], "hugo", d), false);
+  assert.notEqual(d.resources[0].target_label, "hugo");
+  assert.equal(lib.setTargetLabel(d.resources[0], "tele", d), true);
+  assert.equal(d.resources[0].target_label, "tele");
+});
+
+test("labelSwitchStatus: unmanaged service shown as « non géré », not « autorisé »", async () => {
+  const { labelSwitchStatus } = await import("../../custom_components/parental_control/www/panel-lib.js");
+  assert.equal(labelSwitchStatus({ state: "on", blocked: true }), "on · bloqué");
+  assert.equal(labelSwitchStatus({ state: "off", blocked: false }), "off · autorisé");
+  assert.equal(labelSwitchStatus({ state: "off", blocked: null }), "off · non géré");
+  assert.equal(labelSwitchStatus({ state: null }), "non géré");
+});
+
+test("panel CSS styles label switch problems in red", async () => {
+  const { CSS } = await import("../../custom_components/parental_control/www/panel-style.js");
+  assert.match(CSS, /\.lsw\.bad[^{]*\{[^}]*var\(--pc-red\)/);
+  assert.match(CSS, /\.st\.missing\s*\{[^}]*var\(--pc-red\)/);
+});

@@ -307,7 +307,7 @@ export function setSegmentStart(segments, index, minutes) {
   return value;
 }
 
-// Listes de services AdGuard : commune (config) et exceptions par enfant.
+// Listes de services du parent : commune (config) et exceptions par enfant.
 export const SERVICE_LISTS = {
   leisure: { common: "default_leisure", add: "leisure_add", remove: "leisure_remove" },
   on_demand: { common: "default_on_demand", add: "on_demand_add", remove: "on_demand_remove" },
@@ -318,7 +318,8 @@ const listOf = (obj, key) => {
   if (!Array.isArray(obj[key])) obj[key] = [];
   return obj[key];
 };
-const serviceName = (value) => String(value ?? "").trim().toLowerCase() || null;
+// Identifiant tel quel (vient d'un menu de vrais ids) : le réécrire le rendrait inconnu du moteur.
+const serviceName = (value) => String(value ?? "").trim() || null;
 
 // Pastilles d'une liste pour un enfant : services communs (barrés s'il en est retiré), puis les siens.
 export function serviceChips(cfg, kid, list) {
@@ -342,7 +343,7 @@ export function toggleKidService(cfg, kid, list, service) {
 }
 
 // Ajout pour un enfant : un service commun retiré est rétabli, sinon ajout propre (sans doublon).
-// Renvoie le nom retenu (minuscules), ou null s'il est vide.
+// Renvoie l'identifiant retenu, ou null s'il est vide.
 export function addKidService(cfg, kid, list, value) {
   const service = serviceName(value);
   if (!service) return null;
@@ -405,20 +406,151 @@ export function moveCommonService(cfg, service) {
   return to;
 }
 
-// Nom lisible d'un service d'après le catalogue AdGuard (id → nom) ; `known` faux s'il n'y est pas
+// Nom lisible d'un service d'après un catalogue (id → nom : AdGuard, ou services du parent) ; `known` faux s'il n'y est pas
 // (ancienne saisie, faute de frappe) alors que le catalogue est connu.
 export function serviceLabel(catalog, service) {
   const name = catalog?.[service];
   return { name: name ?? service, known: !!name || !Object.keys(catalog ?? {}).length };
 }
 
-// Choix du menu « + Ajouter » : services du catalogue pas encore pris, triés par nom.
+// Choix d'un menu d'ajout : entrées du catalogue (id → nom) pas encore prises, triées par nom.
 export function serviceOptions(catalog, taken) {
   const skip = new Set(taken);
   return Object.entries(catalog ?? {})
     .filter(([id]) => !skip.has(id))
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label, "fr", { sensitivity: "base" }));
+}
+
+// --- Services du parent : chacun regroupe des services AdGuard et des labels d'interrupteurs. Un
+// label est rattaché à au plus un service, et jamais à la fois service et cible.
+
+// État d'un interrupteur piloté dans le récapitulatif (texte brut, à échapper) : son état HA puis
+// l'état voulu ; `blocked` nul : service ni en loisir ni sur demande d'une cible (laissé tel quel).
+export function labelSwitchStatus(sw) {
+  const wanted = sw.blocked === true ? "bloqué" : sw.blocked === false ? "autorisé" : "non géré";
+  return sw.state ? `${sw.state} · ${wanted}` : wanted;
+}
+
+// Labels de cible déjà pris dans le brouillon (enfants et appareils), hors `except`.
+function targetLabels(cfg, except = null) {
+  return [...(cfg.kids ?? []), ...(cfg.resources ?? [])]
+    .filter((e) => e !== except).map((e) => e.target_label).filter(Boolean);
+}
+
+// Labels rattachés aux services du brouillon, hors ceux du service `exceptId`.
+function serviceLabels(cfg, exceptId = null) {
+  return (cfg.services ?? []).filter((s) => s.id !== exceptId).flatMap((s) => (s.labels ?? []).map((l) => l.label_id));
+}
+
+const findService = (cfg, id) => (cfg.services ?? []).find((s) => s.id === id);
+
+// Identifiant d'un nouveau service : nom en minuscules sans accents, `_` entre les mots, suffixe
+// `_2`, `_3`… s'il est déjà pris.
+export function serviceId(name, taken) {
+  return uniqueId(slugify(name) || "service", taken ?? []);
+}
+
+// Nouveau service sans rattachement ; renvoie son identifiant.
+export function addService(cfg, name) {
+  const services = (cfg.services ??= []);
+  const id = serviceId(name, services.map((s) => s.id));
+  services.push({ id, name: String(name ?? "").trim() || id, adguard: [], labels: [] });
+  return id;
+}
+
+// Retire le service et toutes ses mentions (listes communes, ajouts et retraits des enfants) : le
+// moteur refuserait une configuration qui cite un service inconnu.
+export function removeService(cfg, id) {
+  const i = (cfg.services ?? []).findIndex((s) => s.id === id);
+  if (i >= 0) cfg.services.splice(i, 1);
+  for (const keys of Object.values(SERVICE_LISTS)) {
+    if (Array.isArray(cfg[keys.common])) dropValue(cfg[keys.common], id);
+    for (const kid of cfg.kids ?? []) {
+      for (const key of [keys.add, keys.remove]) if (Array.isArray(kid[key])) dropValue(kid[key], id);
+    }
+  }
+}
+
+// Nouveau nom (l'identifiant ne change pas) ; faux, sans rien changer, pour un nom vide.
+export function renameService(cfg, id, name) {
+  const service = findService(cfg, id);
+  const value = String(name ?? "").trim();
+  if (!service || !value) return false;
+  service.name = value;
+  return true;
+}
+
+// Icône (« mdi:… ») ; vide : la clé disparaît.
+export function setServiceIcon(cfg, id, icon) {
+  const service = findService(cfg, id);
+  if (!service) return;
+  if (icon) service.icon = icon;
+  else delete service.icon;
+}
+
+export function toggleServiceAdguard(cfg, id, adguardId) {
+  const service = findService(cfg, id);
+  if (service && adguardId) toggleListValue(listOf(service, "adguard"), adguardId);
+}
+
+// Rattache (allumé = bloqué par défaut) ou détache un label ; faux, sans rien changer, si le label
+// est déjà rattaché à un autre service ou sert de cible.
+export function toggleServiceLabel(cfg, id, labelId) {
+  const service = findService(cfg, id);
+  if (!service || !labelId) return false;
+  const labels = listOf(service, "labels");
+  const i = labels.findIndex((l) => l.label_id === labelId);
+  if (i >= 0) {
+    labels.splice(i, 1);
+    return true;
+  }
+  if (serviceLabels(cfg, id).includes(labelId) || targetLabels(cfg).includes(labelId)) return false;
+  labels.push({ label_id: labelId, on_means_allowed: false });
+  return true;
+}
+
+export function setServiceLabelInverted(cfg, id, labelId, on) {
+  const link = (findService(cfg, id)?.labels ?? []).find((l) => l.label_id === labelId);
+  if (link) link.on_means_allowed = !!on;
+}
+
+// Labels HA proposables pour le service `id` : ni rattachés à un autre service, ni de cible.
+export function freeLabels(cfg, labels, id) {
+  const taken = new Set([...serviceLabels(cfg, id), ...targetLabels(cfg)]);
+  return (labels ?? []).filter((l) => !taken.has(l.label_id));
+}
+
+// Noms des services du parent (id → nom) : seuls services nommés dans le panneau.
+export function serviceNames(cfg) {
+  return Object.fromEntries((cfg?.services ?? []).map((s) => [s.id, s.name]));
+}
+
+// Interrupteurs pilotés (`label_switches/list`, configuration enregistrée) du service `id`, sans
+// doublon ; avec `labelId`, ceux qui portent ce label d'après le registre des entités (`hass.entities`),
+// ou tous ceux du service si le registre ne donne pas les labels.
+export function serviceSwitches(data, entities, id, labelId = null) {
+  const seen = new Set();
+  return (data?.switches ?? []).filter((sw) => {
+    if (sw.service !== id || seen.has(sw.entity_id)) return false;
+    const labels = entities?.[sw.entity_id]?.labels;
+    if (labelId && Array.isArray(labels) && !labels.includes(labelId)) return false;
+    seen.add(sw.entity_id);
+    return true;
+  });
+}
+
+// Label de cible d'un enfant ou d'un appareil (`null` : aucun) ; faux, sans rien changer, pour un
+// label rattaché à un service ou déjà pris par un autre.
+export function setTargetLabel(entity, labelId, cfg) {
+  if (labelId) {
+    if (serviceLabels(cfg).includes(labelId)) return false;
+    if (targetLabels(cfg, entity).includes(labelId)) return false;
+  }
+  // Sans cible, la clé disparaît (comme dans la configuration du serveur) : le brouillon redevient propre.
+  if (labelId) entity.target_label = labelId;
+  else delete entity.target_label;
+  return true;
 }
 
 // Nom lisible d'un service de notification : l'appareil de l'application Home Assistant dont il

@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.parental_control.const import DOMAIN
@@ -126,7 +128,7 @@ async def test_state_and_not_loaded(hass, entry, hass_ws_client) -> None:
     await client.send_json_auto_id({"type": "parental_control/state"})
     result = (await client.receive_json())["result"]
     assert set(result) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
-        "requests", "requests_enabled"}
+        "requests", "requests_enabled", "services"}
     assert "hugo" in result["kids"]
 
     assert await hass.config_entries.async_unload(entry.entry_id)
@@ -149,7 +151,7 @@ async def test_state_subscribe_pushes_on_update(hass, entry, hass_ws_client) -> 
     pushed = await client.receive_json()
     assert pushed["type"] == "event"
     assert set(pushed["event"]) == {"kids", "resources", "closures", "paused", "simulation", "exceptions", "now",
-        "requests", "requests_enabled"}
+        "requests", "requests_enabled", "services"}
 
 
 async def test_state_subscribe_survives_entry_reload(hass, entry, hass_ws_client) -> None:
@@ -277,6 +279,111 @@ async def test_services_catalog_empty_and_admin_only(hass, entry, hass_ws_client
     user = await _client(hass, hass_ws_client, admin=False)
     await user.send_json_auto_id({"type": "parental_control/services/catalog"})
     assert not (await user.receive_json())["success"]
+
+
+async def _entry_with_label_services(hass: HomeAssistant, freezer) -> MockConfigEntry:
+    await hass.config.async_set_time_zone("America/Toronto")
+    freezer.move_to(at(TUESDAY, 16, 30))
+    config = copy.deepcopy(EX)
+    config["services"] += [
+        {"id": "ecran", "name": "Écran", "adguard": [], "labels": [{"label_id": "ecran"}]},
+        # Label « console » absent du registre : problème `unknown_label` signalé.
+        {"id": "jeux", "name": "Jeux vidéo", "icon": "mdi:gamepad-variant", "adguard": ["roblox"],
+         "labels": [{"label_id": "console", "on_means_allowed": True}]},
+    ]
+    config["kids"][0]["target_label"] = "hugo"
+    config["kids"][0]["leisure_add"] = [*config["kids"][0].get("leisure_add", []), "ecran"]
+    await ParentalStore(hass).save_config(parse_config(config))
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code("0123")})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def test_catalog_is_adguard_only(hass, freezer, hass_ws_client) -> None:
+    """Le catalogue ne liste que les services AdGuard : ni label, ni service du parent."""
+    lr.async_get(hass).async_create("Écran")
+    await _entry_with_label_services(hass, freezer)
+    adguard = MockConfigEntry(domain="adguard_clients")
+    adguard.add_to_hass(hass)
+    adguard.runtime_data = SimpleNamespace(catalog={"roblox": "Roblox"})
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
+    result = (await admin.receive_json())["result"]
+    assert result == {"services": {"roblox": "Roblox"}}
+    assert "label_services" not in result
+
+
+async def test_state_publishes_services(hass, freezer, hass_ws_client) -> None:
+    await _entry_with_label_services(hass, freezer)
+    client = await _client(hass, hass_ws_client, admin=False)
+    await client.send_json_auto_id({"type": "parental_control/state"})
+    result = (await client.receive_json())["result"]
+    assert "service_names" not in result
+    assert result["services"]["jeux"] == {
+        "name": "Jeux vidéo", "icon": "mdi:gamepad-variant", "adguard": True, "labels": True
+    }
+    assert result["services"]["ecran"] == {
+        "name": "Écran", "icon": None, "adguard": False, "labels": True
+    }
+    assert result["services"]["youtube"]["name"] == "YouTube"
+    assert list(result["services"])[-2:] == ["ecran", "jeux"]  # ordre de la config
+
+
+async def test_catalog_without_config(hass, hass_ws_client) -> None:
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DOMAIN, data={"code_hash": hash_code("0123")})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.config_entries.async_loaded_entries(DOMAIN)[0].runtime_data.config is None
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/services/catalog"})
+    res = await admin.receive_json()
+    assert res["success"] and res["result"] == {"services": {}}
+
+
+async def test_labels_list_parent_only(hass, entry, hass_ws_client) -> None:
+    registry = lr.async_get(hass)
+    registry.async_create("Zèbre", icon="mdi:zebra", color="red")
+    registry.async_create("abeille")
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/labels/list"})
+    assert (await admin.receive_json())["result"] == {"labels": [
+        {"label_id": "abeille", "name": "abeille", "icon": None, "color": None},
+        {"label_id": "zebre", "name": "Zèbre", "icon": "mdi:zebra", "color": "red"},
+    ]}
+    user = await _client(hass, hass_ws_client, admin=False)
+    await user.send_json_auto_id({"type": "parental_control/labels/list"})
+    res = await user.receive_json()
+    assert not res["success"] and res["error"]["code"] == "unauthorized"
+
+
+async def test_label_switches_list(hass, freezer, hass_ws_client) -> None:
+    lr.async_get(hass).async_create("Écran")
+    lr.async_get(hass).async_create("hugo")
+    registry = er.async_get(hass)
+    registry.async_get_or_create("switch", "test", "prise", suggested_object_id="prise_tele")
+    registry.async_update_entity("switch.prise_tele", labels={"ecran", "hugo"})
+    hass.states.async_set("switch.prise_tele", "off", {"friendly_name": "Prise"})
+    await _entry_with_label_services(hass, freezer)
+    admin = await _client(hass, hass_ws_client, admin=True)
+    await admin.send_json_auto_id({"type": "parental_control/label_switches/list"})
+    result = (await admin.receive_json())["result"]
+    engine = hass.config_entries.async_loaded_entries(DOMAIN)[0].runtime_data
+    assert result == {"switches": engine.label_switches, "issues": engine.label_issues}
+    (switch,) = result["switches"]
+    assert switch["entity_id"] == "switch.prise_tele"
+    assert switch["service"] == "ecran"
+    assert switch["targets"] == [{"kind": "kid", "id": "hugo"}]
+    assert result["issues"] == [
+        {"entity_id": "", "service": "jeux", "service_name": "Jeux vidéo",
+         "problem": "unknown_label"}
+    ]
+    user = await _client(hass, hass_ws_client, admin=False)
+    await user.send_json_auto_id({"type": "parental_control/label_switches/list"})
+    res = await user.receive_json()
+    assert not res["success"] and res["error"]["code"] == "unauthorized"
 
 
 async def test_state_requests_hidden_until_enabled(hass, entry, hass_ws_client) -> None:

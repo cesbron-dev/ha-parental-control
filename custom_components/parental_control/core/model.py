@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import datetime
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -66,6 +66,8 @@ class Kid:
     leisure_remove: frozenset[str]
     on_demand_add: frozenset[str] = frozenset()
     on_demand_remove: frozenset[str] = frozenset()
+    # Label HA qui désigne les interrupteurs de cet enfant.
+    target_label: str | None = None
 
     def profile_for(self, day: DayType) -> Profile:
         """Profil du jour ; congé pédagogique et vacances se replient sur la fin de semaine."""
@@ -100,6 +102,8 @@ class Resource:
     devices: tuple[PhysicalDevice, ...]
     quota_minutes: Mapping[DayType, int] = field(default_factory=dict)
     icon: str | None = None
+    # Label HA qui désigne les interrupteurs de cet appareil logique.
+    target_label: str | None = None
 
     @property
     def integrations(self) -> tuple[Integration, ...]:
@@ -128,6 +132,34 @@ class Resource:
 
 
 @dataclass(frozen=True)
+class LabelLink:
+    """Label HA dont les interrupteurs pilotent un service du parent."""
+
+    label_id: str
+    # Interrupteur allumé = service autorisé (sinon allumé = service coupé).
+    on_means_allowed: bool = False
+
+
+@dataclass(frozen=True)
+class Service:
+    """Service défini par le parent : regroupe des services AdGuard et/ou des labels."""
+
+    id: str
+    name: str
+    icon: str | None = None
+    adguard: tuple[str, ...] = ()
+    labels: tuple[LabelLink, ...] = ()
+
+    @property
+    def has_adguard(self) -> bool:
+        return bool(self.adguard)
+
+    @property
+    def has_labels(self) -> bool:
+        return bool(self.labels)
+
+
+@dataclass(frozen=True)
 class Config:
     kids: tuple[Kid, ...]
     resources: tuple[Resource, ...]
@@ -140,6 +172,8 @@ class Config:
     request_notify: tuple[str, ...] = ()
     # Propriétaire mémorisé de chaque téléphone de demandes : cible notify complète -> user_id.
     request_notify_owners: Mapping[str, str] = field(default_factory=dict)
+    # Services définis par le parent.
+    services: tuple[Service, ...] = ()
 
     def kid(self, kid_id: str) -> Kid:
         for kid in self.kids:
@@ -152,6 +186,47 @@ class Config:
             if resource.id == resource_id:
                 return resource
         raise KeyError(resource_id)
+
+    def service(self, service_id: str) -> Service | None:
+        for service in self.services:
+            if service.id == service_id:
+                return service
+        return None
+
+    def has_adguard(self, service_id: str) -> bool:
+        service = self.service(service_id)
+        return service is not None and service.has_adguard
+
+    def has_labels(self, service_id: str) -> bool:
+        service = self.service(service_id)
+        return service is not None and service.has_labels
+
+    def adguard_ids(self, service_ids: Iterable[str]) -> frozenset[str]:
+        """Union des identifiants AdGuard des services donnés ; les inconnus sont ignorés."""
+        result: frozenset[str] = frozenset()
+        for service_id in service_ids:
+            service = self.service(service_id)
+            if service is not None:
+                result |= frozenset(service.adguard)
+        return result
+
+    def service_for_label(self, label_id: str) -> tuple[Service, LabelLink] | None:
+        """Premier service (dans l'ordre de la config) auquel le label est rattaché."""
+        for service in self.services:
+            for link in service.labels:
+                if link.label_id == label_id:
+                    return service, link
+        return None
+
+    def label_target(self, label_id: str) -> tuple[str, str] | None:
+        """Cible d'un label : `("kid", id)` ou `("resource", id)`, `None` s'il ne cible rien."""
+        for kid in self.kids:
+            if kid.target_label == label_id:
+                return ("kid", kid.id)
+        for resource in self.resources:
+            if resource.target_label == label_id:
+                return ("resource", resource.id)
+        return None
 
     def leisure_for(self, kid_id: str) -> frozenset[str]:
         kid = self.kid(kid_id)
