@@ -13,12 +13,6 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_client_config
-
-
-def is_label_service(service: str) -> bool:  # TEMP (tâche 1), retiré à la tâche 5
-    return service.startswith("label:")
-
-
 from .core.requests import RequestStatus, action_choices
 from .engine import ParentalEngine
 from .parents import bind_owners, is_parent, phone_status, trusted_phone_owners
@@ -144,15 +138,7 @@ async def ws_services_catalog(
         return
     if not await _require_parent(hass, connection, msg, engine):
         return
-    cfg = engine.config
-    if cfg is None:  # installation neuve : pas encore de configuration
-        connection.send_result(msg["id"], {"services": services_catalog(hass), "label_services": []})
-        return
-    services = services_catalog(hass, cfg)
-    connection.send_result(
-        msg["id"],
-        {"services": services, "label_services": [s for s in services if is_label_service(s)]},
-    )
+    connection.send_result(msg["id"], {"services": services_catalog(hass)})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/labels/list"})

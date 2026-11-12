@@ -668,7 +668,6 @@ async def test_nintendo_minutes(hass: HomeAssistant, caplog) -> None:
 
 # --- describe (simulation : ce que apply ferait, sans rien appeler) ---------------
 
-
 async def test_media_player_describe_closed_and_in_use(hass: HomeAssistant) -> None:
     hass.states.async_set(TV_ENTITY, "playing")
     calls = async_mock_service(hass, "media_player", "turn_off")

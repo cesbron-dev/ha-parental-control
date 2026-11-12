@@ -9,7 +9,6 @@ from types import SimpleNamespace
 import pytest
 from homeassistant.core import Context, ServiceCall, callback
 from homeassistant.exceptions import ServiceValidationError
-from homeassistant.helpers import label_registry as lr
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     async_capture_events,
@@ -195,20 +194,20 @@ async def test_request_message(make_env, manou, catalog, kwargs, expected) -> No
     assert env.engine.request_message(env.engine.requests.get(req_id)) == expected
 
 
-async def test_request_message_uses_label_name(hass, make_env, manou) -> None:
-    lr.async_get(hass).async_create("Internet")
+async def test_request_message_uses_service_name(hass, make_env, manou) -> None:
     config = copy.deepcopy(CONFIG)
-    config["label_services"] = [{"label_id": "internet"}, {"label_id": "disparu"}]
-    config["kids"][0]["leisure_add"] = [*config["kids"][0].get("leisure_add", []), "label:internet"]
+    config["services"].append({
+        "id": "jeux", "name": "Jeux vidéo", "icon": "mdi:gamepad-variant",
+        "adguard": ["roblox"], "labels": [{"label_id": "console", "on_means_allowed": True}],
+    })
+    config["kids"][0]["leisure_add"] = [*config["kids"][0].get("leisure_add", []), "jeux"]
     env = await _env(make_env, config)
-    req_id = await env.engine.request_time(
-        RequestKind.OPEN, "gabin", service="label:internet", proposed=30
-    )
+    req_id = await env.engine.request_time(RequestKind.OPEN, "gabin", service="jeux", proposed=30)
     assert env.engine.request_message(env.engine.requests.get(req_id)) == (
-        "Gabin demande 30 min de Internet"
+        "Gabin demande 30 min de Jeux vidéo"
     )
-    # Label supprimé du registre : repli sur l'identifiant sans préfixe, sans exception.
-    assert env.engine._service_label("label:disparu") == "disparu"
+    # Service inconnu (supprimé depuis) : repli sur l'identifiant, sans exception.
+    assert env.engine.service_name("disparu") == "disparu"
 
 
 # --- réponse depuis la notification ---------------------------------------------
@@ -656,7 +655,9 @@ async def test_request_service_outside_target_rejected(make_env, manou, data) ->
 
 
 async def test_request_on_demand_service_accepted(make_env, manou) -> None:
-    cfg = {**CONFIG, "default_on_demand": ["steam"]}
+    cfg = copy.deepcopy(CONFIG)
+    cfg["services"].append({"id": "steam", "name": "Steam", "adguard": ["steam"], "labels": []})
+    cfg["default_on_demand"] = ["steam"]
     env = await _env(make_env, cfg)
     await env.call("demander", {**OPEN_CALL, "service": "steam"}, env.kid_ctx)
     kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
@@ -666,12 +667,15 @@ async def test_request_on_demand_service_accepted(make_env, manou) -> None:
 
 async def test_request_label_service_without_adguard_accepted(make_env, manou) -> None:
     cfg = copy.deepcopy(CONFIG)
-    cfg["default_leisure"] = [*cfg["default_leisure"], "label:internet"]
+    cfg["services"].append({
+        "id": "internet", "name": "Internet", "adguard": [], "labels": [{"label_id": "internet"}],
+    })
+    cfg["default_leisure"] = [*cfg["default_leisure"], "internet"]
     cfg["resources"] = [r for r in cfg["resources"] if r["id"] != "iphone_gabin"]
     env = await _env(make_env, cfg)
     assert not any(r.has(ResourceKind.ADGUARD) for r in env.engine.config.resources)
     kid_wide = {k: v for k, v in OPEN_CALL.items() if k != "resource_id"}
-    await env.call("demander", {**kid_wide, "service": "label:internet"}, env.kid_ctx)
+    await env.call("demander", {**kid_wide, "service": "internet"}, env.kid_ctx)
     assert len(env.engine.requests.visible(at(TUESDAY, 16, 30))) == 1
 
 

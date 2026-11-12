@@ -108,6 +108,15 @@ async def test_discover_unknown_label_reports_issue(hass) -> None:
     assert issues == [LabelSwitchIssue("", "ecran", "unknown_label")]
 
 
+async def test_discover_unknown_labels_reported_once_per_service(hass) -> None:
+    add_labels(hass)
+    config = label_config()
+    config["services"][0]["labels"] += [{"label_id": "console"}, {"label_id": "tablette"}]
+    lr.async_get(hass).async_delete("ecran")
+    _, issues = discover(hass, parse_config(config))
+    assert issues == [LabelSwitchIssue("", "ecran", "unknown_label")]  # 3 labels absents, 1 problème
+
+
 async def test_discover_ignores_disabled_and_other_domains(hass) -> None:
     add_labels(hass)
     add_switch(hass, {"ecran", "gabin"})
