@@ -29,13 +29,15 @@ Distribuée sous [licence MIT](LICENSE).
 Prérequis : Home Assistant **2026.10** ou plus récent. Pour piloter les services AdGuard Home,
 installez aussi [AdGuard Clients](https://github.com/cesbron-dev/ha-adguard-clients).
 
-1. **Paramètres, Marketplace**, bouton **Ajouter grâce à un lien** en haut à droite, avec l'URL
-   `https://github.com/cesbron-dev/ha-parental-control` (avant Home Assistant 2026.11 : HACS,
-   menu en haut à droite, **Dépôts personnalisés**, catégorie **Intégration**).
-2. Installer « Parental Control », puis redémarrer Home Assistant.
-3. **Paramètres, Appareils et services, Ajouter une intégration, Parental Control**
+1. **Paramètres, Marketplace** : chercher « Parental Control », l'installer, puis redémarrer
+   Home Assistant. Avant Home Assistant 2026.11, faire de même dans HACS.
+
+   S'il n'apparaît pas, ajouter le dépôt à la main : bouton **Ajouter grâce à un lien** en haut
+   à droite, avec l'URL `https://github.com/cesbron-dev/ha-parental-control` (avant 2026.11 :
+   HACS, menu en haut à droite, **Dépôts personnalisés**, catégorie **Intégration**).
+2. **Paramètres, Appareils et services, Ajouter une intégration, Parental Control**
    (l'intégration porte ce nom anglais dans Home Assistant, même sur un système en français).
-4. Choisir le **code parent** : 4 à 8 chiffres. Il est stocké haché (PBKDF2), jamais en clair.
+3. Choisir le **code parent** : 4 à 8 chiffres. Il est stocké haché (PBKDF2), jamais en clair.
    Une seule instance de l'intégration est possible. Le code se change plus tard dans les
    options de l'intégration.
 
