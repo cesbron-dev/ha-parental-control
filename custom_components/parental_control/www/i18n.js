@@ -91,6 +91,13 @@ export function formatTime(hass, iso) {
   return clockFormat(hass).format.format(new Date(iso));
 }
 
+// Jour « AAAA-MM-JJ » en toutes lettres, dans la langue : « jeudi 29 octobre », « Thursday, October 29 ».
+export function formatDay(hass, isoDate) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Intl.DateTimeFormat(lang(hass), { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" })
+    .format(new Date(Date.UTC(y, m - 1, d)));
+}
+
 // Heure murale « HH:MM » (sans date ni fuseau, ex. paramètre d'une raison du moteur) au format de
 // la langue ; un texte qui n'est pas une heure est rendu tel quel.
 export function formatClock(hass, hhmm) {

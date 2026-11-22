@@ -82,6 +82,7 @@ export default {
   // erreurs WebSocket de l'intégration (code de `connection.send_error`)
   ws_error: {
     not_loaded: "Le contrôle parental n'est pas chargé.",
+    invalid_date: "Jour hors de la période de prévision.",
     unauthorized: "Réservé aux parents.",
     not_pending: "Cette demande a déjà reçu une réponse ou a expiré.",
     invalid_choice: "Choix inconnu.",
@@ -205,6 +206,16 @@ export default {
       kids_list: "« kids » doit être une liste d'identifiants d'enfants",
       no_kid: "Aucun enfant à afficher",
       today: "Aujourd'hui",
+      forecast: "Prévision",
+      previous_day: "Jour précédent",
+      next_day: "Jour suivant",
+      back_today: "Revenir à aujourd'hui",
+      quota: "Quota : {duration}",
+      quota_bonus: "Quota : {duration} (+{bonus})",
+      no_quota: "Sans quota",
+      calendar_error: "calendrier illisible, jour de la semaine retenu",
+      event: "« {summary} »",
+      load_failed: "Prévision indisponible : {error}",
     },
   },
   requests: {
@@ -247,6 +258,8 @@ export default {
     show_bonus_helper: "Seulement les jours où l'enfant a un quota",
     kids: "Enfants affichés",
     kids_helper: "Aucun coché : tous les enfants",
+    days_ahead: "Jours de prévision",
+    days_ahead_helper: "Jours suivants consultables avec ‹ › (0 : aujourd'hui seulement, 31 au plus)",
   },
   // sélecteur de cartes de HA (`window.customCards`)
   cards: {

@@ -82,6 +82,7 @@ export default {
   // WebSocket errors of the integration (code of `connection.send_error`)
   ws_error: {
     not_loaded: "Parental control is not loaded.",
+    invalid_date: "Day outside the forecast range.",
     unauthorized: "Only a parent can do this.",
     not_pending: "This request has already been answered or has expired.",
     invalid_choice: "Unknown choice.",
@@ -205,6 +206,16 @@ export default {
       kids_list: "\"kids\" must be a list of child ids",
       no_kid: "No child to show",
       today: "Today",
+      forecast: "Forecast",
+      previous_day: "Previous day",
+      next_day: "Next day",
+      back_today: "Back to today",
+      quota: "Quota: {duration}",
+      quota_bonus: "Quota: {duration} (+{bonus})",
+      no_quota: "No quota",
+      calendar_error: "calendar unreadable, weekday used",
+      event: "“{summary}”",
+      load_failed: "Forecast unavailable: {error}",
     },
   },
   requests: {
@@ -247,6 +258,8 @@ export default {
     show_bonus_helper: "Only on days when the child has a quota",
     kids: "Children shown",
     kids_helper: "None checked: all children",
+    days_ahead: "Forecast days",
+    days_ahead_helper: "Following days reachable with ‹ › (0: today only, 31 at most)",
   },
   // HA card picker (`window.customCards`)
   cards: {

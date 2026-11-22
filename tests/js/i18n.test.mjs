@@ -299,3 +299,10 @@ test("textes des demandes identiques au catalogue du serveur (écran « Demandes
     }
   }
 });
+
+
+test("formatDay", async () => {
+  const { formatDay } = await import("../../custom_components/parental_control/www/i18n.js");
+  assert.equal(formatDay(FR, "2026-10-29"), "jeudi 29 octobre");
+  assert.equal(formatDay(EN, "2026-10-29"), "Thursday, October 29");
+});

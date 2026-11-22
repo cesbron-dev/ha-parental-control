@@ -2,11 +2,17 @@ from dataclasses import replace
 from datetime import time, timedelta
 
 from custom_components.parental_control.core.decisions import (
+    Bonus,
     Decisions,
     ManualException,
     Target,
 )
-from custom_components.parental_control.core.display import exception_end, kid_timeline
+from custom_components.parental_control.core.display import (
+    day_timeline,
+    exception_end,
+    kid_day_preview,
+    kid_timeline,
+)
 from custom_components.parental_control.core.evaluator import evaluate
 from custom_components.parental_control.core.model import DayType, SegmentType
 from tests.core.test_evaluator_access import SCHOOL, at
@@ -67,3 +73,22 @@ def test_exception_ends_without_change(cfg):
     snap = evaluate(at(20), cfg, Decisions(), SCHOOL)
     assert exception_end(cfg, snap, _exc(Target(kid_id="inconnu"))) is None
     assert exception_end(cfg, snap, _exc(Target(resource_id="inconnue"))) is None
+
+
+def test_day_timeline_of_tomorrow_matches_live_timeline_tomorrow(cfg):
+    # La prévision de demain est la frise que la carte affichera demain.
+    now = at(16, 30)
+    tomorrow = now + timedelta(days=1)
+    live = kid_timeline(cfg, evaluate(tomorrow, cfg, Decisions(), SCHOOL), "hugo", tomorrow)
+    assert day_timeline(cfg, "hugo", DayType.SCHOOL, tomorrow.date(), now.tzinfo) == live
+
+
+def test_kid_day_preview(cfg):
+    day = (at(16, 30) + timedelta(days=3)).date()
+    dec = Decisions(bonuses=[Bonus(day, 20, kid_id="hugo"), Bonus(day, 99, kid_id="alice")])
+    got = kid_day_preview(cfg, dec, "hugo", day, DayType.DAY_OFF, at(0).tzinfo, event="Congé")
+    assert got["day_type"] == "day_off"
+    assert got["day_type_event"] == "Congé"
+    assert got["timeline"] == day_timeline(cfg, "hugo", DayType.DAY_OFF, day, at(0).tzinfo)
+    assert got["quota_minutes"] == cfg.kid("hugo").profile_for(DayType.DAY_OFF).quota_minutes
+    assert got["bonus_minutes"] == 20

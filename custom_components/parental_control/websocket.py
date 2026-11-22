@@ -4,17 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from datetime import timedelta
+
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import label_registry as lr
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .catalog import services_catalog
 from .const import DOMAIN, SIGNAL_UPDATE
 from .core.config_io import ConfigError, dump_config, parse_client_config
 from .core.requests import RequestStatus, action_choices
-from .engine import ParentalEngine
+from .engine import PREVIEW_MAX_DAYS, ParentalEngine
 from .parents import bind_owners, is_parent, phone_status, trusted_phone_owners
 from .serialize import serialize_requests, serialize_snapshot
 
@@ -38,6 +42,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_requests_subscribe)
     websocket_api.async_register_command(hass, ws_requests_answer)
     websocket_api.async_register_command(hass, ws_simulation_exit)
+    websocket_api.async_register_command(hass, ws_timeline_preview)
 
 
 def _engine(
@@ -214,6 +219,29 @@ def ws_state(
     if (engine := _engine(hass, connection, msg)) is None:
         return
     connection.send_result(msg["id"], serialize_snapshot(engine, display=True))
+
+
+@websocket_api.websocket_command(
+    {vol.Required("type"): f"{DOMAIN}/timeline/preview", vol.Required("date"): cv.date}
+)
+@websocket_api.async_response
+async def ws_timeline_preview(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Frise prévue d'un jour (aujourd'hui à `PREVIEW_MAX_DAYS` jours), pour la carte.
+
+    Ouvert à tous, comme l'état : la carte frise s'affiche aussi sur une tablette d'enfant.
+    """
+    if (engine := _engine(hass, connection, msg)) is None:
+        return
+    today = dt_util.now().date()
+    day = msg["date"]
+    if not today <= day <= today + timedelta(days=PREVIEW_MAX_DAYS):
+        connection.send_error(
+            msg["id"], "invalid_date", f"Date must be between today and {PREVIEW_MAX_DAYS} days ahead"
+        )
+        return
+    connection.send_result(msg["id"], await engine.preview_day(day))
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state/subscribe"})

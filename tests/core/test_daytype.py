@@ -1,6 +1,6 @@
 from datetime import date
 
-from custom_components.parental_control.core.daytype import AllDayEvent, day_type
+from custom_components.parental_control.core.daytype import AllDayEvent, day_type, explain_day_type
 from custom_components.parental_control.core.model import DayType
 
 CMAP = {
@@ -70,3 +70,19 @@ def test_school_vs_weekend_events_earliest_start_wins():
     ]
     # tie on start: summary alphabetical -> "classe"
     assert day_type(d, events, cmap) == DayType.SCHOOL
+
+
+def test_explain_names_deciding_event():
+    events = [
+        ev("Semaine école", date(2026, 10, 26), date(2026, 10, 31)),
+        ev("Congé PEDAGOGIQUE", date(2026, 10, 27), date(2026, 10, 28)),
+        ev("Vacances d'automne", date(2026, 10, 27), date(2026, 10, 30)),
+    ]
+    assert explain_day_type(date(2026, 10, 27), events, CMAP) == (DayType.HOLIDAYS, "Vacances d'automne")
+    assert explain_day_type(date(2026, 10, 30), events, CMAP) == (DayType.SCHOOL, None)
+
+
+def test_explain_weekday_default_has_no_event():
+    assert explain_day_type(date(2026, 10, 31), [], CMAP) == (DayType.WEEKEND, None)
+    events = [ev("Anniversaire", date(2026, 10, 27), date(2026, 10, 28))]
+    assert explain_day_type(date(2026, 10, 27), events, CMAP) == (DayType.SCHOOL, None)

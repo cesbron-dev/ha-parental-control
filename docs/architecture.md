@@ -393,6 +393,7 @@ panel keeps a draft and only sends it on save; the engine stays the only judge o
 | `parental_control/label_switches/list` | parents | controlled switches and ignored ones, with the reason |
 | `parental_control/state` | anyone | the display state, once |
 | `parental_control/state/subscribe` | anyone | the display state, pushed on every change |
+| `parental_control/timeline/preview` | anyone | what the engine plans for a day (today to 31 days ahead): day type and the event that set it, timeline, quota; no side effect |
 | `parental_control/requests/subscribe` | anyone | pending and recent requests, with "can answer" for this user |
 | `parental_control/requests/answer` | listed phone owners | answer a request from the Requests screen |
 | `parental_control/simulation/exit` | parents | leave simulation from the Rules panel (no code, like the switch) |

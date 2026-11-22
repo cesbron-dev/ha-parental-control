@@ -28,23 +28,31 @@ def day_type(
     events: Sequence[AllDayEvent],
     calendar_map: Mapping[str, DayType],
 ) -> DayType:
+    return explain_day_type(day, events, calendar_map)[0]
+
+
+def explain_day_type(
+    day: date,
+    events: Sequence[AllDayEvent],
+    calendar_map: Mapping[str, DayType],
+) -> tuple[DayType, str | None]:
+    """Type du jour et titre de l'événement qui l'a décidé (None : jour de la semaine).
+
+    Vacances l'emportent sur congé pédagogique, qui l'emporte sur école / fin de semaine ;
+    à type égal, l'événement commencé le plus tôt (puis le titre) départage.
+    """
     keys = [(_norm(k), t) for k, t in calendar_map.items()]
-    matched: list[tuple[date, str, DayType]] = []
+    matched: list[tuple[date, str, DayType, str]] = []
     for event in events:
         if not event.start <= day < event.end:
             continue
         summary = _norm(event.summary)
         for key, dtype in keys:
             if key in summary:
-                matched.append((event.start, summary, dtype))
+                matched.append((event.start, summary, dtype, event.summary))
 
-    types = {t for _, _, t in matched}
-    if DayType.HOLIDAYS in types:
-        return DayType.HOLIDAYS
-    if DayType.DAY_OFF in types:
-        return DayType.DAY_OFF
-    low = sorted((m for m in matched if m[2] in (DayType.SCHOOL, DayType.WEEKEND)),
-                 key=lambda m: (m[0], m[1]))
-    if low:
-        return low[0][2]
-    return DayType.SCHOOL if day.weekday() < 5 else DayType.WEEKEND
+    for wanted in ((DayType.HOLIDAYS,), (DayType.DAY_OFF,), (DayType.SCHOOL, DayType.WEEKEND)):
+        hits = sorted((m for m in matched if m[2] in wanted), key=lambda m: (m[0], m[1]))
+        if hits:
+            return hits[0][2], hits[0][3]
+    return (DayType.SCHOOL if day.weekday() < 5 else DayType.WEEKEND), None

@@ -1,7 +1,7 @@
 // Logique pure des éditeurs visuels de cartes : schéma `ha-form` construit à partir de l'état du
 // moteur (appareils et enfants proposés en liste) et nettoyage de la config produite, sans DOM.
 
-import { serviceLabel, serviceShownOnResource } from "./lib.js";
+import { serviceLabel, serviceShownOnResource, PREVIEW_MAX_DAYS } from "./lib.js";
 import { t, hasKey } from "./i18n.js";
 
 const text = (name, label, helper) => ({ name, label, helper, selector: { text: {} } });
@@ -112,6 +112,11 @@ export function editorSchema(card, state, config, hass) {
     label: t(hass, "editor.kids"),
     helper: t(hass, "editor.kids_helper"),
     selector: { select: { multiple: true, mode: "list", options: withCurrent(kids, config?.kids, hass) } },
+  }, {
+    name: "days_ahead",
+    label: t(hass, "editor.days_ahead"),
+    helper: t(hass, "editor.days_ahead_helper"),
+    selector: { number: { min: 0, max: PREVIEW_MAX_DAYS, mode: "box" } },
   }];
 }
 

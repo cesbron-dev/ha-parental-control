@@ -38,6 +38,10 @@ const {
   requestOutcome,
   requestsScreen,
   pendingCount,
+  dayExceptionSpans,
+  haToday,
+  addDays,
+  daysAhead,
 } = await import("../../custom_components/parental_control/www/lib.js");
 
 const NOW = new Date("2026-10-30T15:00:00-04:00");
@@ -823,4 +827,28 @@ test("écran « Demandes » : message et boutons dans la langue de l'utilisateur
     ["Accept 30 min", "1 h 15 min", "Until the next change", "Accept until the next change", "Accept", "Refuse"]);
   assert.deepEqual(choices.map((c) => L.choiceTitle(c, FR)),
     ["Accepter 30 min", "1 h 15", "Jusqu'au prochain changement", "Accepter jusqu'au prochain changement", "Accepter", "Refuser"]);
+});
+
+
+test("dayExceptionSpans", () => {
+  const day = new Date("2026-10-31T00:00:00-04:00");
+  // Fin le lendemain à 06:00 : de minuit à 06:00 (25 %).
+  const [a] = dayExceptionSpans([{ id: "e1", endsAt: "2026-10-31T06:00:00-04:00" }], day);
+  assert.deepEqual(a, { id: "e1", left: 0, width: 25 });
+  // Sans fin, ou fin avant ce jour : rien ; fin après ce jour : toute la journée.
+  assert.deepEqual(dayExceptionSpans([{ id: "e2", endsAt: null }, { id: "e3", endsAt: "2026-10-30T23:00:00-04:00" }], day), []);
+  assert.equal(dayExceptionSpans([{ id: "e4", endsAt: "2026-11-02T00:00:00-05:00" }], day)[0].width, 100);
+});
+
+test("haToday, addDays, daysAhead", () => {
+  assert.equal(haToday({ now: "2026-10-30T23:30:00-04:00" }), "2026-10-30");
+  assert.equal(haToday(null, new Date(2026, 9, 30, 12)), "2026-10-30");
+  assert.equal(addDays("2026-10-30", 2), "2026-11-01");
+  assert.equal(addDays("2026-12-31", 1), "2027-01-01");
+  assert.equal(addDays("2026-11-01", 0), "2026-11-01");
+  assert.equal(daysAhead({}), 7);
+  assert.equal(daysAhead({ days_ahead: 0 }), 0);
+  assert.equal(daysAhead({ days_ahead: 99 }), 31);
+  assert.equal(daysAhead({ days_ahead: "3" }), 3);
+  assert.equal(daysAhead({ days_ahead: "x" }), 7);
 });

@@ -594,3 +594,41 @@ async def test_simulation_exit_switch_follows(hass, entry, hass_ws_client) -> No
     assert (await _send(client, EXIT_SIM))["success"]
     await hass.async_block_till_done()
     assert hass.states.get(sim).state == "off"
+
+
+# --- prévision de la frise --------------------------------------------------------
+
+PREVIEW = "parental_control/timeline/preview"
+
+
+async def test_timeline_preview_open_to_all(hass, entry, users, hass_ws_client) -> None:
+    client = await _client_for(hass, hass_ws_client, users.kid)
+    resp = await _send(client, {"type": PREVIEW, "date": "2026-10-31"})
+    assert resp["success"]
+    result = resp["result"]
+    assert result["date"] == "2026-10-31"
+    assert set(result["kids"]["hugo"]) == {"day_type", "day_type_event", "timeline", "quota_minutes",
+        "bonus_minutes", "calendar_error"}
+    assert result["kids"]["hugo"]["day_type"] == "weekend"
+
+
+async def test_timeline_preview_today_equals_state(hass, entry, hass_ws_client) -> None:
+    client = await _client(hass, hass_ws_client, admin=False)
+    state = (await _send(client, {"type": "parental_control/state"}))["result"]
+    got = (await _send(client, {"type": PREVIEW, "date": TUESDAY.isoformat()}))["result"]
+    for kid_id, kid in got["kids"].items():
+        assert kid["timeline"] == state["kids"][kid_id]["timeline"]
+        assert kid["day_type"] == state["kids"][kid_id]["day_type"]
+
+
+@pytest.mark.parametrize("day", ["2026-10-26", "2026-11-28", "pas une date"])
+async def test_timeline_preview_rejects_out_of_range(hass, entry, hass_ws_client, day) -> None:
+    client = await _client(hass, hass_ws_client, admin=True)
+    resp = await _send(client, {"type": PREVIEW, "date": day})
+    assert not resp["success"]
+    assert resp["error"]["code"] in {"invalid_date", "invalid_format"}
+
+
+async def test_timeline_preview_last_allowed_day(hass, entry, hass_ws_client) -> None:
+    client = await _client(hass, hass_ws_client, admin=True)
+    assert (await _send(client, {"type": PREVIEW, "date": "2026-11-27"}))["success"]

@@ -410,6 +410,7 @@ reste seul juge de la validité.
 | `parental_control/label_switches/list` | parents | interrupteurs pilotés et ignorés, avec la raison |
 | `parental_control/state` | tous | l'état d'affichage, une fois |
 | `parental_control/state/subscribe` | tous | l'état d'affichage, poussé à chaque changement |
+| `parental_control/timeline/preview` | tous | ce que le moteur prévoit pour un jour (d'aujourd'hui à 31 jours) : type de jour et événement qui l'a décidé, frise, quota ; sans effet |
 | `parental_control/requests/subscribe` | tous | demandes en attente et récentes, avec « peut répondre » pour cet utilisateur |
 | `parental_control/requests/answer` | propriétaires d'un téléphone listé | répondre à une demande depuis l'écran « Demandes » |
 | `parental_control/simulation/exit` | parents | quitter la simulation depuis le panneau « Règles » (sans code, comme l'interrupteur) |
