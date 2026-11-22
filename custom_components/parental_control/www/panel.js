@@ -11,6 +11,7 @@ import { devicesView } from "./panel-devices.js";
 
 const CONFIRM_MS = 3000;
 const LOSE_PARENT_MS = 8000; // le temps de lire l'avertissement avant de confirmer
+const EXIT_SIM_MS = 8000; // idem : quitter la simulation pilote les appareils pour de vrai
 const TABS = ["kids", "resources", "general", "json"]; // libellés : `panel.tab.<id>`
 // Listes communes : titre et aide `panel.common_list.<list>_title|_help` ; `other` : l'autre liste
 // (son nom court, `panel.kids.<other>`).
@@ -45,6 +46,7 @@ class ParentalControlPanel extends HTMLElement {
     this._message = null; // {kind: "error" | "ok", text}
     this._saving = false;
     this._simulation = false;
+    this._exitingSim = false; // `simulation/exit` en cours
     this._requests = null; // {enabled, pending} : bouton « Demandes » ; null tant que l'état n'est pas reçu
     this._unsub = null;
     this._subConn = null;
@@ -176,8 +178,36 @@ class ParentalControlPanel extends HTMLElement {
     });
   }
 
+  // Bandeau de simulation, avec « Quitter » pour piloter les appareils (confirmation en deux appuis).
   _simBanner() {
-    return this._simulation ? `<span class="sim">${esc(this._t("panel.simulation"))}</span>` : "";
+    if (!this._simulation) return "";
+    const exit = this._btn("exit-sim", this._t("panel.sim_exit.button"), {
+      cls: "sim-exit", icon: "mdi:play-circle-outline", title: this._t("panel.sim_exit.title"),
+      disabled: this._exitingSim, confirmKey: "exit-sim",
+    });
+    return `<span class="sim">${esc(this._t("panel.simulation"))}${exit}</span>`;
+  }
+
+  _simExitNotice() {
+    if (this._armed !== "exit-sim" || !this._simulation) return "";
+    const unsaved = this._dirty() ? ` ${this._t("panel.sim_exit.unsaved")}` : "";
+    return `<div class="notice">${esc(this._t("panel.sim_exit.notice") + unsaved)}</div>`;
+  }
+
+  async _exitSimulation() {
+    this._exitingSim = true;
+    this._message = null;
+    this._render();
+    try {
+      await this._hass.connection.sendMessagePromise({ type: "parental_control/simulation/exit" });
+      // Le bandeau disparaît par l'abonnement d'état ; on n'attend pas l'événement pour le retirer.
+      this._simulation = false;
+      this._message = { kind: "ok", text: this._t("panel.sim_exit.done") };
+    } catch (err) {
+      this._message = { kind: "error", text: this._t("panel.sim_exit.failed", { error: errorText(this._hass, err) }) };
+    }
+    this._exitingSim = false;
+    this._render();
   }
 
   _dirty() {
@@ -309,6 +339,11 @@ class ParentalControlPanel extends HTMLElement {
         this._save();
         return;
       case "revert": if (!this._confirm("revert")) return; this._load(); return;
+      case "exit-sim":
+        // Brouillon non enregistré : signalé dans l'avertissement, pas bloquant.
+        if (!this._confirm("exit-sim", EXIT_SIM_MS)) return;
+        this._exitSimulation();
+        return;
       case "requests":
         // Quitter le panneau perd le brouillon : confirmation en deux appuis s'il y en a un.
         if (this._dirty() && !this._confirm("requests")) return;
@@ -754,6 +789,7 @@ class ParentalControlPanel extends HTMLElement {
       <div class="wrap">
         <header>${this._header()}</header>
         ${this._armed === "lose-parent" ? `<div class="notice">${esc(this._t("panel.lose_parent"))}</div>` : ""}
+        ${this._simExitNotice()}
         ${this._removedNotice()}
         ${msg?.kind === "error" ? `<div class="error">${esc(msg.text)}</div>` : ""}
         ${d ? this._body() : `<div class="card mut">${esc(this._t("common.loading"))}</div>`}

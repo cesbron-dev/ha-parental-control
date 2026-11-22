@@ -637,7 +637,9 @@ piloter aucun appareil : rien n'est bloqué, éteint ni limité. Il sert à vali
 les laisser agir.
 
 - **Interrupteur** `switch` « Simulation », à côté de « Pause générale ». Les cartes affichent une pastille
-  « SIMULATION » dans leur en-tête et le panneau « Règles » un bandeau en tête.
+  « SIMULATION » dans leur en-tête et le panneau « Règles » un bandeau en tête, avec un bouton
+  **Quitter** : deux appuis (un avertissement rappelle que les appareils seront pilotés tout de suite
+  et que les modifications non enregistrées ne seront pas prises en compte).
 - **Journal de bord.** Chaque action que le moteur aurait faite (fermer une ressource, rebloquer un
   service, remettre la limite Nintendo à 0…) y est inscrite à la place de l'appel réel.
 - **Installation.** Une nouvelle installation démarre en simulation : désactivez-la une fois les

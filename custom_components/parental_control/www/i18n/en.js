@@ -300,6 +300,14 @@ export default {
     title: "Rules",
     parents_only: "Parents only.",
     simulation: "Simulation: no device is controlled",
+    sim_exit: {
+      button: "Exit",
+      title: "Exit simulation: devices will be controlled",
+      notice: "Exiting simulation: devices will be controlled right away according to the saved rules (they may be turned off). Press again to confirm.",
+      unsaved: "Unsaved changes will not be applied: save them first.",
+      done: "Simulation exited: devices are now controlled",
+      failed: "Could not exit simulation: {error}",
+    },
     lose_parent: "You will no longer be a parent after saving. Continue?",
     removed: "“{name}” will be deleted when you save: its current permissions and today's time are lost.",
     tab: {

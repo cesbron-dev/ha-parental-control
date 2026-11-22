@@ -543,3 +543,54 @@ async def test_whoami(hass, entry, parent, users, hass_ws_client) -> None:
         client = await _client_for(hass, hass_ws_client, user)
         resp = await _send(client, {"type": "parental_control/whoami"})
         assert resp["result"] == {**rights, "user_id": user_id}
+
+
+# --- quitter la simulation (panneau Règles) ---------------------------------------
+
+EXIT_SIM = {"type": "parental_control/simulation/exit"}
+
+
+async def test_simulation_exit_by_admin(hass, entry, hass_ws_client) -> None:
+    engine = entry.runtime_data
+    await engine.set_simulation(True)
+    client = await _client(hass, hass_ws_client, admin=True)
+    resp = await _send(client, EXIT_SIM)
+    assert resp["success"]
+    assert resp["result"] == {"simulation": False}
+    assert engine.simulation is False
+    # Déjà sortie : sans effet, même réponse.
+    assert (await _send(client, EXIT_SIM))["result"] == {"simulation": False}
+
+
+async def test_simulation_exit_by_parent_non_admin_needs_no_code(
+    hass, entry, parent, hass_ws_client
+) -> None:
+    engine = entry.runtime_data
+    await engine.set_simulation(True)
+    client = await _client_for(hass, hass_ws_client, parent)
+    resp = await _send(client, EXIT_SIM)
+    assert resp["success"]
+    assert engine.simulation is False
+
+
+async def test_simulation_exit_refused_to_non_parent(hass, entry, users, hass_ws_client) -> None:
+    engine = entry.runtime_data
+    await engine.set_simulation(True)
+    client = await _client_for(hass, hass_ws_client, users.kid)
+    _assert_unauthorized(await _send(client, EXIT_SIM))
+    assert engine.simulation is True
+
+
+async def test_simulation_exit_switch_follows(hass, entry, hass_ws_client) -> None:
+    engine = entry.runtime_data
+    await engine.set_simulation(True)
+    await hass.async_block_till_done()
+    sim = next(
+        e.entity_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
+        if e.unique_id.endswith("_global_simulation")
+    )
+    assert hass.states.get(sim).state == "on"
+    client = await _client(hass, hass_ws_client, admin=True)
+    assert (await _send(client, EXIT_SIM))["success"]
+    await hass.async_block_till_done()
+    assert hass.states.get(sim).state == "off"

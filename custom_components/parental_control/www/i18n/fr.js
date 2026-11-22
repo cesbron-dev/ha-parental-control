@@ -300,6 +300,14 @@ export default {
     title: "Règles",
     parents_only: "Réservé aux parents.",
     simulation: "Simulation : aucun appareil n'est piloté",
+    sim_exit: {
+      button: "Quitter",
+      title: "Quitter la simulation : les appareils seront pilotés",
+      notice: "Quitter la simulation : les appareils seront pilotés tout de suite selon les règles enregistrées (coupures possibles). Appuyez de nouveau pour confirmer.",
+      unsaved: "Les modifications non enregistrées ne seront pas prises en compte : enregistrez-les d'abord.",
+      done: "Simulation quittée : les appareils sont pilotés",
+      failed: "Impossible de quitter la simulation : {error}",
+    },
     lose_parent: "Vous ne serez plus parent après l'enregistrement. Continuer ?",
     removed: "« {name} » sera supprimé à l'enregistrement : ses autorisations en cours et son temps du jour sont perdus.",
     tab: {
