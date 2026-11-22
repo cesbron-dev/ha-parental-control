@@ -37,6 +37,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_state_subscribe)
     websocket_api.async_register_command(hass, ws_requests_subscribe)
     websocket_api.async_register_command(hass, ws_requests_answer)
+    websocket_api.async_register_command(hass, ws_simulation_exit)
 
 
 def _engine(
@@ -184,6 +185,25 @@ async def ws_label_switches_list(
     connection.send_result(
         msg["id"], {"switches": engine.label_switches, "issues": engine.label_issues}
     )
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/simulation/exit"})
+@websocket_api.async_response
+async def ws_simulation_exit(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Quitte la simulation depuis le panneau Règles (parents).
+
+    Même règle que l'interrupteur `Simulation` : le quitter ne demande pas de code (c'est
+    l'activer qui cesse de piloter). Les appareils sont resynchronisés tout de suite.
+    """
+    if (engine := _engine(hass, connection, msg)) is None:
+        return
+    if not await _require_parent(hass, connection, msg, engine):
+        return
+    if engine.simulation:
+        await engine.set_simulation(False)
+    connection.send_result(msg["id"], {"simulation": engine.simulation})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})

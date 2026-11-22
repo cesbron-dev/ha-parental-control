@@ -38,6 +38,12 @@ export const CSS = `
   header h1 { font-size: 22px; font-weight: 500; margin: 0; }
   .sim { font-size: 12.5px; color: var(--pc-amber); background: color-mix(in srgb, var(--pc-amber) 12%, transparent);
     padding: 4px 10px; border-radius: 20px; white-space: nowrap; }
+  .sim { display: inline-flex; align-items: center; gap: 8px; }
+  .sim-exit { color: var(--pc-text); font-size: 12px; padding: 2px 8px; border-radius: 14px;
+    background: color-mix(in srgb, var(--pc-amber) 22%, transparent); --mdc-icon-size: 16px; }
+  .sim-exit:hover { background: color-mix(in srgb, var(--pc-amber) 34%, transparent); }
+  .sim-exit.armed { background: var(--pc-amber); color: #1b1b1b; }
+  .sim-exit[disabled] { opacity: .6; cursor: default; }
   .tabs { display: flex; gap: 4px; margin-left: 24px; }
   .tabs button { padding: 7px 14px; border-radius: 18px; color: var(--pc-muted); }
   .tabs button.on { background: var(--pc-card2); color: var(--pc-text); }

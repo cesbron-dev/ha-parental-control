@@ -630,7 +630,9 @@ controlling any device: nothing is blocked, turned off or limited. It is used to
 before letting them act.
 
 - **Switch**: a "Simulation" `switch`, next to "Global pause". The cards show a "SIMULATION"
-  badge in their header and the Rules panel a banner at the top.
+  badge in their header and the Rules panel a banner at the top, with an **Exit** button: press it
+  twice (a warning says that devices will be controlled right away, and that unsaved changes
+  will not be applied).
 - **Logbook.** Every action the engine would have taken (closing a resource, blocking a service
   again, resetting the Nintendo limit to 0…) is recorded there instead of the real call.
 - **Installation.** A new installation starts in simulation: turn it off once the rules are
