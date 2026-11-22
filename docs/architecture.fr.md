@@ -414,6 +414,7 @@ reste seul juge de la validité.
 | `parental_control/requests/subscribe` | tous | demandes en attente et récentes, avec « peut répondre » pour cet utilisateur |
 | `parental_control/requests/answer` | propriétaires d'un téléphone listé | répondre à une demande depuis l'écran « Demandes » |
 | `parental_control/simulation/exit` | parents | quitter la simulation depuis le panneau « Règles » (sans code, comme l'interrupteur) |
+| `parental_control/simulation/enter` | parents | activer la simulation depuis le panneau « Règles » (sans code pour un parent, comme l'interrupteur) |
 
 Les actions (`homework_done`, `add_bonus`, `exception`, `cancel_exception`, `start_timer`,
 `stop_timer`, `pause`, `import_config`, `request`) sont décrites dans le

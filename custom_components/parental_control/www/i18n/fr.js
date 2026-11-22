@@ -313,6 +313,13 @@ export default {
     title: "Règles",
     parents_only: "Réservé aux parents.",
     simulation: "Simulation : aucun appareil n'est piloté",
+    sim_enter: {
+      button: "Simulation",
+      title: "Passer en simulation : plus aucun appareil ne sera piloté",
+      notice: "Passer en simulation : le moteur continue de calculer mais ne pilote plus aucun appareil (rien n'est bloqué, éteint ni limité) jusqu'à ce que vous la quittiez. Appuyez de nouveau pour confirmer.",
+      done: "Simulation activée : aucun appareil n'est piloté",
+      failed: "Impossible d'activer la simulation : {error}",
+    },
     sim_exit: {
       button: "Quitter",
       title: "Quitter la simulation : les appareils seront pilotés",

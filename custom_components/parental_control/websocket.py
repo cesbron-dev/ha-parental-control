@@ -42,6 +42,7 @@ def async_register_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_requests_subscribe)
     websocket_api.async_register_command(hass, ws_requests_answer)
     websocket_api.async_register_command(hass, ws_simulation_exit)
+    websocket_api.async_register_command(hass, ws_simulation_enter)
     websocket_api.async_register_command(hass, ws_timeline_preview)
 
 
@@ -208,6 +209,25 @@ async def ws_simulation_exit(
         return
     if engine.simulation:
         await engine.set_simulation(False)
+    connection.send_result(msg["id"], {"simulation": engine.simulation})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/simulation/enter"})
+@websocket_api.async_response
+async def ws_simulation_enter(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Active la simulation depuis le panneau Règles (parents).
+
+    Activer relâche tous les appareils : comme pour l'interrupteur, un non-parent devrait
+    donner le code ; la commande est réservée aux parents, qui l'activent sans code.
+    """
+    if (engine := _engine(hass, connection, msg)) is None:
+        return
+    if not await _require_parent(hass, connection, msg, engine):
+        return
+    if not engine.simulation:
+        await engine.set_simulation(True)
     connection.send_result(msg["id"], {"simulation": engine.simulation})
 
 
