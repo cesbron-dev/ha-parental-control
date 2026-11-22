@@ -568,6 +568,40 @@ export function exceptionSpans(exceptions, now) {
   return spans;
 }
 
+// Plages hachurées d'un jour à venir (`dayStart` : son minuit) : les exceptions ouvertes dont la fin
+// tombe après ce minuit, de minuit à leur fin (bornée au jour). Sans fin : terminées avant ce jour.
+export function dayExceptionSpans(exceptions, dayStart) {
+  const spans = [];
+  for (const e of exceptions ?? []) {
+    if (!e.endsAt || new Date(e.endsAt) <= dayStart) continue;
+    const { bars } = timelineGeometry([{ start: dayStart.toISOString(), end: e.endsAt, type: "exception" }], dayStart);
+    if (bars[0]) spans.push({ id: e.id, left: bars[0].left, width: bars[0].width });
+  }
+  return spans;
+}
+
+// Jour « AAAA-MM-JJ » de Home Assistant d'après l'instantané (`now` : heure locale de HA, ISO) ;
+// à défaut, le jour local du navigateur.
+export function haToday(state, fallback = new Date()) {
+  const m = /^(\d{4}-\d{2}-\d{2})T/.exec(state?.now ?? "");
+  if (m) return m[1];
+  const p = (n) => String(n).padStart(2, "0");
+  return `${fallback.getFullYear()}-${p(fallback.getMonth() + 1)}-${p(fallback.getDate())}`;
+}
+
+// « AAAA-MM-JJ » décalé de `days` jours (calendrier pur, sans fuseau ni heure d'été).
+export function addDays(isoDate, days) {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+// Nombre de jours navigables de la carte frise (`days_ahead`) : 7 par défaut, entre 0 et 31.
+export const PREVIEW_MAX_DAYS = 31;
+export function daysAhead(config) {
+  const n = Number(config?.days_ahead ?? 7);
+  return Number.isFinite(n) ? Math.min(PREVIEW_MAX_DAYS, Math.max(0, Math.floor(n))) : 7;
+}
+
 // Faut-il (ré)essayer la souscription ? Non sans connexion, si elle est déjà faite pour cette
 // connexion, ou si elle vient d'y échouer (seul le tick de 60 s réessaie, pas chaque `hass`).
 export function shouldSubscribe(conn, subConn, failedConn) {

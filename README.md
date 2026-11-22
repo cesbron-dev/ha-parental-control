@@ -409,7 +409,7 @@ version.
 | Card | Purpose | Minimal configuration |
 |---|---|---|
 | `parental-resource-card` | A device: state, ongoing permissions (✕ to cancel), "Allow…" and "Stop". For a Switch: bonus pills instead. AdGuard device or device targeted by a labelled switch: its on-demand services as toggles (green unblocked, grey blocked). | `resource: tv` |
-| `parental-timeline-card` | Each child's timeline for the day. | `type: custom:parental-timeline-card`; `kids: [hugo]` restricts to the listed children |
+| `parental-timeline-card` | Each child's timeline for the day; ‹ › shows the following days as the engine plans them (day type and the calendar event behind it, timeline, quota). | `type: custom:parental-timeline-card`; `kids: [hugo]` restricts to the listed children; `days_ahead: 7` (default) sets how many days ahead can be shown, `0` keeps today only, 31 at most |
 | `parental-kid-card` | A child: status, today's timeline, "Homework done" (during an after-homework slot), timer (quota slot), remaining screen time, on-demand services as toggles (AdGuard devices and switches targeting the child), ongoing permissions (✕) and bonuses. | `kid: alice`; `show_timeline`, `show_services`, `show_bonus` (false to hide), `services`, `bonus_minutes` |
 | `parental-switch-card` | A Nintendo console: remaining-time gauge, time used, rule state and bonuses. Complements the official Nintendo integration. | `resource: switch` |
 

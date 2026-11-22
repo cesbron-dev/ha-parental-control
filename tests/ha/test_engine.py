@@ -23,6 +23,7 @@ from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.decisions import Target, Timer
 from custom_components.parental_control.core.model import DayType
 from custom_components.parental_control.engine import ParentalEngine
+from custom_components.parental_control.serialize import serialize_snapshot
 from custom_components.parental_control.store import ParentalStore
 from tests.fixtures import EX, integration_of
 from tests.ha.fake_adguard import FakeAdGuard
@@ -1255,3 +1256,57 @@ async def test_on_demand_service_blocked_on_adguard_in_free_window(hass, freezer
 def _french_system_language(hass) -> None:
     """Textes du serveur (notifications, journal de bord) vérifiés en français."""
     hass.config.language = "fr"
+
+
+# --- prévision de la frise (jours suivants) ---------------------------------------
+
+
+async def test_preview_today_matches_live_state(hass, freezer, services) -> None:
+    services.calendar_events = [
+        {"start": "2026-10-27", "end": "2026-10-28", "summary": "Congé pédagogique"},
+    ]
+    _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
+    calls = len(services.calendar_calls)
+    got = await engine.preview_day(TUESDAY)
+    live = serialize_snapshot(engine, display=True)["kids"]
+    assert got["date"] == "2026-10-27"
+    for kid_id, kid in got["kids"].items():
+        assert kid["day_type"] == live[kid_id]["day_type"]
+        assert kid["timeline"] == live[kid_id]["timeline"]
+    assert got["kids"]["hugo"]["day_type_event"] == "Congé pédagogique"
+    # Le jour même : événements déjà lus, pas de nouvel appel au calendrier.
+    assert len(services.calendar_calls) == calls
+
+
+async def test_preview_future_day_reads_calendar_once_and_touches_nothing(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
+    services.calendar_events = [
+        {"start": "2026-10-29", "end": "2026-10-30", "summary": "Congé pédagogique"},
+    ]
+    calls, sent = len(services.calendar_calls), len(services.calls)
+    before = engine.decisions.to_dict()
+    thursday = TUESDAY + timedelta(days=2)
+    got = await engine.preview_day(thursday)
+    hugo = got["kids"]["hugo"]
+    assert hugo["day_type"] == "day_off"
+    assert hugo["day_type_event"] == "Congé pédagogique"
+    assert hugo["calendar_error"] is False
+    call = services.calendar_calls[-1]
+    assert call.data["start_date_time"] == at(thursday, 0, 0).isoformat()
+    assert len(services.calendar_calls) == calls + 1
+    # Deuxième lecture : mémorisée.
+    await engine.preview_day(thursday)
+    assert len(services.calendar_calls) == calls + 1
+    # Aucune commande envoyée, aucune décision changée, l'état courant intact.
+    assert len(services.calls) == sent
+    assert engine.decisions.to_dict() == before
+    assert engine.snapshot.kids["hugo"].day_type is DayType.SCHOOL
+
+
+async def test_preview_calendar_failure_falls_back_to_weekday(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 10, 0))
+    services.calendar_error = HomeAssistantError("panne")
+    got = await engine.preview_day(SATURDAY)
+    assert got["kids"]["hugo"]["day_type"] == "weekend"
+    assert got["kids"]["hugo"]["calendar_error"] is True
+    assert got["kids"]["hugo"]["day_type_event"] is None

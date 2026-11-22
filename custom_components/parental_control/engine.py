@@ -48,8 +48,9 @@ from .adapters import build_adapter
 from .adapters.simulation import SimulatedAdapter
 from .calendar_source import fetch_all_day_events
 from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TICK_SECONDS
-from .core.daytype import AllDayEvent, day_type
+from .core.daytype import AllDayEvent, day_type, explain_day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
+from .core.display import kid_day_preview
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
 from .core.i18n import request_reason
 from .core.label_services import switch_blocked
@@ -78,6 +79,8 @@ _LOGGER = logging.getLogger(__name__)
 
 MAX_ELAPSED = timedelta(minutes=5)
 CALENDAR_REFRESH = timedelta(minutes=15)
+# Prévision de la frise : jusqu'à combien de jours après aujourd'hui.
+PREVIEW_MAX_DAYS = 31
 DEFAULT_WARN_MINUTES = 5
 DRIFT_COOLDOWN = timedelta(seconds=30)
 
@@ -158,6 +161,8 @@ class ParentalEngine:
         self._warned: set[tuple[str, datetime]] = set()
         # Événements par enfant, avec le jour local pour lequel ils ont été lus.
         self._events: dict[str, tuple[date, list[AllDayEvent]]] = {}
+        # Prévision : événements lus par (calendrier, jour), avec l'heure de lecture.
+        self._preview_events: dict[tuple[str, date], tuple[datetime, list[AllDayEvent]]] = {}
         # Dernier envoi de commande par ressource (anti-rafale des corrections de dérive).
         self._sent_at: dict[str, datetime] = {}
         # Interrupteurs labellisés : découverte, état voulu appliqué (allumé ?), bloqué ou non
@@ -495,6 +500,52 @@ class ParentalEngine:
             return
         await self._refresh_calendars()
         await self.async_evaluate("calendar")
+
+    async def preview_day(self, day: date) -> dict[str, Any]:
+        """Ce que le moteur prévoit pour le jour `day` (frise de la carte, jours suivants).
+
+        Projection pure : aucune décision n'est enregistrée, aucun appareil n'est touché.
+        Le jour même reprend les événements de l'évaluation courante (même résultat que la
+        frise en direct) ; un autre jour lit son calendrier, mémorisé `CALENDAR_REFRESH`.
+        """
+        cfg = self._config
+        kids: dict[str, Any] = {}
+        if cfg is None:
+            return {"date": day.isoformat(), "kids": kids}
+        now = dt_util.now()
+        tz = dt_util.get_default_time_zone()
+        for kid in cfg.kids:
+            calendar_error = False
+            events: list[AllDayEvent] = []
+            if day == now.date():
+                current = self._events.get(kid.id)
+                events = current[1] if current is not None and current[0] == day else []
+            elif kid.calendar is not None:
+                fetched = await self._calendar_events(kid.calendar, day, now)
+                calendar_error = fetched is None
+                events = fetched or []
+            dtype, event = explain_day_type(day, events, cfg.calendar_map)
+            kids[kid.id] = {
+                **kid_day_preview(cfg, self._decisions, kid.id, day, dtype, tz, event=event),
+                "calendar_error": calendar_error,
+            }
+        return {"date": day.isoformat(), "kids": kids}
+
+    async def _calendar_events(self, entity_id: str, day: date,
+                               now: datetime) -> list[AllDayEvent] | None:
+        """Événements d'un jour pour la prévision ; None si le calendrier est illisible."""
+        # Lectures périmées oubliées (jours passés, plus de `CALENDAR_REFRESH`).
+        self._preview_events = {
+            k: v for k, v in self._preview_events.items()
+            if k[1] >= now.date() and now - v[0] < CALENDAR_REFRESH
+        }
+        cached = self._preview_events.get((entity_id, day))
+        if cached is not None:
+            return cached[1]
+        fetched = await fetch_all_day_events(self._hass, entity_id, day)
+        if fetched is not None:
+            self._preview_events[(entity_id, day)] = (now, fetched)
+        return fetched
 
     def _day_types(self, now: datetime, cfg: Config) -> dict[str, DayType]:
         return {

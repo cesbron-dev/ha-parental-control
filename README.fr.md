@@ -413,7 +413,7 @@ navigateur garde une ancienne version.
 | Carte | Rôle | Configuration minimale |
 |---|---|---|
 | `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard ou ciblé par un interrupteur par label : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
-| `parental-timeline-card` | La frise de la journée de chaque enfant. | `type: custom:parental-timeline-card` ; `kids: [hugo]` limite aux enfants listés |
+| `parental-timeline-card` | La frise de la journée de chaque enfant ; ‹ › affiche les jours suivants tels que le moteur les prévoit (type de jour et événement du calendrier qui l'a décidé, frise, quota). | `type: custom:parental-timeline-card` ; `kids: [hugo]` limite aux enfants listés ; `days_ahead: 7` (par défaut) fixe le nombre de jours consultables, `0` garde aujourd'hui seulement, 31 au plus |
 | `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules de ses services (appareils AdGuard et interrupteurs qui le visent), autorisations en cours (✕) et bonus. | `kid: alice` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
 | `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
 
