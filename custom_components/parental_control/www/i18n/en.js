@@ -313,6 +313,13 @@ export default {
     title: "Rules",
     parents_only: "Parents only.",
     simulation: "Simulation: no device is controlled",
+    sim_enter: {
+      button: "Simulation",
+      title: "Switch to simulation: no device will be controlled",
+      notice: "Switching to simulation: the engine keeps computing but no longer controls any device (nothing is blocked, turned off or limited) until you exit it. Press again to confirm.",
+      done: "Simulation on: no device is controlled",
+      failed: "Could not turn simulation on: {error}",
+    },
     sim_exit: {
       button: "Exit",
       title: "Exit simulation: devices will be controlled",

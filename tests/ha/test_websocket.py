@@ -632,3 +632,28 @@ async def test_timeline_preview_rejects_out_of_range(hass, entry, hass_ws_client
 async def test_timeline_preview_last_allowed_day(hass, entry, hass_ws_client) -> None:
     client = await _client(hass, hass_ws_client, admin=True)
     assert (await _send(client, {"type": PREVIEW, "date": "2026-11-27"}))["success"]
+
+
+ENTER_SIM = {"type": "parental_control/simulation/enter"}
+
+
+async def test_simulation_enter_by_parent_non_admin_needs_no_code(
+    hass, entry, parent, hass_ws_client
+) -> None:
+    engine = entry.runtime_data
+    assert engine.simulation is False
+    client = await _client_for(hass, hass_ws_client, parent)
+    resp = await _send(client, ENTER_SIM)
+    assert resp["success"]
+    assert resp["result"] == {"simulation": True}
+    assert engine.simulation is True
+    # Déjà en simulation : sans effet, même réponse ; puis on en ressort.
+    assert (await _send(client, ENTER_SIM))["result"] == {"simulation": True}
+    assert (await _send(client, EXIT_SIM))["result"] == {"simulation": False}
+
+
+async def test_simulation_enter_refused_to_non_parent(hass, entry, users, hass_ws_client) -> None:
+    engine = entry.runtime_data
+    client = await _client_for(hass, hass_ws_client, users.kid)
+    _assert_unauthorized(await _send(client, ENTER_SIM))
+    assert engine.simulation is False

@@ -44,6 +44,11 @@ export const CSS = `
   .sim-exit:hover { background: color-mix(in srgb, var(--pc-amber) 34%, transparent); }
   .sim-exit.armed { background: var(--pc-amber); color: #1b1b1b; }
   .sim-exit[disabled] { opacity: .6; cursor: default; }
+  .sim-enter { color: var(--pc-muted); font-size: 12.5px; padding: 4px 10px; border-radius: 20px;
+    border: 1px dashed color-mix(in srgb, var(--pc-muted) 50%, transparent); --mdc-icon-size: 16px; }
+  .sim-enter:hover { color: var(--pc-amber); border-color: var(--pc-amber); }
+  .sim-enter.armed { color: #1b1b1b; background: var(--pc-amber); border-color: var(--pc-amber); }
+  .sim-enter[disabled] { opacity: .6; cursor: default; }
   .tabs { display: flex; gap: 4px; margin-left: 24px; }
   .tabs button { padding: 7px 14px; border-radius: 18px; color: var(--pc-muted); }
   .tabs button.on { background: var(--pc-card2); color: var(--pc-text); }

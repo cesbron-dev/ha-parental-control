@@ -11,7 +11,7 @@ import { devicesView } from "./panel-devices.js";
 
 const CONFIRM_MS = 3000;
 const LOSE_PARENT_MS = 8000; // le temps de lire l'avertissement avant de confirmer
-const EXIT_SIM_MS = 8000; // idem : quitter la simulation pilote les appareils pour de vrai
+const SIM_MS = 8000; // idem : entrer en simulation ou en sortir change ce que les appareils subissent
 const TABS = ["kids", "resources", "general", "json"]; // libellés : `panel.tab.<id>`
 // Listes communes : titre et aide `panel.common_list.<list>_title|_help` ; `other` : l'autre liste
 // (son nom court, `panel.kids.<other>`).
@@ -45,8 +45,8 @@ class ParentalControlPanel extends HTMLElement {
     this._labelSwitches = null; // {switches, issues} des interrupteurs pilotés par label ; null : illisibles
     this._message = null; // {kind: "error" | "ok", text}
     this._saving = false;
-    this._simulation = false;
-    this._exitingSim = false; // `simulation/exit` en cours
+    this._simulation = null; // null : état pas encore reçu (ni bandeau ni bouton)
+    this._switchingSim = false; // `simulation/enter|exit` en cours
     this._requests = null; // {enabled, pending} : bouton « Demandes » ; null tant que l'état n'est pas reçu
     this._unsub = null;
     this._subConn = null;
@@ -160,9 +160,9 @@ class ParentalControlPanel extends HTMLElement {
     this._subConn = null;
     this._unsub?.();
     this._unsub = null;
-    // Plus d'abonnement : pas de bandeau périmé.
-    if (this._simulation) {
-      this._simulation = false;
+    // Plus d'abonnement : ni bandeau ni bouton périmés.
+    if (this._simulation !== null) {
+      this._simulation = null;
       const el = this.shadowRoot.querySelector(".sim-slot");
       if (el) el.innerHTML = "";
     }
@@ -178,35 +178,46 @@ class ParentalControlPanel extends HTMLElement {
     });
   }
 
-  // Bandeau de simulation, avec « Quitter » pour piloter les appareils (confirmation en deux appuis).
+  // En simulation : bandeau avec « Quitter » ; sinon, bouton discret « Simulation » pour y entrer.
+  // Les deux se confirment en deux appuis.
   _simBanner() {
-    if (!this._simulation) return "";
+    if (this._simulation === null) return "";
+    if (!this._simulation) {
+      return this._btn("enter-sim", this._t("panel.sim_enter.button"), {
+        cls: "sim-enter", icon: "mdi:flask-outline", title: this._t("panel.sim_enter.title"),
+        disabled: this._switchingSim, confirmKey: "enter-sim",
+      });
+    }
     const exit = this._btn("exit-sim", this._t("panel.sim_exit.button"), {
       cls: "sim-exit", icon: "mdi:play-circle-outline", title: this._t("panel.sim_exit.title"),
-      disabled: this._exitingSim, confirmKey: "exit-sim",
+      disabled: this._switchingSim, confirmKey: "exit-sim",
     });
     return `<span class="sim">${esc(this._t("panel.simulation"))}${exit}</span>`;
   }
 
-  _simExitNotice() {
+  _simNotice() {
+    if (this._armed === "enter-sim" && this._simulation === false) {
+      return `<div class="notice">${esc(this._t("panel.sim_enter.notice"))}</div>`;
+    }
     if (this._armed !== "exit-sim" || !this._simulation) return "";
     const unsaved = this._dirty() ? ` ${this._t("panel.sim_exit.unsaved")}` : "";
     return `<div class="notice">${esc(this._t("panel.sim_exit.notice") + unsaved)}</div>`;
   }
 
-  async _exitSimulation() {
-    this._exitingSim = true;
+  async _setSimulation(on) {
+    const key = on ? "sim_enter" : "sim_exit";
+    this._switchingSim = true;
     this._message = null;
     this._render();
     try {
-      await this._hass.connection.sendMessagePromise({ type: "parental_control/simulation/exit" });
-      // Le bandeau disparaît par l'abonnement d'état ; on n'attend pas l'événement pour le retirer.
-      this._simulation = false;
-      this._message = { kind: "ok", text: this._t("panel.sim_exit.done") };
+      await this._hass.connection.sendMessagePromise({ type: `parental_control/simulation/${on ? "enter" : "exit"}` });
+      // L'abonnement d'état suivra ; on n'attend pas l'événement pour changer le bandeau.
+      this._simulation = on;
+      this._message = { kind: "ok", text: this._t(`panel.${key}.done`) };
     } catch (err) {
-      this._message = { kind: "error", text: this._t("panel.sim_exit.failed", { error: errorText(this._hass, err) }) };
+      this._message = { kind: "error", text: this._t(`panel.${key}.failed`, { error: errorText(this._hass, err) }) };
     }
-    this._exitingSim = false;
+    this._switchingSim = false;
     this._render();
   }
 
@@ -341,8 +352,12 @@ class ParentalControlPanel extends HTMLElement {
       case "revert": if (!this._confirm("revert")) return; this._load(); return;
       case "exit-sim":
         // Brouillon non enregistré : signalé dans l'avertissement, pas bloquant.
-        if (!this._confirm("exit-sim", EXIT_SIM_MS)) return;
-        this._exitSimulation();
+        if (!this._confirm("exit-sim", SIM_MS)) return;
+        this._setSimulation(false);
+        return;
+      case "enter-sim":
+        if (!this._confirm("enter-sim", SIM_MS)) return;
+        this._setSimulation(true);
         return;
       case "requests":
         // Quitter le panneau perd le brouillon : confirmation en deux appuis s'il y en a un.
@@ -789,7 +804,7 @@ class ParentalControlPanel extends HTMLElement {
       <div class="wrap">
         <header>${this._header()}</header>
         ${this._armed === "lose-parent" ? `<div class="notice">${esc(this._t("panel.lose_parent"))}</div>` : ""}
-        ${this._simExitNotice()}
+        ${this._simNotice()}
         ${this._removedNotice()}
         ${msg?.kind === "error" ? `<div class="error">${esc(msg.text)}</div>` : ""}
         ${d ? this._body() : `<div class="card mut">${esc(this._t("common.loading"))}</div>`}
