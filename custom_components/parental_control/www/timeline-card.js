@@ -172,7 +172,7 @@ class ParentalTimelineCard extends HTMLElement {
     const rows = ids.map((id) => this._kidRow(id, kids[id], now)).join("");
 
     return `
-      <div class="head"><div class="titlebar"><div class="title">${esc(t(hass, "card.timeline.today"))}</div>${this._nav()}${simulationBadge(this._state, hass)}</div>
+      <div class="head"><div class="titlebar">${this._nav()}<div class="title">${esc(t(hass, "card.timeline.today"))}</div>${simulationBadge(this._state, hass)}</div>
         <div class="muted">${[dayType, hh].filter(Boolean).map(esc).join(" · ")}</div></div>
       ${rows}
       ${this._footer()}`;
@@ -192,10 +192,12 @@ class ParentalTimelineCard extends HTMLElement {
     if (!max) return "";
     const hass = this._hass;
     const btn = (act, icon, label, disabled) => `<button type="button" data-nav="${act}" title="${esc(label)}" aria-label="${esc(label)}" ${disabled ? "disabled" : ""}><ha-icon icon="${icon}"></ha-icon></button>`;
-    const today = this._offset > 0
-      ? `<button type="button" class="today" data-nav="today" title="${esc(t(hass, "card.timeline.back_today"))}">${esc(t(hass, "card.timeline.today"))}</button>`
-      : "";
-    return `<span class="nav">${btn("prev", "mdi:chevron-left", t(hass, "card.timeline.previous_day"), this._offset === 0)}${btn("next", "mdi:chevron-right", t(hass, "card.timeline.next_day"), this._offset >= max)}${today}</span>`;
+    // Flèches avant le titre : elles ne bougent pas quand la date remplace « Aujourd'hui ».
+    return `<span class="nav">${btn("prev", "mdi:chevron-left", t(hass, "card.timeline.previous_day"), this._offset === 0)}${btn("next", "mdi:chevron-right", t(hass, "card.timeline.next_day"), this._offset >= max)}</span>`;
+  }
+
+  _todayButton() {
+    return `<span class="nav"><button type="button" class="today" data-nav="today" title="${esc(t(this._hass, "card.timeline.back_today"))}">${esc(t(this._hass, "card.timeline.today"))}</button></span>`;
   }
 
   _day() {
@@ -226,8 +228,8 @@ class ParentalTimelineCard extends HTMLElement {
     const data = preview.data?.date === day ? preview.data : null;
     const first = data?.kids?.[ids[0]];
     const head = `
-      <div class="head day"><div class="titlebar"><div class="title">${esc(formatDay(hass, day))}</div>${this._nav()}
-          <span class="forecast">${esc(t(hass, "card.timeline.forecast"))}</span>${simulationBadge(this._state, hass)}</div>
+      <div class="head day"><div class="titlebar">${this._nav()}<div class="title">${esc(formatDay(hass, day))}</div>
+          ${this._todayButton()}<span class="forecast">${esc(t(hass, "card.timeline.forecast"))}</span>${simulationBadge(this._state, hass)}</div>
         <div class="muted">${esc(dayTypeLabel(first?.day_type, hass))}</div></div>`;
     if (!data) {
       const msg = preview.error
