@@ -597,6 +597,35 @@ async def test_nintendo_grant_single_slice_no_wait(hass: HomeAssistant) -> None:
     sleep.assert_not_awaited()
 
 
+async def test_nintendo_grant_refreshes_sensors_after_each_slice(
+    hass: HomeAssistant,
+) -> None:
+    order: list[str] = []
+
+    async def bonus(call: ServiceCall) -> None:
+        order.append(f"bonus {call.data['bonus_time']}")
+
+    async def refresh(call: ServiceCall) -> None:
+        order.append("refresh")
+        assert call.data["entity_id"] == [REMAINING, USED]
+
+    hass.services.async_register("nintendo_parental_controls", "add_bonus_time", bonus)
+    hass.services.async_register("homeassistant", "update_entity", refresh)
+    await nintendo(hass).grant(45)
+    assert order == ["bonus 30", "refresh", "bonus 15", "refresh"]
+
+
+async def test_nintendo_refresh_failure_keeps_grant(hass: HomeAssistant) -> None:
+    calls = async_mock_service(hass, "nintendo_parental_controls", "add_bonus_time")
+
+    async def failing(call: ServiceCall) -> None:
+        raise HomeAssistantError("boom")
+
+    hass.services.async_register("homeassistant", "update_entity", failing)
+    await nintendo(hass).grant(45)
+    assert [c.data["bonus_time"] for c in calls] == [30, 15]
+
+
 async def test_nintendo_retries_once_on_error(hass: HomeAssistant) -> None:
     attempts: list[int] = []
 

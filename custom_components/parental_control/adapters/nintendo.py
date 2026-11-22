@@ -116,6 +116,23 @@ class NintendoAdapter:
                 await asyncio.sleep(self._slice_delay)
                 await self._add_bonus(amount)
             remaining -= amount
+            await self._refresh()
+
+    async def _refresh(self) -> None:
+        """L'intégration Nintendo ne relit ses capteurs que toutes les 60 s : sans
+        relecture forcée, la jauge montre le bonus jusqu'à une minute plus tard.
+        Purement visuel, un échec ne remet pas en cause le bonus accordé."""
+        if not self.hass.services.has_service("homeassistant", "update_entity"):
+            return
+        try:
+            await self.hass.services.async_call(
+                "homeassistant",
+                "update_entity",
+                {"entity_id": [self._remaining_entity, self._used_entity]},
+                blocking=True,
+            )
+        except HomeAssistantError as err:
+            _LOGGER.debug("%s: sensor refresh failed: %s", self.label, err)
 
     def pause_state(self) -> ResourceState:
         return ResourceState(
