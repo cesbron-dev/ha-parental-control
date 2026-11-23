@@ -566,7 +566,7 @@ async def test_granting_true_during_grant(hass, freezer, services) -> None:
     gate = asyncio.Event()
     calls = _blocking_bonus(hass, gate)
     updates: list[bool] = []
-    async_dispatcher_connect(hass, SIGNAL_UPDATE, lambda: updates.append(engine.granting("switch")))
+    async_dispatcher_connect(hass, SIGNAL_UPDATE, callback(lambda: updates.append(engine.granting("switch"))))
 
     task = hass.async_create_task(engine.add_bonus(15, resource_id="switch"))
     while not calls:
@@ -589,7 +589,7 @@ async def test_granting_cleared_on_failure(hass, freezer, services) -> None:
     _blocking_bonus(hass, gate, fail=True)
     engine._adapters["switch"].inner.nintendo._slice_delay = 0
     updates: list[bool] = []
-    async_dispatcher_connect(hass, SIGNAL_UPDATE, lambda: updates.append(engine.granting("switch")))
+    async_dispatcher_connect(hass, SIGNAL_UPDATE, callback(lambda: updates.append(engine.granting("switch"))))
 
     with pytest.raises(HomeAssistantError):
         await engine.add_bonus(15, resource_id="switch")
