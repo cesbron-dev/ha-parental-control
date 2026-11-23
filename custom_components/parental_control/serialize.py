@@ -73,7 +73,7 @@ def serialize_snapshot(engine: ParentalEngine, display: bool = False) -> dict[st
         for kid_id, kid in snap.kids.items():
             kids[kid_id] = _state(kid, lang) | {"closes_at": _value(closures.get(f"kid:{kid_id}"))}
         for resource_id, resource in snap.resources.items():
-            resources[resource_id] = _state(resource, lang)
+            resources[resource_id] = _state(resource, lang) | {"granting": engine.granting(resource_id)}
     exceptions = [serialize_exception(e) for e in engine.decisions.exceptions]
     state = {
         "kids": kids,

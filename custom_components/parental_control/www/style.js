@@ -153,11 +153,12 @@ export class ConfirmState {
 }
 
 // Pilules bonus (+15m…) : avec code, la fenêtre de saisie sert de confirmation ; sinon deux appuis.
-export function bonusPills(hass, minutes, armed, parent = false) {
+// `disabled` : un bonus est déjà en cours d'envoi (pas de second appui pendant ce temps).
+export function bonusPills(hass, minutes, armed, parent = false, disabled = false) {
   const lock = needsCode(hass, "bonus", parent);
   return minutes.map((m) => {
     const action = `bonus:${m}`;
-    return pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: armed === action, lock, hass });
+    return pill({ action, icon: "mdi:plus", label: bonusLabel(m), cls: "bleu", confirm: !lock, armed: !disabled && armed === action, disabled, lock, hass });
   });
 }
 

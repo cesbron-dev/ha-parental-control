@@ -30,6 +30,16 @@ const CSS = `
   .side .pills { gap: 8px; }
   .side .pill { flex: 1 1 90px; justify-content: center; min-height: 44px; }
   .error { margin-top: 8px; }
+  /* bonus en cours d'envoi à la console : jauge grisée, ligne « Mise à jour du temps… » */
+  .busy .arc { opacity: .45; }
+  .updating { display: flex; align-items: center; gap: 6px; font-size: .9rem; color: var(--g-accent); }
+  .updating ha-icon { --mdc-icon-size: 18px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .busy .arc { animation: pulse 1.2s ease-in-out infinite; }
+    .updating ha-icon { animation: spin 1s linear infinite; }
+  }
+  @keyframes pulse { 50% { opacity: .2; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
 `;
 
 class ParentalSwitchCard extends StateCard {
@@ -121,7 +131,7 @@ class ParentalSwitchCard extends StateCard {
       <div class="logo"><ha-icon icon="mdi:nintendo-switch"></ha-icon></div>
       <div class="titlebar"><div class="title">${esc(title)}</div>${simulationBadge(this._state, hass)}</div>
       <div class="rule muted"><span class="badge ${badge.cls}">${esc(badge.label)}</span>${reason ? ` · ${esc(reason)}` : ""}</div>
-      <div class="main">
+      <div class="main${v.granting ? " busy" : ""}">
         <div class="gauge">
           <div class="arc">
             <svg width="140" height="80" viewBox="-10 0 140 80" aria-hidden="true">
@@ -139,7 +149,8 @@ class ParentalSwitchCard extends StateCard {
         <div class="play"><h4>${esc(t(hass, "card.switch.play_time"))}</h4>${play}</div>
         <div class="side">
           <div class="muted">${esc(t(hass, "card.switch.used", { duration: dur(g.used) }))}</div>
-          <div class="pills">${bonusPills(hass, bonusMinutes(this._config), this._confirm.armed, this._parent).join("")}</div>
+          ${v.granting ? `<div class="updating" role="status"><ha-icon icon="mdi:sync"></ha-icon>${esc(t(hass, "card.switch.updating"))}</div>` : ""}
+          <div class="pills">${bonusPills(hass, bonusMinutes(this._config), this._confirm.armed, this._parent, v.granting).join("")}</div>
         </div>
       </div>
       ${requestLines(this._state, { resource_id: id }, hass)}

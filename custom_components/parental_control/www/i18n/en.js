@@ -198,6 +198,7 @@ export default {
       left: "{duration} left",
       granted_today: "{duration} granted today",
       none_granted: "No time granted",
+      updating: "Updating play time…",
       on_request: "Time on request",
       play_time: "Play time",
       used: "Time used: {duration}",

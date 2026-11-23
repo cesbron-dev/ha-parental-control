@@ -152,6 +152,8 @@ class ParentalEngine:
         self._config: Config | None = None
         self._decisions = Decisions()
         self._snapshot: Snapshot | None = None
+        # Bonus en cours d'envoi à l'appareil, par ressource (cartes : « Mise à jour… »).
+        self._granting: dict[str, int] = {}
         self._closures: dict[str, datetime] = {}
         self._adapters: dict[str, SimulatedAdapter] = {}
         # Dernier état appliqué par ressource : (ouvert, services bloqués).
@@ -1114,6 +1116,24 @@ class ParentalEngine:
         self._decisions.homework_done[kid_id] = dt_util.now().date()
         await self.async_evaluate("homework_done")
 
+    def granting(self, resource_id: str) -> bool:
+        """Un bonus est en train d'être envoyé à l'appareil de la ressource."""
+        return self._granting.get(resource_id, 0) > 0
+
+    async def _grant(self, resource_id: str, minutes: int) -> None:
+        """Accorde par l'appareil (via l'enveloppe : en simulation, rien n'est accordé) ;
+        les cartes voient `granting` du début à la fin, même en cas d'échec."""
+        self._granting[resource_id] = self._granting.get(resource_id, 0) + 1
+        async_dispatcher_send(self._hass, SIGNAL_UPDATE)
+        try:
+            await self._adapters[resource_id].grant(minutes)
+        finally:
+            if (count := self._granting[resource_id] - 1) > 0:
+                self._granting[resource_id] = count
+            else:
+                del self._granting[resource_id]
+            async_dispatcher_send(self._hass, SIGNAL_UPDATE)
+
     async def add_bonus(
         self, minutes: int, *, kid_id: str | None = None, resource_id: str | None = None
     ) -> None:
@@ -1127,8 +1147,7 @@ class ParentalEngine:
         else:
             assert resource_id is not None
             if self._bonus_by_grant(cfg, resource_id):
-                # Via l'enveloppe : en simulation, rien n'est accordé.
-                await self._adapters[resource_id].grant(minutes)
+                await self._grant(resource_id, minutes)
             else:
                 self._decisions.bonuses.append(
                     Bonus(today, minutes, resource_id=resource_id)
