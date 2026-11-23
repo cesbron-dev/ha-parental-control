@@ -18,7 +18,9 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-from custom_components.parental_control.const import DOMAIN, EVENT_WARNING
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
+from custom_components.parental_control.const import DOMAIN, EVENT_WARNING, SIGNAL_UPDATE
 from custom_components.parental_control.core.config_io import parse_config
 from custom_components.parental_control.core.decisions import Target, Timer
 from custom_components.parental_control.core.model import DayType
@@ -533,6 +535,89 @@ async def test_nintendo_bonus_goes_through_grant(hass, freezer, services) -> Non
     await engine.add_bonus(20, resource_id="tv")
     assert engine.decisions.bonus_minutes(SATURDAY, kid_id="hugo") == 15
     assert engine.decisions.bonus_minutes(SATURDAY, resource_id="tv") == 20
+
+
+async def test_granting_false_by_default(hass, freezer, services) -> None:
+    set_nintendo(hass)
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    assert engine.granting("switch") is False
+    resources = serialize_snapshot(engine)["resources"]
+    assert resources["switch"]["granting"] is False
+    assert resources["tv"]["granting"] is False
+
+
+def _blocking_bonus(hass: HomeAssistant, gate: asyncio.Event, fail: bool = False) -> list[int]:
+    """Remplace `add_bonus_time` par un service qui attend `gate` (puis échoue si `fail`)."""
+    calls: list[int] = []
+
+    async def bonus(call: ServiceCall) -> None:
+        calls.append(call.data["bonus_time"])
+        await gate.wait()
+        if fail:
+            raise HomeAssistantError("boom")
+
+    hass.services.async_register("nintendo_parental_controls", "add_bonus_time", bonus)
+    return calls
+
+
+async def test_granting_true_during_grant(hass, freezer, services) -> None:
+    set_nintendo(hass)
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    gate = asyncio.Event()
+    calls = _blocking_bonus(hass, gate)
+    updates: list[bool] = []
+    async_dispatcher_connect(hass, SIGNAL_UPDATE, lambda: updates.append(engine.granting("switch")))
+
+    task = hass.async_create_task(engine.add_bonus(15, resource_id="switch"))
+    while not calls:
+        await asyncio.sleep(0)
+    assert engine.granting("switch") is True
+    assert serialize_snapshot(engine)["resources"]["switch"]["granting"] is True
+    assert updates[0] is True
+
+    gate.set()
+    await task
+    assert engine.granting("switch") is False
+    assert updates[-1] is False
+
+
+async def test_granting_cleared_on_failure(hass, freezer, services) -> None:
+    set_nintendo(hass)
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    gate = asyncio.Event()
+    gate.set()
+    _blocking_bonus(hass, gate, fail=True)
+    engine._adapters["switch"].inner.nintendo._slice_delay = 0
+    updates: list[bool] = []
+    async_dispatcher_connect(hass, SIGNAL_UPDATE, lambda: updates.append(engine.granting("switch")))
+
+    with pytest.raises(HomeAssistantError):
+        await engine.add_bonus(15, resource_id="switch")
+    assert engine.granting("switch") is False
+    assert updates[-1] is False
+
+
+async def test_granting_counts_concurrent_grants(hass, freezer, services) -> None:
+    set_nintendo(hass)
+    _, engine = await setup(hass, freezer, at(SATURDAY, 10, 0))
+    first, second = asyncio.Event(), asyncio.Event()
+    calls: list[int] = []
+
+    async def bonus(call: ServiceCall) -> None:
+        calls.append(call.data["bonus_time"])
+        await (first if len(calls) == 1 else second).wait()
+
+    hass.services.async_register("nintendo_parental_controls", "add_bonus_time", bonus)
+    t1 = hass.async_create_task(engine.add_bonus(15, resource_id="switch"))
+    t2 = hass.async_create_task(engine.add_bonus(15, resource_id="switch"))
+    while len(calls) < 2:
+        await asyncio.sleep(0)
+    first.set()
+    await t1
+    assert engine.granting("switch") is True
+    second.set()
+    await t2
+    assert engine.granting("switch") is False
 
 
 async def test_nintendo_state_uses_sensor_values(hass, freezer, services) -> None:
