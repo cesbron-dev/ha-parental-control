@@ -852,3 +852,13 @@ test("haToday, addDays, daysAhead", () => {
   assert.equal(daysAhead({ days_ahead: "3" }), 3);
   assert.equal(daysAhead({ days_ahead: "x" }), 7);
 });
+
+test("resourceView granting defaults to false", () => {
+  assert.equal(resourceView(state(), "tv").granting, false);
+});
+
+test("resourceView exposes granting", () => {
+  const st = state();
+  st.resources.tv = { ...st.resources.tv, granting: true };
+  assert.equal(resourceView(st, "tv").granting, true);
+});

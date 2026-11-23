@@ -198,6 +198,7 @@ export default {
       left: "{duration} restants",
       granted_today: "{duration} accordés aujourd’hui",
       none_granted: "Aucun temps accordé",
+      updating: "Mise à jour du temps…",
       on_request: "Temps sur demande",
       play_time: "Temps de jeu",
       used: "Temps utilisé : {duration}",

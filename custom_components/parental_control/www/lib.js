@@ -257,7 +257,7 @@ export function resourceView(state, resourceId) {
   const base = {
     status: "ok", name: null, kind: null, kinds: [], icon: null, owners: [], open: false,
     reason: "", reason_code: null, reason_params: {}, until: null,
-    used: null, remaining: null, leisure: [], onDemand: [], nintendo: null, paused: !!state?.paused, resumesAt: null,
+    used: null, remaining: null, leisure: [], onDemand: [], granting: false, nintendo: null, paused: !!state?.paused, resumesAt: null,
   };
   if (Object.keys(resources).length === 0) return { ...base, status: "unavailable" };
   const r = resources[resourceId];
@@ -278,6 +278,7 @@ export function resourceView(state, resourceId) {
     remaining: r.remaining_minutes ?? null,
     leisure: r.leisure ?? [],
     onDemand: r.on_demand ?? [],
+    granting: !!r.granting,
     nintendo: r.kind === "nintendo"
       ? { used_entity: r.used_entity, remaining_entity: r.remaining_entity }
       : null,

@@ -50,3 +50,12 @@ test("applyTheme sets the light attribute from hass.themes.darkMode", async () =
   applyTheme(el, {}); // thème inconnu : inchangé (sombre par défaut)
   assert.ok(!attrs.has("light"));
 });
+
+test("bonusPills disabled", async () => {
+  const { bonusPills } = await import("../../custom_components/parental_control/www/style.js");
+  const hass = { user: { is_admin: true }, language: "fr" };
+  const off = bonusPills(hass, [15, 30], null, false, true);
+  assert.equal(off.length, 2);
+  for (const html of off) assert.match(html, / disabled>/);
+  for (const html of bonusPills(hass, [15, 30], null)) assert.doesNotMatch(html, / disabled>/);
+});
