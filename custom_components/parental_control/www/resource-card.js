@@ -3,7 +3,7 @@
 import {
   esc, needsCode, resourceView, exceptionsForResource, formatPill, allowChoices,
   reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge, serviceToggles,
-  canRequest, findRequest, ownerChoices, exceptionEnd, untilPassed,
+  canRequest, findRequest, ownerChoices, exceptionEnd, untilPassed, editLabel,
 } from "./lib.js";
 import { t, lang, formatDuration } from "./i18n.js";
 import { callAction } from "./connection.js";
@@ -201,7 +201,8 @@ class ParentalResourceCard extends StateCard {
   _openEdit(exceptionId) {
     const exc = exceptionsForResource(this._state, this._config.resource, this._hass).find((e) => e.id === exceptionId);
     if (!exc) return;
-    openEditException(this.shadowRoot, { hass: this._hass, exceptionId, label: exc.label, parent: this._parent });
+    const name = this._config.name || this._view().name || this._config.resource;
+    openEditException(this.shadowRoot, { hass: this._hass, exceptionId, label: editLabel(exc, name), parent: this._parent });
   }
 
   _openAllow() {

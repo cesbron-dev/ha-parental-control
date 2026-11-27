@@ -251,6 +251,12 @@ export function formatPill(exc, now, hass) {
   return text;
 }
 
+// Titre de la fenêtre de modification sur une carte d'appareil : son nom pour tout l'appareil,
+// le nom du service sinon (comme les bascules de services).
+export function editLabel(exc, deviceName) {
+  return exc.service ? exc.label : deviceName;
+}
+
 // Fin d'une nouvelle autorisation pour le service `exception` : durée, heure fixe (« Jusqu'à… »)
 // ou rien (jusqu'au prochain changement).
 export function exceptionEnd({ minutes = null, until = null }) {

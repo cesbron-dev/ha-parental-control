@@ -11,6 +11,7 @@ const {
   exceptionsForKid,
   formatPill,
   editChoices,
+  editLabel,
   editCall,
   editNeedsCode,
   exceptionEnd,
@@ -900,4 +901,9 @@ test("untilPassed: heure du jour déjà atteinte", () => {
   assert.equal(untilPassed("09:30", NOW), true);
   assert.equal(untilPassed("15:01", NOW), false);
   assert.equal(untilPassed(null, NOW), false);
+});
+
+test("editLabel: nom de l'appareil pour tout l'appareil, nom du service sinon", () => {
+  assert.equal(editLabel({ service: null, label: "Tout l'appareil" }, "Télé salon"), "Télé salon");
+  assert.equal(editLabel({ service: "youtube", label: "YouTube" }, "Télé salon"), "YouTube");
 });

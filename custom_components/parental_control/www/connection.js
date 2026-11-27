@@ -54,7 +54,8 @@ export async function subscribeState(hass, callback) {
 // L'erreur est rendue dans la langue de l'utilisateur (`errorText`).
 export async function callAction(hass, service, data, code) {
   try {
-    await hass.callService("parental_control", service, code ? { ...data, code } : data);
+    // notifyOnError à false : la carte ou la fenêtre affiche déjà l'erreur, pas de notification en double.
+    await hass.callService("parental_control", service, code ? { ...data, code } : data, undefined, false);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: errorText(hass, err) };
