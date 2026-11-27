@@ -135,3 +135,12 @@ test("fetchWhoami met en cache 60 s par connexion, erreur => null", async () => 
   const bad = mk(async () => { throw new Error("boom"); });
   assert.equal(await fetchWhoami(bad), null);
 });
+
+test("callAction ne laisse pas Home Assistant afficher l'erreur : la carte l'affiche déjà", async () => {
+  const hass = fakeHass();
+  const args = [];
+  hass.callService = async (...a) => { args.push(a); throw new Error("refus"); };
+  await callAction(hass, "exception", { a: 1 });
+  assert.equal(args[0][3], undefined); // pas de cible
+  assert.equal(args[0][4], false); // notifyOnError
+});

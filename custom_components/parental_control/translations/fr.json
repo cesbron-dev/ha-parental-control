@@ -200,6 +200,12 @@
     },
     "config_phone_not_found": {
       "message": "{path} : {target} — appareil introuvable ou en double"
+    },
+    "until_past": {
+      "message": "L'heure de fin {until} est déjà passée."
+    },
+    "unknown_exception": {
+      "message": "Cette exception n'existe plus."
     }
   },
   "services": {
@@ -261,7 +267,11 @@
         },
         "minutes": {
           "name": "Minutes",
-          "description": "Durée (1 à 240 minutes). Vide : jusqu'au prochain changement prévu."
+          "description": "Durée (1 à 240 minutes), ou fixer une heure de fin. Vide : jusqu'au prochain changement prévu."
+        },
+        "until": {
+          "name": "Heure de fin",
+          "description": "Heure du jour (ex. 18:30) ou date et heure de fin de l'exception. Exclusif avec minutes ; une heure déjà passée est refusée."
         },
         "code": {
           "name": "Code parent",
@@ -280,6 +290,28 @@
         "code": {
           "name": "Code parent",
           "description": "Exigé depuis un compte non administrateur pour annuler une fermeture."
+        }
+      }
+    },
+    "update_exception": {
+      "name": "Modifier une exception",
+      "description": "Change la fin d'une exception manuelle : ajoute ou retire des minutes, ou fixe une heure de fin. Raccourcie dans le passé, l'exception est retirée. Exige le code parent depuis un compte non administrateur, sauf pour raccourcir une ouverture ou prolonger une fermeture.",
+      "fields": {
+        "exception_id": {
+          "name": "Identifiant de l'exception",
+          "description": "Identifiant renvoyé par l'action exception."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Minutes à ajouter (positif) ou retirer (négatif), de -240 à 240."
+        },
+        "until": {
+          "name": "Heure de fin",
+          "description": "Heure du jour (ex. 18:30) ou date et heure de fin de l'exception. Exclusif avec minutes ; une heure déjà passée est refusée."
+        },
+        "code": {
+          "name": "Code parent",
+          "description": "Exigé depuis un compte non administrateur, sauf si la modification ne fait que restreindre."
         }
       }
     },

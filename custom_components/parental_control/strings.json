@@ -200,6 +200,12 @@
     },
     "config_phone_not_found": {
       "message": "{path}: {target}: device not found or ambiguous"
+    },
+    "until_past": {
+      "message": "The end time {until} has already passed."
+    },
+    "unknown_exception": {
+      "message": "This exception no longer exists."
     }
   },
   "services": {
@@ -261,7 +267,11 @@
         },
         "minutes": {
           "name": "Minutes",
-          "description": "Duration (1 to 240 minutes). Empty: until the next scheduled change."
+          "description": "Duration (1 to 240 minutes), or set an end time. Empty: until the next scheduled change."
+        },
+        "until": {
+          "name": "End time",
+          "description": "Time today (e.g. 18:30) or date and time when the exception ends. Exclusive with minutes; a time already passed is rejected."
         },
         "code": {
           "name": "Parent code",
@@ -280,6 +290,28 @@
         "code": {
           "name": "Parent code",
           "description": "Required from a non-admin account when cancelling a closure."
+        }
+      }
+    },
+    "update_exception": {
+      "name": "Update exception",
+      "description": "Changes the end of a manual exception: adds or removes minutes, or sets an end time. Shortened into the past, the exception is removed. Requires the parent code from a non-admin account, except to shorten an opening or extend a closure.",
+      "fields": {
+        "exception_id": {
+          "name": "Exception id",
+          "description": "Id returned by the exception action."
+        },
+        "minutes": {
+          "name": "Minutes",
+          "description": "Minutes to add (positive) or remove (negative), -240 to 240."
+        },
+        "until": {
+          "name": "End time",
+          "description": "Time today (e.g. 18:30) or date and time when the exception ends. Exclusive with minutes; a time already passed is rejected."
+        },
+        "code": {
+          "name": "Parent code",
+          "description": "Required from a non-admin account unless the change only restricts."
         }
       }
     },

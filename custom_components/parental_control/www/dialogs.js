@@ -2,6 +2,7 @@
 // shadow DOM de la carte, affiché en surimpression (couche supérieure du navigateur).
 import {
   esc, needsCode, bonusLabel, keypadInput, canRequest, findRequest, ownerChoices, bonusMinutes,
+  editChoices, editCall, editNeedsCode,
 } from "./lib.js";
 import { callAction } from "./connection.js";
 import { t } from "./i18n.js";
@@ -29,6 +30,11 @@ const DIALOG_CSS = `
   }
   .keypad button:active { background: var(--g-soft-strong); }
   .keypad button:disabled { opacity: .4; }
+  .dlg-time {
+    box-sizing: border-box; width: 100%; min-height: 48px; margin-top: 10px; padding: 8px 12px; border-radius: 8px;
+    font-size: 1.4rem; text-align: center; color: inherit; background: var(--g-input); border: 1px solid var(--g-line);
+  }
+  .dlg-time[hidden] { display: none; }
   .error { margin-top: 10px; min-height: 1.2em; }
   .dlg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
 `;
@@ -40,14 +46,23 @@ const pickPills = (name, items, selected) => items
 // Ouvre la fenêtre dans `root` (shadow root de la carte) ; une seule à la fois. Textes dans la
 // langue de `hass`.
 // - choices / durations : listes `{value, label}` à choisir (« Quoi », « Pendant »), ou null pour omettre ;
+//   `durationsLabel` remplace « Pendant » ;
+// - untilTime : ajoute aux durées « Jusqu'à… » et un champ d'heure ; `until` (« HH:MM ») est alors
+//   transmis et `duration` vaut null. Une demande (« Demander ») n'accepte pas d'heure fixe ;
 // - needCode : affiche un pavé numérique tactile ; le code saisi est vidé après chaque appel ;
-// - onSubmit({choice, duration, code}) -> Promise<{ok} | {ok:false, error}> : la fenêtre se ferme sur
+//   `needCodeFor({duration, until})` (facultatif) dit si le choix courant l'exige vraiment ;
+// - onSubmit({choice, duration, until, code}) -> Promise<{ok} | {ok:false, error}> : la fenêtre se ferme sur
 //   succès, affiche l'erreur sinon ;
 // - request : `{kids, pending, onRequest({choice, duration, kid})}` ou null. Ajoute « Demander »
 //   (compte non admin), sans code : `kids` ([{value, label}], ou null) ajoute « Qui demande ? » ;
 //   `pending` désactive le bouton (« En attente… »). Même retour que `onSubmit`.
 // Renvoie `{close}`.
-export function openActionDialog(root, { hass, title, choices = null, durations = null, needCode = false, submitLabel = null, request = null, onSubmit }) {
+export function openActionDialog(root, {
+  hass, title, choices = null, durations = null, durationsLabel = null, untilTime = false,
+  needCode = false, needCodeFor = null, submitLabel = null, request = null, onSubmit,
+}) {
+  if (untilTime) durations = [...(durations ?? []), { value: null, label: t(hass, "dialog.until") }];
+  const untilIndex = untilTime ? durations.length - 1 : -1;
   root.querySelector("dialog.parental")?.close();
   const sel = { choice: choices ? 0 : null, duration: null, kid: request?.kids?.length === 1 ? 0 : null };
   let busy = false;
@@ -57,7 +72,8 @@ export function openActionDialog(root, { hass, title, choices = null, durations 
   dlg.innerHTML = `<style>${DIALOG_CSS}</style>
     <div class="title">${esc(title)}</div>
     ${choices ? `<div class="dlg-label">${esc(t(hass, "dialog.what"))}</div><div class="pills">${pickPills("choice", choices, sel.choice)}</div>` : ""}
-    ${durations ? `<div class="dlg-label">${esc(t(hass, "dialog.for"))}</div><div class="pills">${pickPills("duration", durations, sel.duration)}</div>` : ""}
+    ${durations ? `<div class="dlg-label">${esc(durationsLabel ?? t(hass, "dialog.for"))}</div><div class="pills">${pickPills("duration", durations, sel.duration)}</div>` : ""}
+    ${untilTime ? `<input type="time" class="dlg-time" hidden aria-label="${esc(t(hass, "dialog.until_time"))}">` : ""}
     ${request?.kids ? `<div class="dlg-label">${esc(t(hass, "dialog.who"))}</div><div class="pills">${pickPills("kid", request.kids, sel.kid)}</div>` : ""}
     ${needCode ? `<div class="dlg-label">${esc(t(hass, "dialog.code"))}</div>
       <div class="dlg-code" aria-label="${esc(t(hass, "dialog.code_entered"))}"></div>
@@ -85,25 +101,38 @@ export function openActionDialog(root, { hass, title, choices = null, durations 
   const okBtn = dlg.querySelector('[data-btn="ok"]');
   const errEl = dlg.querySelector(".error");
   const requestBtn = dlg.querySelector('[data-btn="request"]');
+  const timeEl = dlg.querySelector(".dlg-time");
+  const untilPicked = () => sel.duration !== null && sel.duration === untilIndex;
 
   const refresh = () => {
     for (const b of dlg.querySelectorAll("[data-pick]")) {
       b.classList.toggle("selected", Number(b.dataset.index) === sel[b.dataset.pick]);
       b.disabled = busy;
     }
-    const ready = (!durations || sel.duration !== null) && (!codeEl || code.length >= 4);
+    if (timeEl) {
+      timeEl.hidden = !untilPicked();
+      timeEl.disabled = busy;
+    }
+    const codeOk = !codeEl || code.length >= 4 || (needCodeFor && !needCodeFor(picked()));
+    const ready = (!durations || sel.duration !== null) && (!untilPicked() || !!timeEl.value) && codeOk;
     okBtn.disabled = busy || !ready;
     if (requestBtn) {
-      // la demande n'attend pas le code : il suffit d'avoir choisi la durée et l'enfant
-      requestBtn.disabled = busy || request.pending || (durations && sel.duration === null) || (request.kids && sel.kid === null);
+      // la demande n'attend pas le code : il suffit d'avoir choisi la durée (pas une heure fixe) et l'enfant
+      requestBtn.disabled = busy || request.pending || (durations && sel.duration === null) || untilPicked()
+        || (request.kids && sel.kid === null);
     }
     dlg.querySelector('[data-btn="cancel"]').disabled = busy;
     for (const k of dlg.querySelectorAll("[data-key]")) k.disabled = busy;
   };
 
   const pickedChoice = () => (choices ? choices[sel.choice].value : null);
-  const pickedDuration = () => (durations ? durations[sel.duration].value : null);
-  const sendSubmit = () => onSubmit({ choice: pickedChoice(), duration: pickedDuration(), code: codeEl ? code : null });
+  const pickedDuration = () => (durations && sel.duration !== null && !untilPicked() ? durations[sel.duration].value : null);
+  const picked = () => ({ duration: pickedDuration(), until: untilPicked() ? timeEl.value || null : null });
+  const sendSubmit = () => {
+    // Code saisi mais inutile pour ce choix : non transmis.
+    const useCode = codeEl && (!needCodeFor || needCodeFor(picked()));
+    return onSubmit({ choice: pickedChoice(), ...picked(), code: useCode ? code : null });
+  };
   const sendRequest = () => request.onRequest({
     choice: pickedChoice(), duration: pickedDuration(), kid: request.kids ? request.kids[sel.kid].value : null,
   });
@@ -135,6 +164,7 @@ export function openActionDialog(root, { hass, title, choices = null, durations 
     if (pick && !busy) {
       sel[pick.dataset.pick] = Number(pick.dataset.index);
       refresh();
+      if (untilPicked()) timeEl.focus();
       return;
     }
     const key = ev.target.closest("[data-key]");
@@ -149,6 +179,7 @@ export function openActionDialog(root, { hass, title, choices = null, durations 
     else if (btn.dataset.btn === "request") submit(requestBtn, sendRequest);
     else submit(okBtn, sendSubmit);
   });
+  timeEl?.addEventListener("input", refresh);
   // Clavier physique (ordinateur) : chiffres, retour arrière, Entrée.
   dlg.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter") {
@@ -156,7 +187,7 @@ export function openActionDialog(root, { hass, title, choices = null, durations 
       submit(okBtn, sendSubmit);
       return;
     }
-    if (!codeEl || busy) return;
+    if (!codeEl || busy || ev.target === timeEl) return;
     const k = ev.key === "Backspace" ? "back" : ev.key;
     if (k === "back" || /^\d$/.test(k)) {
       ev.preventDefault();
@@ -174,6 +205,24 @@ export function openActionDialog(root, { hass, title, choices = null, durations 
   refresh();
   dlg.showModal();
   return { close: () => dlg.open && dlg.close() };
+}
+
+// Modifier une autorisation en cours (pilule des cartes) : ajouter ou retirer du temps, fixer
+// l'heure de fin, ou la retirer. Le code n'est demandé que pour ce qui prolonge.
+export function openEditException(root, { hass, exceptionId, label, parent = false }) {
+  return openActionDialog(root, {
+    hass,
+    title: t(hass, "dialog.edit_title", { label }),
+    durations: editChoices(hass),
+    durationsLabel: t(hass, "dialog.change"),
+    untilTime: true,
+    needCode: needsCode(hass, "open", parent),
+    needCodeFor: (picked) => editNeedsCode(hass, parent, picked),
+    onSubmit: ({ duration, until, code }) => {
+      const [service, data] = editCall(exceptionId, { duration, until });
+      return callAction(hass, service, data, code);
+    },
+  });
 }
 
 // Bonus nintendo : admin -> `call` direct (déjà confirmé par deux appuis) ; sinon fenêtre de saisie du code.

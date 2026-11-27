@@ -89,6 +89,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "error.request_pending": "An identical request is already pending.",
         "error.too_many_requests": "Too many pending requests.",
         "error.invalid_request": "Invalid request.",
+        "error.until_past": "The end time {until} has already passed.",
+        "error.unknown_exception": "This exception no longer exists.",
         # Journal de bord des demandes.
         "log.refused": "Request from {kid} refused by {parent}",
         "log.failed": "Request from {kid} accepted by {parent}, but not possible: {reason}",
@@ -195,6 +197,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "error.request_pending": "Une demande identique est déjà en attente.",
         "error.too_many_requests": "Trop de demandes en attente.",
         "error.invalid_request": "Demande invalide.",
+        "error.until_past": "L'heure de fin {until} est déjà passée.",
+        "error.unknown_exception": "Cette exception n'existe plus.",
         "log.refused": "Demande de {kid} refusée par {parent}",
         "log.failed": "Demande de {kid} acceptée par {parent}, mais impossible : {reason}",
         "log.accepted": "Demande de {kid} acceptée par {parent}",

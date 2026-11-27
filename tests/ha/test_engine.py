@@ -655,6 +655,110 @@ async def test_exception_with_duration_and_cancel(hass, freezer, services) -> No
     assert not engine.snapshot.resources["tv"].open
 
 
+async def test_exception_until_fixed_time(hass, freezer, services) -> None:
+    now = at(TUESDAY, 16, 30)
+    _, engine = await setup(hass, freezer, now)
+    await engine.add_exception(Target(resource_id="tv"), True, None, until=time(18, 15))
+    exc = engine.decisions.exceptions[0]
+    assert exc.until == at(TUESDAY, 18, 15)
+    assert exc.signature is None
+    assert engine.snapshot.resources["tv"].open
+
+
+async def test_exception_until_datetime(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    end = at(TUESDAY, 17, 5)
+    await engine.add_exception(Target(resource_id="tv"), True, None, until=end)
+    assert engine.decisions.exceptions[0].until == end
+
+
+@pytest.mark.parametrize("until", [time(16, 30), time(9, 0), at(TUESDAY, 16, 0)])
+async def test_exception_until_past_is_rejected(hass, freezer, services, until) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    with pytest.raises(ServiceValidationError) as err:
+        await engine.add_exception(Target(resource_id="tv"), True, None, until=until)
+    assert err.value.translation_key == "until_past"
+    assert engine.decisions.exceptions == []
+
+
+async def test_update_exception_extends_and_shortens(hass, freezer, services) -> None:
+    now = at(TUESDAY, 16, 30)
+    _, engine = await setup(hass, freezer, now)
+    exc_id = await engine.add_exception(Target(resource_id="tv"), True, 30)
+    await engine.update_exception(exc_id, minutes=15)
+    assert [(e.id, e.until) for e in engine.decisions.exceptions] == [
+        (exc_id, now + timedelta(minutes=45))
+    ]
+    await engine.update_exception(exc_id, minutes=-20)
+    assert engine.decisions.exceptions[0].until == now + timedelta(minutes=25)
+    assert engine.snapshot.resources["tv"].open
+
+
+async def test_update_exception_shortened_into_past_is_removed(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    exc_id = await engine.add_exception(Target(resource_id="tv"), True, 30)
+    await engine.update_exception(exc_id, minutes=-30)
+    assert engine.decisions.exceptions == []
+    assert not engine.snapshot.resources["tv"].open
+
+
+async def test_update_exception_sets_end_time(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    exc_id = await engine.add_exception(Target(resource_id="tv"), True, 30)
+    await engine.update_exception(exc_id, until=time(19, 0))
+    assert engine.decisions.exceptions[0].until == at(TUESDAY, 19, 0)
+    with pytest.raises(ServiceValidationError) as err:
+        await engine.update_exception(exc_id, until=time(16, 0))
+    assert err.value.translation_key == "until_past"
+    assert engine.decisions.exceptions[0].until == at(TUESDAY, 19, 0)
+
+
+async def test_update_exception_until_next_change(hass, freezer, services) -> None:
+    """« Jusqu'au prochain changement » : la modification part de la fin effective."""
+    hass.states.async_set(TV, "on")
+    _, engine = await setup(hass, freezer, at(TUESDAY, 15, 30))
+    exc_id = await engine.add_exception(Target(resource_id="tv"), False, None)
+    await engine.update_exception(exc_id, minutes=10)
+    exc = engine.decisions.exceptions[0]
+    assert exc.until == at(TUESDAY, 16, 10)  # le segment finit à 16:00
+    assert exc.signature is None
+
+    other = await engine.add_exception(Target(resource_id="tv"), False, None)
+    await engine.update_exception(other, until=time(17, 0))
+    assert engine.decisions.exceptions[1].until == at(TUESDAY, 17, 0)
+    assert engine.decisions.exceptions[1].signature is None
+
+
+async def test_warning_follows_extended_exception(hass, freezer, services) -> None:
+    """Prolongée après le rappel, l'autorisation en redonne un avant sa nouvelle fin."""
+    events = async_capture_events(hass, EVENT_WARNING)
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    exc_id = await engine.add_exception(Target(resource_id="tv"), True, 10)
+
+    def tv_closes() -> list[str]:
+        return [e.data["closes_at"] for e in events if e.data["target"] == "resource:tv"]
+
+    await tick(hass, freezer, 5)  # 16:35
+    assert tv_closes() == [at(TUESDAY, 16, 40).isoformat()]
+    await engine.update_exception(exc_id, minutes=15)  # fin à 16:55
+    await tick(hass, freezer, 14)  # 16:49
+    assert len(tv_closes()) == 1
+    await tick(hass, freezer)  # 16:50
+    assert tv_closes() == [at(TUESDAY, 16, 40).isoformat(), at(TUESDAY, 16, 55).isoformat()]
+
+
+async def test_update_exception_rejects_unknown_or_bad_args(hass, freezer, services) -> None:
+    _, engine = await setup(hass, freezer, at(TUESDAY, 16, 30))
+    with pytest.raises(ServiceValidationError) as err:
+        await engine.update_exception("inconnu", minutes=15)
+    assert err.value.translation_key == "unknown_exception"
+    exc_id = await engine.add_exception(Target(resource_id="tv"), True, 30)
+    with pytest.raises(ValueError):
+        await engine.update_exception(exc_id)
+    with pytest.raises(ValueError):
+        await engine.update_exception(exc_id, minutes=5, until=time(19, 0))
+
+
 @pytest.mark.parametrize(
     ("target", "key"),
     [

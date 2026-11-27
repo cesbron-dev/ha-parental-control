@@ -3,12 +3,12 @@
 import {
   esc, needsCode, kidView, kidServiceToggles, kidExceptions, formatPill, timelineGeometry, exceptionsForKid,
   exceptionSpans, segmentClass, statusClass, nextStepLabel, dayTypeLabel, simulationBadge, fmtDuration,
-  bonusLabel, bonusMinutes, canRequest, findRequest, reasonText,
+  bonusLabel, bonusMinutes, canRequest, findRequest, reasonText, exceptionEnd, untilPassed,
 } from "./lib.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
 import { BASE_CSS, TIMELINE_CSS, pill, ConfirmState, ErrorNotice, requestLines } from "./style.js";
-import { openActionDialog } from "./dialogs.js";
+import { openActionDialog, openEditException } from "./dialogs.js";
 import { createEditor } from "./editor.js";
 import { t, lang, formatDuration, formatHour } from "./i18n.js";
 
@@ -188,16 +188,14 @@ class ParentalKidCard extends StateCard {
     return `<div class="section"><div class="label muted">${esc(t(hass, "card.services_on_demand"))}</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
-  // Autorisations en cours (✕ : annuler, après confirmation).
+  // Autorisations en cours (appui : fenêtre de modification).
   _exceptions(now) {
     const hass = this._hass;
     const list = kidExceptions(this._state, this._config.kid, hass);
     if (!list.length) return "";
-    const armed = this._confirm.armed;
-    const pills = list.map((e) => {
-      const action = `cancel:${e.id}`;
-      return pill({ action, icon: "mdi:check", label: formatPill(e, now, hass), cls: "vert", confirm: true, armed: armed === action, trailing: "mdi:close", hass });
-    });
+    const pills = list.map((e) => (
+      pill({ action: `edit:${e.id}`, icon: "mdi:check", label: formatPill(e, now, hass), cls: "vert", trailing: "mdi:pencil", hass })
+    ));
     return `<div class="section"><div class="label muted">${esc(t(hass, "card.exceptions"))}</div><div class="pills">${pills.join("")}</div></div>`;
   }
 
@@ -242,7 +240,12 @@ class ParentalKidCard extends StateCard {
       return this._withCode("bonus", `${bonusLabel(minutes)} · ${name}`, t(hass, "dialog.add"), "add_bonus", { kid_id, minutes });
     }
     if (action.startsWith("svc:")) return this._toggleService(action.slice(4), name);
-    if (action.startsWith("cancel:")) return this._call("cancel_exception", { exception_id: action.slice(7) });
+    if (action.startsWith("edit:")) {
+      const exceptionId = action.slice(5);
+      const exc = kidExceptions(this._state, kid_id, hass).find((e) => e.id === exceptionId);
+      if (exc) openEditException(this.shadowRoot, { hass, exceptionId, label: exc.label, parent: this._parent });
+      return;
+    }
   }
 
   // Action protégée : directe pour un admin (déjà confirmée par deux appuis), sinon fenêtre du code.
@@ -272,14 +275,15 @@ class ParentalKidCard extends StateCard {
     const kid_id = this._config.kid;
     const tg = kidServiceToggles(this._state, kid_id).find((x) => x.service === service);
     if (!tg) return;
-    const replace = async (code, open, minutes) => {
+    const replace = async (code, open, minutes, until = null) => {
+      // Heure déjà passée : refusée avant d'annuler quoi que ce soit.
+      if (untilPassed(until)) return { ok: false, error: t(this._hass, "error.until_past", { until }) };
       for (const exception_id of tg.exceptions) {
         const res = await callAction(this._hass, "cancel_exception", { exception_id }, code);
         if (!res.ok) return res;
       }
       if (!open && !tg.openedElsewhere) return { ok: true };
-      const data = { kid_id, service, open };
-      if (minutes) data.minutes = minutes;
+      const data = { kid_id, service, open, ...exceptionEnd({ minutes, until }) };
       return callAction(this._hass, "exception", data, code);
     };
     if (tg.open) {
@@ -303,10 +307,11 @@ class ParentalKidCard extends StateCard {
       hass: this._hass,
       title: t(this._hass, "card.kid.allow_title", { service: tg.label, name }),
       durations: durations(this._hass),
+      untilTime: true,
       needCode: needsCode(this._hass, "open", this._parent),
       submitLabel: t(this._hass, "card.allow"),
       request,
-      onSubmit: ({ duration, code }) => replace(code, true, duration),
+      onSubmit: ({ duration, until, code }) => replace(code, true, duration, until),
     });
   }
 

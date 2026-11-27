@@ -78,6 +78,8 @@ export default {
     request_pending: "Une demande identique est déjà en attente.",
     too_many_requests: "Trop de demandes en attente.",
     invalid_request: "Demande invalide.",
+    until_past: "L'heure de fin {until} est déjà passée.",
+    unknown_exception: "Cette exception n'existe plus.",
   },
   // erreurs WebSocket de l'intégration (code de `connection.send_error`)
   ws_error: {
@@ -143,6 +145,7 @@ export default {
     all_devices: "Tous les appareils",
     kid_all_devices: "{kid} · tous ses appareils",
     everyone: "tout le monde",
+    remove: "Retirer l'autorisation",
     on_demand: "{service} (sur demande)",
   },
   pill: {
@@ -160,6 +163,10 @@ export default {
     request: "Demander",
     cancel: "Annuler",
     ok: "Valider",
+    until: "Jusqu'à…",
+    until_time: "Heure de fin",
+    change: "Modifier",
+    edit_title: "Modifier · {label}",
     add: "Ajouter",
   },
   card: {

@@ -336,8 +336,9 @@ doit le passer dans le champ `code` pour les actions qui débloquent.
 |---|---|---|
 | `parental_control.homework_done` (devoirs terminés) | `kid_id` | oui |
 | `parental_control.add_bonus` (ajouter un bonus) | `minutes` (1 à 240) et exactement un de `kid_id` ou `resource_id` | oui |
-| `parental_control.exception` | `open` (obligatoire), `resource_id`, `kid_id`, `service`, `minutes` (1 à 240) | oui si `open: true`, non pour une fermeture |
+| `parental_control.exception` | `open` (obligatoire), `resource_id`, `kid_id`, `service`, `minutes` (1 à 240) ou `until` (heure de fin) | oui si `open: true`, non pour une fermeture |
 | `parental_control.cancel_exception` (annuler une exception) | `exception_id` | oui si l'exception annulée est une fermeture (annuler rouvre) |
+| `parental_control.update_exception` (modifier une exception) | `exception_id`, et `minutes` (-240 à 240, sauf 0) ou `until` | oui, sauf pour raccourcir une ouverture ou prolonger une fermeture |
 | `parental_control.start_timer` (démarrer le minuteur) | `kid_id`, `minutes` (1 à 240) | oui |
 | `parental_control.stop_timer` (arrêter le minuteur) | `kid_id` | non |
 | `parental_control.pause` | `active` | oui pour lever la pause (`active: false`), non pour la poser |
@@ -352,9 +353,16 @@ Précisions :
 - `exception` sans `service` exige un `resource_id` (cible précise). Avec `service`, la cible
   est un de vos services (son identifiant), pour une ressource, pour toutes les ressources d'un enfant ou pour
   toutes. Une exception sur la Switch est refusée (« Pour la Switch, utilisez add_bonus »).
-  Sans `minutes`, l'exception dure jusqu'au prochain changement de règle ; avec
-  `minutes`, pour cette durée. L'action retourne `{"id": "..."}` quand on demande la
-  réponse (`response_variable`) : c'est l'`exception_id` à passer à `cancel_exception`.
+  Sans `minutes` ni `until`, l'exception dure jusqu'au prochain changement de règle ; avec
+  `minutes`, pour cette durée ; avec `until`, jusqu'à cette heure (`"18:30"` pour aujourd'hui, ou
+  une date et une heure). Une heure déjà passée est refusée. L'action retourne `{"id": "..."}`
+  quand on demande la réponse (`response_variable`) : c'est l'`exception_id` à passer à
+  `cancel_exception` ou `update_exception`.
+- `update_exception` déplace la fin d'une exception en cours : `minutes` ajoute (positif) ou
+  retire (négatif) du temps, `until` fixe l'heure de fin (une heure déjà passée est refusée). Une
+  exception « jusqu'au prochain changement » part de sa fin effective. Raccourcie dans le passé,
+  l'exception est retirée. L'identifiant ne change pas et le rappel avant fermeture suit la
+  nouvelle fin.
 - Les exceptions en cours sont listées dans les attributs du capteur de statut.
 
 ## Entités
@@ -412,9 +420,9 @@ navigateur garde une ancienne version.
 
 | Carte | Rôle | Configuration minimale |
 |---|---|---|
-| `parental-resource-card` | Un appareil : état, autorisations en cours (✕ pour annuler), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard ou ciblé par un interrupteur par label : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
+| `parental-resource-card` | Un appareil : état, autorisations en cours (appui : ajouter ou retirer du temps, fixer l'heure de fin ou retirer), « Autoriser… » et « Arrêter ». Pour une Switch : pilules bonus à la place. Appareil AdGuard ou ciblé par un interrupteur par label : ses services sur demande en bascules (vert débloqué, gris bloqué). | `resource: tv` |
 | `parental-timeline-card` | La frise de la journée de chaque enfant ; ‹ › affiche les jours suivants tels que le moteur les prévoit (type de jour et événement du calendrier qui l'a décidé, frise, quota). | `type: custom:parental-timeline-card` ; `kids: [hugo]` limite aux enfants listés ; `days_ahead: 7` (par défaut) fixe le nombre de jours consultables, `0` garde aujourd'hui seulement, 31 au plus |
-| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules de ses services (appareils AdGuard et interrupteurs qui le visent), autorisations en cours (✕) et bonus. | `kid: alice` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
+| `parental-kid-card` | Un enfant : statut, frise du jour, « Devoirs terminés » (plage après devoirs), minuteur (plage quota), temps d'écran restant, services sur demande en bascules de ses services (appareils AdGuard et interrupteurs qui le visent), autorisations en cours (appui pour modifier) et bonus. | `kid: alice` ; `show_timeline`, `show_services`, `show_bonus` (false pour masquer), `services`, `bonus_minutes` |
 | `parental-switch-card` | Une console Nintendo : jauge du temps restant, temps utilisé, état de la règle et bonus. Complète l'intégration Nintendo officielle. | `resource: switch` |
 
 ```yaml
@@ -440,7 +448,7 @@ bonus_minutes: [15, 30, 60]   # optionnel
 pilule) pour **autoriser**, les **bonus**, valider les **devoirs** et lancer un **minuteur**. Il est saisi sur un pavé numérique tactile (pas de clavier
 natif qui recouvre l'écran ; le clavier physique marche aussi), envoyé avec
 l'appel et oublié ; il n'est jamais stocké dans une carte ni dans la configuration du
-tableau de bord. « Arrêter » et ✕ partent sans code, après une confirmation en deux appuis.
+tableau de bord. « Arrêter » part sans code, après une confirmation en deux appuis. Dans « Autoriser… », « Jusqu'à… » fixe une heure de fin au lieu d'une durée. Modifier une autorisation en cours ne demande le code que pour ajouter du temps ou fixer l'heure de fin ; retirer du temps ou l'autorisation, jamais.
 
 ## Panneau « Règles »
 

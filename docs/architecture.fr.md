@@ -416,7 +416,8 @@ reste seul juge de la validité.
 | `parental_control/simulation/exit` | parents | quitter la simulation depuis le panneau « Règles » (sans code, comme l'interrupteur) |
 | `parental_control/simulation/enter` | parents | activer la simulation depuis le panneau « Règles » (sans code pour un parent, comme l'interrupteur) |
 
-Les actions (`homework_done`, `add_bonus`, `exception`, `cancel_exception`, `start_timer`,
+Les actions (`homework_done`, `add_bonus`, `exception`, `cancel_exception`, `update_exception`,
+`start_timer`,
 `stop_timer`, `pause`, `import_config`, `request`) sont décrites dans le
 [README](../README.fr.md#actions). Les cartes n'utilisent que ces actions et l'abonnement :
 elles n'appellent jamais elles-mêmes AdGuard, un lecteur multimédia ou Nintendo, ce qui

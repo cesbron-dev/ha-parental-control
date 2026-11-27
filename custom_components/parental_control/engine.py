@@ -16,7 +16,7 @@ import logging
 import math
 from collections.abc import Coroutine, Sequence
 from dataclasses import replace
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -50,7 +50,7 @@ from .calendar_source import fetch_all_day_events
 from .const import DOMAIN, EVENT_WARNING, REQUESTS_PANEL_PATH, SIGNAL_UPDATE, TICK_SECONDS
 from .core.daytype import AllDayEvent, day_type, explain_day_type
 from .core.decisions import Bonus, Decisions, ManualException, Target, Timer
-from .core.display import kid_day_preview
+from .core.display import exception_end, kid_day_preview
 from .core.evaluator import Snapshot, evaluate, rule_signature, upcoming_closures
 from .core.i18n import request_reason
 from .core.label_services import switch_blocked
@@ -127,6 +127,18 @@ def _localize(dec: Decisions) -> None:
         )
         for e in dec.exceptions
     ]
+
+
+def _resolve_until(value: datetime | time, now: datetime) -> datetime:
+    """Heure de fin absolue : une heure seule vaut pour aujourd'hui. Déjà passée : refusée."""
+    if isinstance(value, time):
+        until = datetime.combine(now.date(), value.replace(tzinfo=None), tzinfo=now.tzinfo)
+    else:
+        until = value if value.tzinfo is not None else value.replace(tzinfo=now.tzinfo)
+    until = _local(until)
+    if until <= now:
+        raise _invalid("until_past", until=until.strftime("%H:%M"))
+    return until
 
 
 def _segment_warn_minutes(kid: Kid, dtype: DayType, now: datetime) -> int:
@@ -1155,15 +1167,24 @@ class ParentalEngine:
         await self.async_evaluate("bonus")
 
     async def add_exception(
-        self, target: Target, open: bool, minutes: int | None  # noqa: A002 - nom du contrat
+        self,
+        target: Target,
+        open: bool,  # noqa: A002 - nom du contrat
+        minutes: int | None,
+        *,
+        until: datetime | time | None = None,
     ) -> str:
-        """Ajoute une exception ; `minutes=None` = jusqu'à la prochaine décision."""
+        """Ajoute une exception pour `minutes`, jusqu'à `until` (heure locale du jour ou
+        instant, jamais passé), sinon jusqu'à la prochaine décision."""
+        if minutes is not None and until is not None:
+            raise ValueError("minutes and until are exclusive")
         cfg = self._require_config()
         self._check_target(cfg, target)
         now = dt_util.now()
-        until = None
         signature = None
-        if minutes is None:
+        if until is not None:
+            until = _resolve_until(until, now)
+        elif minutes is None:
             rule = evaluate(now, cfg, self._decisions, self._day_types(now, cfg),
                             apply_exceptions=False)
             signature = rule_signature(target, rule, cfg)
@@ -1173,6 +1194,34 @@ class ParentalEngine:
         self._decisions.exceptions.append(exc)
         await self.async_evaluate("exception")
         return exc.id
+
+    async def update_exception(
+        self, exc_id: str, *, minutes: int | None = None, until: datetime | time | None = None
+    ) -> None:
+        """Décale la fin de l'exception de `minutes` (négatif : raccourcit) ou la fixe à
+        `until`. Une exception « jusqu'au prochain changement » part de sa fin effective.
+        Raccourcie dans le passé : retirée. `until` déjà passé : refusé."""
+        if (minutes is None) == (until is None):
+            raise ValueError("exactly one of minutes or until")
+        cfg = self._require_config()
+        exc = next((e for e in self._decisions.exceptions if e.id == exc_id), None)
+        if exc is None:
+            raise _invalid("unknown_exception")
+        now = dt_util.now()
+        if until is not None:
+            end = _resolve_until(until, now)
+        else:
+            snap = self.snapshot
+            base = exc.until or (exception_end(cfg, snap, exc) if snap is not None else None)
+            end = _after(base or now, minutes)
+        if end <= now:
+            self._decisions.exceptions = [e for e in self._decisions.exceptions if e.id != exc_id]
+        else:
+            updated = replace(exc, until=end, signature=None)
+            self._decisions.exceptions = [
+                updated if e.id == exc_id else e for e in self._decisions.exceptions
+            ]
+        await self.async_evaluate("update_exception")
 
     async def cancel_exception(self, exc_id: str) -> None:
         """Retire l'exception ; sans effet si elle n'existe plus (déjà échue)."""
