@@ -3,13 +3,13 @@
 import {
   esc, needsCode, resourceView, exceptionsForResource, formatPill, allowChoices,
   reasonLine, stateBadge, quotaBar, bonusMinutes, simulationBadge, serviceToggles,
-  canRequest, findRequest, ownerChoices,
+  canRequest, findRequest, ownerChoices, exceptionEnd, untilPassed,
 } from "./lib.js";
 import { t, lang, formatDuration } from "./i18n.js";
 import { callAction } from "./connection.js";
 import { StateCard } from "./card-base.js";
 import { BASE_CSS, pill, ConfirmState, ErrorNotice, bonusPills, requestLines } from "./style.js";
-import { openActionDialog, runBonus, bonusRequest } from "./dialogs.js";
+import { openActionDialog, openEditException, runBonus, bonusRequest } from "./dialogs.js";
 import { createEditor } from "./editor.js";
 
 const KIND_ICONS = {
@@ -125,11 +125,10 @@ class ParentalResourceCard extends StateCard {
     const armed = this._confirm.armed;
     const now = new Date();
 
-    const pills = exceptionsForResource(this._state, id, hass).map((e) => {
-      // ✕ en fin de pilule : toute la pilule annule l'exception (après confirmation).
-      const action = `cancel:${e.id}`;
-      return pill({ action, icon: "mdi:check", label: formatPill(e, now, hass), cls: "vert", confirm: true, armed: armed === action, trailing: "mdi:close", hass });
-    });
+    const pills = exceptionsForResource(this._state, id, hass).map((e) => (
+      // La pilule ouvre la fenêtre de modification (ajouter, retirer du temps, heure de fin, retirer).
+      pill({ action: `edit:${e.id}`, icon: "mdi:check", label: formatPill(e, now, hass), cls: "vert", trailing: "mdi:pencil", hass })
+    ));
 
     if (v.kind === "nintendo") {
       pills.push(...bonusPills(hass, bonusMinutes(this._config), armed, this._parent));
@@ -187,7 +186,7 @@ class ParentalResourceCard extends StateCard {
     if (action === "allow") return this._openAllow();
     if (action === "stop") return this._call("exception", { resource_id, open: false });
     if (action.startsWith("svc:")) return this._toggleService(action.slice(4));
-    if (action.startsWith("cancel:")) return this._call("cancel_exception", { exception_id: action.slice(7) });
+    if (action.startsWith("edit:")) return this._openEdit(action.slice(5));
     if (action.startsWith("bonus:")) {
       const title = this._config.name || this._view().name || resource_id;
       const minutes = Number(action.slice(6));
@@ -197,6 +196,12 @@ class ParentalResourceCard extends StateCard {
         parent: this._parent,
       });
     }
+  }
+
+  _openEdit(exceptionId) {
+    const exc = exceptionsForResource(this._state, this._config.resource, this._hass).find((e) => e.id === exceptionId);
+    if (!exc) return;
+    openEditException(this.shadowRoot, { hass: this._hass, exceptionId, label: exc.label, parent: this._parent });
   }
 
   _openAllow() {
@@ -209,6 +214,7 @@ class ParentalResourceCard extends StateCard {
       title: t(hass, "card.resource.allow_title", { name: this._config.name || v.name || resource_id }),
       choices,
       durations: durations(hass),
+      untilTime: true,
       needCode: needsCode(hass, "open", this._parent),
       submitLabel: t(hass, "card.allow"),
       // Choix libre : pas d'état « en attente » ; le moteur refuse un doublon et la fenêtre l'affiche.
@@ -218,10 +224,9 @@ class ParentalResourceCard extends StateCard {
         if (duration) data.minutes = duration;
         return data;
       }),
-      onSubmit: ({ choice, duration, code }) => {
-        const data = { resource_id, open: true };
+      onSubmit: ({ choice, duration, until, code }) => {
+        const data = { resource_id, open: true, ...exceptionEnd({ minutes: duration, until }) };
         if (choice) data.service = choice;
-        if (duration) data.minutes = duration;
         return callAction(this._hass, "exception", data, code);
       },
     });
@@ -234,14 +239,15 @@ class ParentalResourceCard extends StateCard {
     const resource_id = this._config.resource;
     const tg = serviceToggles(this._state, resource_id).find((x) => x.service === service);
     if (!tg) return;
-    const replace = async (code, open, minutes) => {
+    const replace = async (code, open, minutes, until = null) => {
+      // Heure déjà passée : refusée avant d'annuler quoi que ce soit.
+      if (untilPassed(until)) return { ok: false, error: t(this._hass, "error.until_past", { until }) };
       for (const exception_id of tg.exceptions) {
         const res = await callAction(this._hass, "cancel_exception", { exception_id }, code);
         if (!res.ok) return res;
       }
       if (!open && !tg.openedElsewhere) return { ok: true };
-      const data = { resource_id, service, open };
-      if (minutes) data.minutes = minutes;
+      const data = { resource_id, service, open, ...exceptionEnd({ minutes, until }) };
       return callAction(this._hass, "exception", data, code);
     };
     if (tg.open) {
@@ -254,6 +260,7 @@ class ParentalResourceCard extends StateCard {
       hass: this._hass,
       title: t(this._hass, "card.resource.allow_title", { name: tg.label }),
       durations: durations(this._hass),
+      untilTime: true,
       needCode: needsCode(this._hass, "open", this._parent),
       submitLabel: t(this._hass, "card.allow"),
       request: this._request(owners, (kid, { duration }) => {
@@ -264,7 +271,7 @@ class ParentalResourceCard extends StateCard {
         if (duration) data.minutes = duration;
         return data;
       }, owners.length === 1 && findRequest(this._state, { kind: "open", kid_id: owners[0], resource_id, service })?.status === "pending"),
-      onSubmit: ({ duration, code }) => replace(code, true, duration),
+      onSubmit: ({ duration, until, code }) => replace(code, true, duration, until),
     });
   }
 

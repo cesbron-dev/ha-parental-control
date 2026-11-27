@@ -28,6 +28,7 @@ SERVICE_HOMEWORK_DONE = "homework_done"
 SERVICE_ADD_BONUS = "add_bonus"
 SERVICE_EXCEPTION = "exception"
 SERVICE_CANCEL_EXCEPTION = "cancel_exception"
+SERVICE_UPDATE_EXCEPTION = "update_exception"
 SERVICE_START_TIMER = "start_timer"
 SERVICE_STOP_TIMER = "stop_timer"
 SERVICE_PAUSE = "pause"
@@ -38,6 +39,7 @@ ATTR_KID_ID = "kid_id"
 ATTR_RESOURCE_ID = "resource_id"
 ATTR_SERVICE = "service"
 ATTR_MINUTES = "minutes"
+ATTR_UNTIL = "until"
 ATTR_OPEN = "open"
 ATTR_EXCEPTION_ID = "exception_id"
 ATTR_ACTIVE = "active"
@@ -45,7 +47,12 @@ ATTR_CONFIG = "config"
 
 _CODE = {vol.Optional(CONF_CODE): cv.string}
 _MINUTES = vol.All(vol.Coerce(int), vol.Range(min=1, max=240))
+# Décalage d'une fin : signé (négatif = raccourcir), jamais nul.
+_DELTA = vol.All(vol.Coerce(int), vol.Range(min=-240, max=240), vol.NotIn([0]))
+# Heure du jour (« 18:30 ») ou instant précis.
+_UNTIL = vol.Any(cv.time, cv.datetime)
 _TARGET_MSG = "exactly one of kid_id or resource_id"
+_END_MSG = "minutes and until are exclusive"
 
 HOMEWORK_SCHEMA = vol.Schema({vol.Required(ATTR_KID_ID): cv.string, **_CODE})
 ADD_BONUS_SCHEMA = vol.All(
@@ -65,12 +72,24 @@ EXCEPTION_SCHEMA = vol.Schema(
         vol.Optional(ATTR_RESOURCE_ID): cv.string,
         vol.Optional(ATTR_KID_ID): cv.string,
         vol.Optional(ATTR_SERVICE): cv.string,
-        vol.Optional(ATTR_MINUTES): _MINUTES,
+        vol.Exclusive(ATTR_MINUTES, "end", msg=_END_MSG): _MINUTES,
+        vol.Exclusive(ATTR_UNTIL, "end", msg=_END_MSG): _UNTIL,
         **_CODE,
     }
 )
 CANCEL_EXCEPTION_SCHEMA = vol.Schema(
     {vol.Required(ATTR_EXCEPTION_ID): cv.string, **_CODE}
+)
+UPDATE_EXCEPTION_SCHEMA = vol.All(
+    vol.Schema(
+        {
+            vol.Required(ATTR_EXCEPTION_ID): cv.string,
+            vol.Exclusive(ATTR_MINUTES, "end", msg=_END_MSG): _DELTA,
+            vol.Exclusive(ATTR_UNTIL, "end", msg=_END_MSG): _UNTIL,
+            **_CODE,
+        }
+    ),
+    cv.has_at_least_one_key(ATTR_MINUTES, ATTR_UNTIL),
 )
 START_TIMER_SCHEMA = vol.Schema(
     {vol.Required(ATTR_KID_ID): cv.string, vol.Required(ATTR_MINUTES): _MINUTES, **_CODE}
@@ -97,6 +116,7 @@ SERVICES = (
     SERVICE_ADD_BONUS,
     SERVICE_EXCEPTION,
     SERVICE_CANCEL_EXCEPTION,
+    SERVICE_UPDATE_EXCEPTION,
     SERVICE_START_TIMER,
     SERVICE_STOP_TIMER,
     SERVICE_PAUSE,
@@ -139,7 +159,7 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
             service=call.data.get(ATTR_SERVICE),
         )
         exc_id = await entry.runtime_data.add_exception(
-            target, is_open, call.data.get(ATTR_MINUTES)
+            target, is_open, call.data.get(ATTR_MINUTES), until=call.data.get(ATTR_UNTIL)
         )
         return {"id": exc_id} if call.return_response else None
 
@@ -150,6 +170,17 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
         if any(e.id == exc_id and not e.open for e in engine.decisions.exceptions):
             await unlock(call)
         await engine.cancel_exception(exc_id)
+
+    async def update_exception(call: ServiceCall) -> None:
+        exc_id = call.data[ATTR_EXCEPTION_ID]
+        engine = entry.runtime_data
+        minutes = call.data.get(ATTR_MINUTES)
+        exc = next((e for e in engine.decisions.exceptions if e.id == exc_id), None)
+        # Raccourcir une ouverture ou prolonger une fermeture ne débloque rien ; le reste
+        # (dont une heure de fin fixée) exige le code. Id inconnu : le moteur le refuse.
+        if exc is not None and not (minutes is not None and (minutes < 0) == exc.open):
+            await unlock(call)
+        await engine.update_exception(exc_id, minutes=minutes, until=call.data.get(ATTR_UNTIL))
 
     async def start_timer(call: ServiceCall) -> None:
         await unlock(call)
@@ -201,6 +232,7 @@ def async_setup_services(hass: HomeAssistant, entry: ParentalConfigEntry) -> Non
         supports_response=SupportsResponse.OPTIONAL,
     )
     register(DOMAIN, SERVICE_CANCEL_EXCEPTION, cancel_exception, CANCEL_EXCEPTION_SCHEMA)
+    register(DOMAIN, SERVICE_UPDATE_EXCEPTION, update_exception, UPDATE_EXCEPTION_SCHEMA)
     register(DOMAIN, SERVICE_START_TIMER, start_timer, START_TIMER_SCHEMA)
     register(DOMAIN, SERVICE_STOP_TIMER, stop_timer, STOP_TIMER_SCHEMA)
     register(DOMAIN, SERVICE_PAUSE, pause, PAUSE_SCHEMA)

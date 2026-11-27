@@ -399,7 +399,8 @@ panel keeps a draft and only sends it on save; the engine stays the only judge o
 | `parental_control/simulation/exit` | parents | leave simulation from the Rules panel (no code, like the switch) |
 | `parental_control/simulation/enter` | parents | turn simulation on from the Rules panel (parents need no code, like the switch) |
 
-The actions (`homework_done`, `add_bonus`, `exception`, `cancel_exception`, `start_timer`,
+The actions (`homework_done`, `add_bonus`, `exception`, `cancel_exception`, `update_exception`,
+`start_timer`,
 `stop_timer`, `pause`, `import_config`, `request`) are described in the
 [README](../README.md#actions). The cards only use these actions and the subscription: they
 never call AdGuard, a media player or Nintendo themselves, which would fight the engine's drift

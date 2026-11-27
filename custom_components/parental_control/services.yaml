@@ -63,6 +63,11 @@ exception:
           step: 1
           unit_of_measurement: min
           mode: box
+    until: &until
+      required: false
+      example: "18:30"
+      selector:
+        time:
     code: *code
 
 cancel_exception:
@@ -71,6 +76,25 @@ cancel_exception:
       required: true
       selector:
         text:
+    code: *code
+
+update_exception:
+  fields:
+    exception_id:
+      required: true
+      selector:
+        text:
+    minutes:
+      required: false
+      example: 15
+      selector:
+        number:
+          min: -240
+          max: 240
+          step: 5
+          unit_of_measurement: min
+          mode: box
+    until: *until
     code: *code
 
 start_timer:

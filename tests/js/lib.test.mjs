@@ -10,6 +10,11 @@ const {
   exceptionsForResource,
   exceptionsForKid,
   formatPill,
+  editChoices,
+  editCall,
+  editNeedsCode,
+  exceptionEnd,
+  untilPassed,
   resourceView,
   timelineGeometry,
   needsCode,
@@ -861,4 +866,38 @@ test("resourceView exposes granting", () => {
   const st = state();
   st.resources.tv = { ...st.resources.tv, granting: true };
   assert.equal(resourceView(st, "tv").granting, true);
+});
+
+test("editChoices: retirer, ajouter, supprimer l'autorisation", () => {
+  assert.deepEqual(editChoices(FR).map((c) => [c.value, c.label]), [
+    [-15, "−15 min"], [15, "+15 min"], [30, "+30 min"], ["cancel", "Retirer l'autorisation"],
+  ]);
+});
+
+test("editCall: service et données selon le choix", () => {
+  assert.deepEqual(editCall("e1", { duration: 15 }), ["update_exception", { exception_id: "e1", minutes: 15 }]);
+  assert.deepEqual(editCall("e1", { duration: -15 }), ["update_exception", { exception_id: "e1", minutes: -15 }]);
+  assert.deepEqual(editCall("e1", { duration: "cancel" }), ["cancel_exception", { exception_id: "e1" }]);
+  assert.deepEqual(editCall("e1", { until: "18:30" }), ["update_exception", { exception_id: "e1", until: "18:30" }]);
+  assert.deepEqual(exceptionEnd({ minutes: 30 }), { minutes: 30 });
+  assert.deepEqual(exceptionEnd({ minutes: null }), {});
+  assert.deepEqual(exceptionEnd({ minutes: null, until: "18:30" }), { until: "18:30" });
+});
+
+test("editNeedsCode: seul ce qui prolonge une ouverture exige le code", () => {
+  const kid = { user: { is_admin: false } };
+  const admin = { user: { is_admin: true } };
+  assert.equal(editNeedsCode(kid, false, { duration: 15 }), true);
+  assert.equal(editNeedsCode(kid, false, { until: "18:30" }), true);
+  assert.equal(editNeedsCode(kid, false, { duration: -15 }), false);
+  assert.equal(editNeedsCode(kid, false, { duration: "cancel" }), false);
+  assert.equal(editNeedsCode(kid, true, { duration: 15 }), false);
+  assert.equal(editNeedsCode(admin, false, { until: "18:30" }), false);
+});
+
+test("untilPassed: heure du jour déjà atteinte", () => {
+  assert.equal(untilPassed("15:00", NOW), true);
+  assert.equal(untilPassed("09:30", NOW), true);
+  assert.equal(untilPassed("15:01", NOW), false);
+  assert.equal(untilPassed(null, NOW), false);
 });

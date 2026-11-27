@@ -333,8 +333,9 @@ it in the `code` field for actions that unblock something.
 |---|---|---|
 | `parental_control.homework_done` | `kid_id` | yes |
 | `parental_control.add_bonus` | `minutes` (1 to 240) and exactly one of `kid_id` or `resource_id` | yes |
-| `parental_control.exception` | `open` (required), `resource_id`, `kid_id`, `service`, `minutes` (1 to 240) | yes if `open: true`, no for a closure |
+| `parental_control.exception` | `open` (required), `resource_id`, `kid_id`, `service`, `minutes` (1 to 240) or `until` (end time) | yes if `open: true`, no for a closure |
 | `parental_control.cancel_exception` | `exception_id` | yes if the cancelled exception is a closure (cancelling reopens) |
+| `parental_control.update_exception` | `exception_id`, and `minutes` (-240 to 240, not 0) or `until` | yes, except to shorten an opening or extend a closure |
 | `parental_control.start_timer` | `kid_id`, `minutes` (1 to 240) | yes |
 | `parental_control.stop_timer` | `kid_id` | no |
 | `parental_control.pause` | `active` | yes to lift the pause (`active: false`), no to set it |
@@ -349,10 +350,15 @@ Details:
 - `exception` without `service` requires a `resource_id` (a precise target). With `service`, the
   target is one of your services (its id), for one resource, for all of a child's resources, or
   for all resources. An exception on the Switch is rejected ("For the Switch, use add_bonus").
-  Without `minutes`, the exception lasts
-  until the next rule change; with `minutes`, for that duration. The action returns
+  Without `minutes` or `until`, the exception lasts
+  until the next rule change; with `minutes`, for that duration; with `until`, until that time
+  (`"18:30"` for today, or a date and time). A time already passed is rejected. The action returns
   `{"id": "..."}` when a response is requested (`response_variable`): it is the `exception_id`
-  to pass to `cancel_exception`.
+  to pass to `cancel_exception` or `update_exception`.
+- `update_exception` moves the end of an ongoing exception: `minutes` adds (positive) or removes
+  (negative) time, `until` sets the end time (a time already passed is rejected). An exception
+  "until the next change" starts from its effective end. Shortened into the past, the exception
+  is removed. The id stays the same, and the reminder before closing follows the new end.
 - Ongoing exceptions are listed in the status sensor's attributes.
 
 ## Entities
@@ -408,9 +414,9 @@ version.
 
 | Card | Purpose | Minimal configuration |
 |---|---|---|
-| `parental-resource-card` | A device: state, ongoing permissions (✕ to cancel), "Allow…" and "Stop". For a Switch: bonus pills instead. AdGuard device or device targeted by a labelled switch: its on-demand services as toggles (green unblocked, grey blocked). | `resource: tv` |
+| `parental-resource-card` | A device: state, ongoing permissions (tap to add or remove time, set the end time or remove), "Allow…" and "Stop". For a Switch: bonus pills instead. AdGuard device or device targeted by a labelled switch: its on-demand services as toggles (green unblocked, grey blocked). | `resource: tv` |
 | `parental-timeline-card` | Each child's timeline for the day; ‹ › shows the following days as the engine plans them (day type and the calendar event behind it, timeline, quota). | `type: custom:parental-timeline-card`; `kids: [hugo]` restricts to the listed children; `days_ahead: 7` (default) sets how many days ahead can be shown, `0` keeps today only, 31 at most |
-| `parental-kid-card` | A child: status, today's timeline, "Homework done" (during an after-homework slot), timer (quota slot), remaining screen time, on-demand services as toggles (AdGuard devices and switches targeting the child), ongoing permissions (✕) and bonuses. | `kid: alice`; `show_timeline`, `show_services`, `show_bonus` (false to hide), `services`, `bonus_minutes` |
+| `parental-kid-card` | A child: status, today's timeline, "Homework done" (during an after-homework slot), timer (quota slot), remaining screen time, on-demand services as toggles (AdGuard devices and switches targeting the child), ongoing permissions (tap to change) and bonuses. | `kid: alice`; `show_timeline`, `show_services`, `show_bonus` (false to hide), `services`, `bonus_minutes` |
 | `parental-switch-card` | A Nintendo console: remaining-time gauge, time used, rule state and bonuses. Complements the official Nintendo integration. | `resource: switch` |
 
 ```yaml
@@ -436,7 +442,7 @@ bonus_minutes: [15, 30, 60]   # optional
 **allow**, grant **bonuses**, confirm **homework** and start a **timer**. It is typed on an
 on-screen keypad (no native keyboard covering the screen; a physical keyboard also works), sent
 with the call and forgotten; it is never stored in a card or in the dashboard configuration.
-"Stop" and ✕ go through without code, after a two-tap confirmation.
+"Stop" goes through without code, after a two-tap confirmation. In "Allow…", "Until…" sets an end time instead of a duration. Changing an ongoing permission asks for the code only to add time or set an end time; removing time or the permission never does.
 
 ## Rules panel
 

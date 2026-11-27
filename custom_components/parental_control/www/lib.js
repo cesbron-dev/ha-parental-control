@@ -251,6 +251,43 @@ export function formatPill(exc, now, hass) {
   return text;
 }
 
+// Fin d'une nouvelle autorisation pour le service `exception` : durée, heure fixe (« Jusqu'à… »)
+// ou rien (jusqu'au prochain changement).
+export function exceptionEnd({ minutes = null, until = null }) {
+  if (until) return { until };
+  return minutes ? { minutes } : {};
+}
+
+// « HH:MM » déjà atteinte aujourd'hui (heure locale) : le serveur la refuserait.
+export function untilPassed(hhmm, now = new Date()) {
+  if (!hhmm) return false;
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m <= now.getHours() * 60 + now.getMinutes();
+}
+
+// Modifier une autorisation en cours : retirer ou ajouter du temps, ou la supprimer ; la fenêtre
+// ajoute « Jusqu'à… » (heure de fin fixée).
+const EDIT_STEPS = [-15, 15, 30];
+export function editChoices(hass) {
+  return [
+    ...EDIT_STEPS.map((m) => ({ value: m, label: `${m < 0 ? "−" : "+"}${formatDuration(hass, Math.abs(m))}` })),
+    { value: "cancel", label: t(hass, "exception.remove") },
+  ];
+}
+
+export function editCall(exceptionId, { duration = null, until = null }) {
+  const exception_id = exceptionId;
+  if (until) return ["update_exception", { exception_id, until }];
+  if (duration === "cancel") return ["cancel_exception", { exception_id }];
+  return ["update_exception", { exception_id, minutes: duration }];
+}
+
+// Raccourcir ou retirer une ouverture ne débloque rien : pas de code (même règle que le serveur).
+export function editNeedsCode(hass, parent, { duration = null, until = null }) {
+  if (!until && (duration === "cancel" || duration < 0)) return false;
+  return needsCode(hass, "open", parent);
+}
+
 // Vue d'une ressource pour l'affichage ; `status` distingue moteur sans snapshot et ressource inconnue.
 export function resourceView(state, resourceId) {
   const resources = state?.resources ?? {};

@@ -20,6 +20,7 @@ SERVICES = [
     "add_bonus",
     "exception",
     "cancel_exception",
+    "update_exception",
     "start_timer",
     "stop_timer",
     "pause",
@@ -177,6 +178,56 @@ async def test_cancel_close_exception_requires_code(make_env) -> None:
     await env.call("cancel_exception", {"exception_id": "inconnu"}, env.kid_ctx)
 
 
+async def test_exception_until_time(make_env) -> None:
+    env = await make_env(at(TUESDAY, 16, 30))
+    await env.call("exception", {"open": True, "resource_id": "tv", "until": "18:30"},
+                   env.admin_ctx)
+    assert env.engine.decisions.exceptions[0].until == at(TUESDAY, 18, 30)
+    await _raises_key(
+        env.call("exception", {"open": True, "resource_id": "tv", "until": "16:00"},
+                 env.admin_ctx),
+        "until_past",
+    )
+    assert len(env.engine.decisions.exceptions) == 1
+
+
+async def test_update_exception_code_only_when_it_unlocks(make_env) -> None:
+    """Raccourcir une ouverture ou prolonger une fermeture ne débloque rien : pas de code."""
+    env = await make_env(at(TUESDAY, 16, 30))
+    response = await env.call(
+        "exception", {"open": True, "resource_id": "tv", "minutes": 30, "code": CODE},
+        env.kid_ctx, return_response=True,
+    )
+    exc_id = response["id"]
+    for data in ({"minutes": 10}, {"until": "18:00"}):
+        await _raises_key(
+            env.call("update_exception", {"exception_id": exc_id, **data}, env.kid_ctx),
+            "code_required",
+        )
+    assert env.engine.decisions.exceptions[0].until == at(TUESDAY, 17, 0)
+    await env.call("update_exception", {"exception_id": exc_id, "minutes": -10}, env.kid_ctx)
+    assert env.engine.decisions.exceptions[0].until == at(TUESDAY, 16, 50)
+    await env.call("update_exception",
+                   {"exception_id": exc_id, "minutes": 40, "code": CODE}, env.kid_ctx)
+    assert env.engine.decisions.exceptions[0].until == at(TUESDAY, 17, 30)
+
+    closed = await env.call(
+        "exception", {"open": False, "resource_id": "tv", "minutes": 30}, env.kid_ctx,
+        return_response=True,
+    )
+    await env.call("update_exception", {"exception_id": closed["id"], "minutes": 15},
+                   env.kid_ctx)
+    await _raises_key(
+        env.call("update_exception", {"exception_id": closed["id"], "minutes": -15},
+                 env.kid_ctx),
+        "code_required",
+    )
+    await _raises_key(
+        env.call("update_exception", {"exception_id": "inconnu", "minutes": 5}, env.admin_ctx),
+        "unknown_exception",
+    )
+
+
 async def test_bonus_and_timers(make_env) -> None:
     env = await make_env(at(SATURDAY, 10, 0))
     await _raises_key(
@@ -212,6 +263,12 @@ async def test_bonus_and_timers(make_env) -> None:
         ("start_timer", {"kid_id": "hugo", "minutes": 0}),
         ("start_timer", {"kid_id": "hugo"}),
         ("exception", {"resource_id": "tv"}),
+        ("exception", {"open": True, "resource_id": "tv", "minutes": 5, "until": "18:00"}),
+        ("exception", {"open": True, "resource_id": "tv", "until": "pas une heure"}),
+        ("update_exception", {"exception_id": "x"}),
+        ("update_exception", {"exception_id": "x", "minutes": 5, "until": "18:00"}),
+        ("update_exception", {"exception_id": "x", "minutes": 0}),
+        ("update_exception", {"exception_id": "x", "minutes": 241}),
         ("pause", {}),
         ("import_config", {}),
     ],
